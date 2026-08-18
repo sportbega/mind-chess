@@ -39,3 +39,11 @@ Three more in one sitting, all built and verified before closing:
 - **OUR-40 (persistence):** no existing pattern in Giga Chess to copy (it only persists preferences, not game state), so built from scratch: `game.pgn()` → localStorage on every `renderAll()`/`setBoardHidden()`/settings change, restored via `game.load_pgn()` on boot with a "Game restored" message in place of "New game." Verified: played `1. e4 Nc6`, reloaded, move strip and turn state came back intact.
 
 All three closed. Gotcha worth remembering: `index.html` writes a couple of apostrophes as a JS unicode escape sequence in the source rather than as the literal character — a find/replace edit that pastes in the rendered apostrophe glyph will silently fail to match. Isolate the surrounding line into its own edit rather than fighting the escape.
+
+## 2026-08-18 — Day 1 wrap
+
+Closing the session here — clean stopping point, not a forced cutoff: all 4 issues opened today (OUR-39 through OUR-42) are closed, working tree is clean (`git status` empty), nothing mid-implementation.
+
+Day 1 summary: three artifact prototypes → a real git-tracked project → Linear-tracked → a real search-based opponent, theming, sound, and reload persistence, all ported/adapted from Giga Chess where a pattern already existed there, built fresh where it didn't (persistence had no Giga precedent).
+
+State for next session: nothing open in Linear for Mind Chess. Parked, not forgotten: clock (deliberately undecided), multiplayer (viable later via Giga's Supabase pattern, not scoped). Otherwise open-ended — next session picks a direction fresh.
