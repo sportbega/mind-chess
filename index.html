@@ -945,7 +945,7 @@
       const m=game.moves({verbose:true}).find(x=>x.san===(req.side==='k'?'O-O':'O-O-O'));
       return m?{score:6,type:'move',move:m}:{score:1,type:'illegal',msg:'Castling isn\u2019t legal right now.'};
     }
-    if(req.kind!=='move') return {score:0,type:'none'};
+    if(req.kind!=='move') return {score:0,type:'none',text};
 
     let cands=candidates(req);
     if(!cands.length){
@@ -1085,7 +1085,16 @@
       case 'disambiguate': askDisambiguation(plan.cands); break;
       case 'ask-castle': askCastleSide(); break;
       case 'illegal': warn(plan.msg); break;
-      default: warn('I didn\u2019t catch a move. Try "knight to f3", "e4", or "castle kingside".');
+      default:{
+        // A transcript with no letters at all (e.g. "9826") has zero
+        // recoverable chess content \u2014 that's the recognizer mishearing a
+        // short utterance as noise, not a parsing gap, so point at what
+        // actually helps instead of repeating the generic example moves.
+        const raw=(plan.text||'').trim();
+        warn(raw&&!/[a-z]/i.test(raw)
+          ? 'That didn\u2019t sound like a chess move \u2014 try spelling it out, like "alpha three" instead of "a three", or type it in the box below.'
+          : 'I didn\u2019t catch a move. Try "knight to f3", "e4", or "castle kingside".');
+      }
     }
   }
 
