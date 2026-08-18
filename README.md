@@ -1,5 +1,7 @@
 # Mind Chess
 
+**Live:** https://sportbega.github.io/mind-chess/ — public, hosted on GitHub Pages (same setup as Giga Chess), no install needed. Share this link with testers.
+
 Browser chess with a voice / blindfold mode — play by speaking moves ("e4", "knight to f3", "queen takes e5", "castle kingside") while the board stays hidden, or reveal it any time.
 
 Mostly single-file: `index.html`. Uses [chess.js](https://github.com/jhlywa/chess.js) (via CDN) for rules/legality and the Web Speech API (Chrome/Edge) for recognition + narration. No build step. The "Master" level self-hosts real [Stockfish](https://github.com/nmrugg/stockfish.js) (18 Lite, single-threaded WASM, ~7.3MB) alongside `index.html` as `stockfish-18-lite-single.js`/`.wasm` — lazy-loaded, so it only downloads once "Master" is actually selected.

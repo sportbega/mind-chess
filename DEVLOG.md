@@ -247,3 +247,17 @@ Fixed `pollOnline()` to special-case `PGRST116` specifically (not a blanket catc
 **Supabase cleanup check — nothing to clean up.** Queried `mind_chess_games` directly: 0 rows. The "three sessions deep" backlog of empty-pgn test rows flagged since Day 2.4 is gone — either already cleaned up outside of what's tracked here, or never actually landed as described. Table is empty and RLS/schema are unchanged from Day 2.4/2.5.
 
 Working tree: `index.html` only.
+
+## 2026-08-18 — Day 2.7 (cont'd): public deploy for testers
+
+Third item from the same sitting: user wants to hand this to testers, which meant getting it off `localhost` onto a real public URL. `~/mind-chess` had no git remote at all until now — followed the exact pattern already proven by Giga Chess (`Documents/ChatGPT/chess project`): a public GitHub repo + GitHub Pages, rather than introducing a new hosting account/workflow for no reason. `gh` was already authenticated as the same `sportbega` account.
+
+Simpler than Giga Chess's setup, not more complex: Giga Chess builds to `dist/public` via a GitHub Actions workflow because its source tree has unrelated sibling projects mixed in. Mind Chess's repo *is* the deployable site already (flat `index.html` + assets, no build step), so Pages serves straight from `main` at `/` — no Actions workflow needed. Added a `.nojekyll` file so GitHub's default Jekyll processing doesn't run against files it shouldn't touch.
+
+Live at **https://sportbega.github.io/mind-chess/**. Called out to the user before doing any of this that a public repo is required for free Pages hosting, meaning the source (including `supabase-config.js`) becomes publicly readable — a non-issue since that file only ever held the publishable/anon key (same as Giga Chess already does), but worth surfacing since "public repo" implies more than just "public app."
+
+**Verified end-to-end against the live URL, not just that it loaded:** vs-computer play (`1.e4`, computer replied, board reveal/hide), Master-level real Stockfish (same-origin Worker construction succeeded, no CORS issue since self-hosted — engine replied `1...e5` to `1.e4`), and online game creation (wrote successfully to the shared `mind_chess_games` table from the new production origin, "You're White / waiting for opponent" — confirms Supabase's CORS/RLS config isn't scoped to `localhost` in any way that would've broken this). No console errors anywhere in the pass. Left one harmless waiting-for-opponent test row in the table from this verification (`Vs. computer` re-selected afterward to leave it cleanly) — same pattern as prior sessions' test rows, flagged for a future cleanup pass rather than deleted without asking.
+
+One incidental win: HTTPS hosting means testers on Chrome/Edge get *real* voice input, which local `file://` testing could never exercise.
+
+Working tree: `README.md`, `DEVLOG.md`, `.nojekyll` (new file).
