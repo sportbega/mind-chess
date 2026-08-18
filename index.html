@@ -162,6 +162,7 @@
     <div class="online-actions">
       <button class="btn primary" id="createOnlineBtn" type="button">Create online game</button>
       <button class="btn" id="copyInviteBtn" type="button" style="display:none">Copy invite link</button>
+      <button class="btn primary" id="rematchBtn" type="button" style="display:none">Rematch</button>
     </div>
   </div>
 
@@ -222,6 +223,7 @@
         <option value="1">Casual</option>
         <option value="2" selected>Club</option>
         <option value="3">Sharp</option>
+        <option value="master">Master</option>
       </select>
     </div>
     <div class="field">
@@ -298,6 +300,7 @@
   let mode = 'computer';
   let humanColor = 'w';
   let searchDepth = 2;
+  let masterLevel = false;    // Level select = "Master": use Stockfish instead of the custom engine
   let verbosity = 'terse';
   let voiceOn = true;
   let handsFree = true;
@@ -341,7 +344,7 @@
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
-        copyInviteBtn=$('copyInviteBtn');
+        copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn');
 
   // ===============================================================
   // Output
@@ -420,6 +423,7 @@
     statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
     turnPill.textContent=gameOver?'Game over':t+' to move';
     renderClock();
+    rematchBtn.style.display=(mode==='online'&&onlineState&&gameOver)?'':'none';
   }
   function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
@@ -581,7 +585,7 @@
     if(mode==='online') saveOnline();
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
       const g=generation;
-      setTimeout(()=>{ if(g===generation && !gameOver) computerMove(); },650);
+      setTimeout(()=>{ if(g===generation && !gameOver) triggerComputerMove(); },650);
     }
   }
   // Alpha-beta minimax over material + pawn advancement, ported from
@@ -624,6 +628,61 @@
       if(white?score>bestScore:score<bestScore){ bestScore=score; best=m; }
     }
     applyMove(best);
+  }
+
+  // ===============================================================
+  // Master level — real Stockfish (18 Lite, single-threaded WASM),
+  // self-hosted alongside index.html since Worker scripts can't be
+  // constructed cross-origin from a CDN in every browser. Lazy-loaded:
+  // the ~7MB engine only downloads once "Master" is actually selected,
+  // so Casual/Club/Sharp pay nothing for it.
+  // ===============================================================
+  const MASTER_MOVETIME_MS = 1200;
+  let sfInitPromise = null;
+  function stockfishInit(){
+    if(sfInitPromise) return sfInitPromise;
+    sfInitPromise = new Promise((resolve,reject)=>{
+      let worker;
+      try{ worker = new Worker('stockfish-18-lite-single.js'); }
+      catch(e){ reject(e); return; }
+      const timer = setTimeout(()=>reject(new Error('timed out starting')), 20000);
+      worker.onerror = function(){ clearTimeout(timer); reject(new Error('failed to load')); };
+      worker.onmessage = function(e){
+        if(e.data==='uciok') worker.postMessage('isready');
+        else if(e.data==='readyok'){ clearTimeout(timer); resolve(worker); }
+      };
+      worker.postMessage('uci');
+    });
+    return sfInitPromise;
+  }
+  function stockfishBestMove(fen, movetimeMs){
+    return stockfishInit().then(worker=>new Promise(resolve=>{
+      worker.onmessage = function(e){
+        const line = e.data;
+        if(typeof line==='string' && line.indexOf('bestmove')===0){
+          worker.onmessage = null;
+          resolve(line.split(' ')[1]);
+        }
+      };
+      worker.postMessage('position fen '+fen);
+      worker.postMessage('go movetime '+movetimeMs);
+    }));
+  }
+  function uciToMoveSpec(uci){
+    return {from:uci.slice(0,2), to:uci.slice(2,4), promotion:uci.length>4?uci[4]:undefined};
+  }
+  function triggerComputerMove(){
+    if(!masterLevel){ computerMove(); return; }
+    const g=generation;
+    stockfishBestMove(game.fen(), MASTER_MOVETIME_MS).then(uci=>{
+      if(g!==generation||gameOver) return;
+      if(!uci||uci==='(none)'){ warn('Master engine returned no move.'); return; }
+      applyMove(uciToMoveSpec(uci));
+    }).catch(err=>{
+      if(g!==generation||gameOver) return;
+      warn('Master engine unavailable, playing this move as Sharp instead. ('+(err&&err.message?err.message:'load error')+')');
+      computerMove();
+    });
   }
 
   // ===============================================================
@@ -1104,7 +1163,7 @@
   const onlineActive=()=>onlineState!==null;
   function onlineNote(text){ onlineStatusEl.textContent=text; }
   function showOnlinePanel(){ onlinePanel.classList.add('show'); }
-  function hideOnlinePanel(){ onlinePanel.classList.remove('show'); copyInviteBtn.style.display='none'; }
+  function hideOnlinePanel(){ onlinePanel.classList.remove('show'); copyInviteBtn.style.display='none'; rematchBtn.style.display='none'; }
   function describeOnlineStatus(){
     if(!onlineState) return '';
     if(onlineState.waiting) return 'Waiting for an opponent — send them the invite link.';
@@ -1146,7 +1205,15 @@
     const wasWaiting=onlineState.waiting;
     onlineState.waiting=!row.black_id;
     if(wasWaiting&&!onlineState.waiting) log('Board','Opponent joined.');
+    // A rematch resets the same row's pgn to '' rather than creating a new
+    // game/invite link, so it rides the exact same subscription both peers
+    // already have open — no re-sharing a link needed.
+    const wasRematch=gameOver&&game.history().length>0&&!row.pgn;
     if(row.pgn!==game.pgn()) loadOnlinePgn(row.pgn); else updateStatus();
+    if(wasRematch){
+      transcript.innerHTML='';
+      log('Board','Rematch! '+(game.turn()==='w'?'White':'Black')+' to move.');
+    }
     onlineNote(describeOnlineStatus());
   }
 
@@ -1164,6 +1231,22 @@
       .subscribe();
     onlineState.pollTimer=setInterval(pollOnline,2000);
     copyInviteBtn.style.display='';
+  }
+
+  async function rematchOnline(){
+    if(!onlineActive()) return;
+    rematchBtn.disabled=true;
+    try{
+      const r=await db.from('mind_chess_games').update({pgn:'',updated_at:new Date().toISOString()}).eq('id',onlineState.id);
+      if(r.error) throw r.error;
+      // The actual reset happens for both players via the same
+      // subscription/poll path a move update already uses (see
+      // receiveOnline) — no local state change here.
+    }catch(err){
+      onlineNote('Could not start rematch: '+(err.message||'try again.'));
+    }finally{
+      rematchBtn.disabled=false;
+    }
   }
 
   async function createOnline(){
@@ -1242,6 +1325,7 @@
   }
 
   createOnlineBtn.addEventListener('click',createOnline);
+  rematchBtn.addEventListener('click',rematchOnline);
   copyInviteBtn.addEventListener('click',async()=>{
     const link=location.href;
     try{ await navigator.clipboard.writeText(link); onlineNote('Invite link copied — send it to your opponent.'); }
@@ -1258,7 +1342,16 @@
     if(mode==='online') showOnlinePanel();
     else{ hideOnlinePanel(); startNewGame(); }
   });
-  levelSelect.addEventListener('change',()=>{ searchDepth=+levelSelect.value; saveState(); });
+  levelSelect.addEventListener('change',()=>{
+    masterLevel = levelSelect.value==='master';
+    if(masterLevel){
+      if(!sfInitPromise) log('System','Master uses a real chess engine (Stockfish) — first move may take a few seconds while it loads.');
+      stockfishInit().catch(()=>{});
+    }else{
+      searchDepth=+levelSelect.value;
+    }
+    saveState();
+  });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); saveState(); });
   newGameBtn.addEventListener('click',()=>{
@@ -1285,7 +1378,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,verbosity,voiceOn,handsFree,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,voiceOn,handsFree,humanColor,boardHidden,
         onlineId:onlineState?onlineState.id:null,onlineColor:onlineState?onlineState.color:null,
         clockPreset,whiteMs,blackMs
       }));
@@ -1298,7 +1391,8 @@
     let saved;
     try{ saved=JSON.parse(raw); }catch(e){ return false; }
     try{
-      searchDepth=saved.searchDepth||2; levelSelect.value=String(searchDepth);
+      searchDepth=saved.searchDepth||2; masterLevel=!!saved.masterLevel;
+      levelSelect.value=masterLevel?'master':String(searchDepth);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
