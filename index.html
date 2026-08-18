@@ -413,6 +413,10 @@
   }
   function speak(text){ lastNarration=text; log('Board',text); say(text); }
   function warn(text){ log('System',text); say(text); }
+  // Unlike warn(), does not speak — for messages that just restate example
+  // commands the user can already read, which in hands-free mode would
+  // otherwise get picked up by the mic as new (unrecognized) speech and loop.
+  function warnSilent(text){ log('System',text); }
   function note(text, cls){ micNote.className='mic-note'+(cls?' '+cls:''); micNote.textContent=text; }
 
   // ===============================================================
@@ -1114,7 +1118,7 @@
         // short utterance as noise, not a parsing gap, so point at what
         // actually helps instead of repeating the generic example moves.
         const raw=(plan.text||'').trim();
-        warn(raw&&!/[a-z]/i.test(raw)
+        warnSilent(raw&&!/[a-z]/i.test(raw)
           ? 'That didn\u2019t sound like a chess move \u2014 try spelling it out, like "alpha three" instead of "a three", or type it in the box below.'
           : 'I didn\u2019t catch a move. Try "knight to f3", "e4", or "castle kingside".');
       }

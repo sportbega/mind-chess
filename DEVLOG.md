@@ -265,3 +265,13 @@ Working tree: `README.md`, `DEVLOG.md`, `.nojekyll` (new file).
 **Day 2.7 wrap.** User tried the live URL themselves: confirmed it works well in Chrome on Mac, but hit unspecified issues in Edge on Windows. No details gathered yet — deliberately left untriaged rather than guessing, filed as OUR-58 (Backlog) for Day 2.8 to reproduce and fix. Next session should start there.
 
 Working tree clean.
+
+## 2026-08-18 — Day 2.8: OUR-58 (voice-suggestion feedback loop)
+
+Started where Day 2.7 left off: OUR-58, filed untriaged since the user hadn't described the Edge/Windows symptom yet. Got the description this session instead of trying to reproduce blind: when the recognizer doesn't understand an utterance, the app suggests example commands ("try 'knight to f3', 'e4', or 'castle kingside'") — and speaks that suggestion aloud. In hands-free mode the mic restarts right after `onend`, so it can pick up the app's own TTS output as new speech, fail to parse *that* as a move too, and speak the same suggestion again — a self-sustaining loop the user heard as a stuck cycle with an echo. Not Windows/Edge-specific in cause (same code path runs everywhere), just more reliably triggered there, likely due to weaker acoustic echo cancellation than Chrome/macOS.
+
+**Fix:** the two fallback messages in `execPlan()`'s default case (no-letters "noise" case and the general "didn't catch a move" case) now go through a new `warnSilent()` instead of `warn()` — same on-screen transcript line, no `speechSynthesis.speak()` call. The suggested commands are already legible in the transcript; speaking them back added no information, just risk of the mic re-hearing them. Other `warn()` call sites (illegal-move messages, "game over", "computer is thinking", online-mode guards) were left speaking — those are direct game-state feedback, not example-command suggestions, so they don't restate something the recognizer would then mis-hear as a fresh command in the same shape.
+
+**Verified in-browser:** monkey-patched `speechSynthesis.speak` to record calls, submitted an unparseable string ("gibberish nonsense not a move") through the text-input path (which reaches the same `route()`/`execPlan()` code as voice), and confirmed the transcript still logged *"I didn't catch a move. Try 'knight to f3', 'e4', or 'castle kingside'."* while `speak` was never invoked. Did not have a live Windows/Edge environment to reproduce the actual loop end-to-end — this fix removes the mechanism described (spoken suggestion re-entering the mic), so the next real Edge/Windows session should confirm the loop is gone in practice.
+
+OUR-58 closed. Working tree: `index.html`, this DEVLOG entry.
