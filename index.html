@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <style>
   :root{
     --bg:#12141a; --panel:#1b1e27; --panel-2:#232733; --line:#2c3140;
@@ -63,6 +65,11 @@
   .movestrip .num{color:var(--accent-2);margin-right:2px}
   .movestrip .san{color:var(--text);margin-right:14px}
   .movestrip .empty{font-style:italic}
+
+  .online-panel{display:none;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .online-panel.show{display:flex}
+  .online-status{margin:0;font-size:13px;color:var(--text-dim)}
+  .online-actions{display:flex;gap:8px;flex-wrap:wrap}
 
   .hero{display:flex;flex-direction:column;align-items:center;gap:12px;padding:26px 20px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);text-align:center}
   .mic-wrap{position:relative;width:104px;height:104px;display:flex;align-items:center;justify-content:center}
@@ -150,6 +157,14 @@
 
   <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
 
+  <div class="online-panel" id="onlinePanel">
+    <p class="online-status" id="onlineStatus">Create an online game, then send the invite link to a friend on another device.</p>
+    <div class="online-actions">
+      <button class="btn primary" id="createOnlineBtn" type="button">Create online game</button>
+      <button class="btn" id="copyInviteBtn" type="button" style="display:none">Copy invite link</button>
+    </div>
+  </div>
+
   <div class="hero">
     <div class="mic-wrap" id="micWrap">
       <span class="ring"></span><span class="ring"></span><span class="ring"></span>
@@ -195,6 +210,7 @@
       <select id="modeSelect">
         <option value="computer" selected>Vs. computer</option>
         <option value="two-player">Pass &amp; play</option>
+        <option value="online">Play online</option>
       </select>
     </div>
     <div class="field">
@@ -279,6 +295,7 @@
   let pendingAction = null;
   let gameOver = false;
   let generation = 0;          // invalidates in-flight computer-move timers
+  let onlineState = null;      // {id,color,waiting,starting,channel,pollTimer,lastUpdated}
 
   const PIECE_NAME = {p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
   const PIECE_VALUE = {p:1,n:3,b:3,r:5,q:9,k:0};
@@ -302,7 +319,9 @@
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
-        handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner');
+        handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
+        onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
+        copyInviteBtn=$('copyInviteBtn');
 
   // ===============================================================
   // Output
@@ -375,6 +394,9 @@
   function updateStatus(){
     const t=game.turn()==='w'?'White':'Black';
     let extra=gameOver?' — game over':(pendingAction?' — waiting on you':'');
+    if(mode==='online'&&onlineState&&!gameOver){
+      extra=onlineState.waiting?' — waiting for opponent':(game.turn()===onlineState.color?' — your move':' — opponent’s move');
+    }
     statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
     turnPill.textContent=gameOver?'Game over':t+' to move';
   }
@@ -480,6 +502,7 @@
     speak(describeMove(applied,verbosity)+endSuffix());
     if(game.game_over()) gameOver=true;
     renderAll();
+    if(mode==='online') saveOnline();
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
       const g=generation;
       setTimeout(()=>{ if(g===generation && !gameOver) computerMove(); },650);
@@ -759,6 +782,7 @@
     speak(d===0?'Material is even.':(d>0?'White':'Black')+' is up '+Math.abs(d)+' point'+(Math.abs(d)===1?'':'s')+'.');
   }
   function takeBack(){
+    if(mode==='online'){ warn('Take-back isn’t available in online games.'); return; }
     generation++;                       // cancel any pending computer move
     const undone=game.undo();
     if(!undone){ warn('Nothing to take back.'); return; }
@@ -856,6 +880,11 @@
     if(best.type!=='command'){
       if(gameOver){ warn('Game over. Say "new game" to start another.'); return; }
       if(mode==='computer'&&game.turn()!==humanColor){ warn('The computer is thinking.'); return; }
+      if(mode==='online'){
+        if(!onlineState){ warn('Not connected to an online game.'); return; }
+        if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return; }
+        if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return; }
+      }
     }
     execPlan(best);
   }
@@ -958,13 +987,179 @@
   });
 
   // ===============================================================
+  // Online multiplayer — ported from Giga Chess's Supabase realtime
+  // pattern (~/Documents/ChatGPT/chess project/chess.html), reusing its
+  // Supabase project but with Mind Chess's own table (mind_chess_games,
+  // PGN-based rather than Giga's custom board array), own RLS policies,
+  // and own join RPC. See DEVLOG.md for the OUR-44 decision.
+  // ===============================================================
+  const db=(window.MIND_CHESS_SUPABASE_URL&&window.MIND_CHESS_SUPABASE_ANON_KEY&&window.supabase?.createClient)
+    ?window.supabase.createClient(window.MIND_CHESS_SUPABASE_URL,window.MIND_CHESS_SUPABASE_ANON_KEY):null;
+
+  const onlineActive=()=>onlineState!==null;
+  function onlineNote(text){ onlineStatusEl.textContent=text; }
+  function showOnlinePanel(){ onlinePanel.classList.add('show'); }
+  function hideOnlinePanel(){ onlinePanel.classList.remove('show'); copyInviteBtn.style.display='none'; }
+  function describeOnlineStatus(){
+    if(!onlineState) return '';
+    if(onlineState.waiting) return 'Waiting for an opponent — send them the invite link.';
+    return 'Connected — you are '+(onlineState.color==='w'?'White':'Black')+'.';
+  }
+
+  async function onlineUser(){
+    const {data:{session}}=await db.auth.getSession();
+    if(session) return session.user;
+    const r=await db.auth.signInAnonymously();
+    if(r.error) throw r.error;
+    return r.data.session.user;
+  }
+
+  async function saveOnline(){
+    if(!onlineActive()) return;
+    const r=await db.from('mind_chess_games').update({pgn:game.pgn(),updated_at:new Date().toISOString()}).eq('id',onlineState.id);
+    if(r.error) log('System','Move could not sync: '+r.error.message);
+  }
+
+  // Loads a PGN pushed from the server (an opponent's move, or a reconnect)
+  // and narrates the newest move the same way a local move would be.
+  function loadOnlinePgn(pgn){
+    const prevLen=game.history().length;
+    try{ if(pgn) game.load_pgn(pgn); else game.reset(); }catch(e){ return; }
+    lastMove=game.history({verbose:true}).slice(-1)[0]||null;
+    gameOver=game.game_over();
+    pendingAction=null;
+    if(game.history().length>prevLen && lastMove){
+      playMoveSound(!!lastMove.captured);
+      speak(describeMove(lastMove,verbosity)+endSuffix());
+    }
+    renderAll();
+  }
+
+  function receiveOnline(row){
+    if(!onlineState||!row||row.updated_at===onlineState.lastUpdated) return;
+    onlineState.lastUpdated=row.updated_at;
+    const wasWaiting=onlineState.waiting;
+    onlineState.waiting=!row.black_id;
+    if(wasWaiting&&!onlineState.waiting) log('Board','Opponent joined.');
+    if(row.pgn!==game.pgn()) loadOnlinePgn(row.pgn); else updateStatus();
+    onlineNote(describeOnlineStatus());
+  }
+
+  async function pollOnline(){
+    if(!onlineActive()) return;
+    const r=await db.from('mind_chess_games').select('*').eq('id',onlineState.id).single();
+    if(!r.error) receiveOnline(r.data);
+  }
+
+  function subscribeOnline(){
+    onlineState.channel?.unsubscribe();
+    clearInterval(onlineState.pollTimer);
+    onlineState.channel=db.channel('mind-chess-game-'+onlineState.id)
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'mind_chess_games',filter:'id=eq.'+onlineState.id},e=>receiveOnline(e.new))
+      .subscribe();
+    onlineState.pollTimer=setInterval(pollOnline,2000);
+    copyInviteBtn.style.display='';
+  }
+
+  async function createOnline(){
+    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    createOnlineBtn.disabled=true;
+    try{
+      onlineNote('Creating online game…');
+      const user=await onlineUser();
+      const r=await db.from('mind_chess_games').insert({white_id:user.id,pgn:''}).select().single();
+      if(r.error) throw r.error;
+      generation++;
+      game.reset(); lastMove=null; pendingAction=null; gameOver=false;
+      humanColor='w';
+      onlineState={id:r.data.id,color:'w',waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:r.data.updated_at};
+      location.hash='game='+r.data.id;
+      subscribeOnline();
+      transcript.innerHTML='';
+      log('Board','Online game created. You’re White. Copy the invite link and send it to your opponent.');
+      setBoardHidden(true);
+      renderAll();
+      onlineNote(describeOnlineStatus());
+    }catch(err){
+      onlineNote('Could not create game: '+err.message);
+    }finally{
+      createOnlineBtn.disabled=false;
+    }
+  }
+
+  async function joinOnline(gameId){
+    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    try{
+      onlineNote('Joining online game…');
+      const user=await onlineUser();
+      const r=await db.rpc('join_mind_chess_game',{game_id:gameId});
+      if(r.error) throw r.error;
+      const row=r.data;
+      if(!row) throw new Error('Game not found');
+      generation++;
+      humanColor=row.white_id===user.id?'w':'b';
+      onlineState={id:row.id,color:humanColor,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at};
+      transcript.innerHTML='';
+      log('Board','Joined online game. You’re '+(humanColor==='w'?'White':'Black')+'.');
+      loadOnlinePgn(row.pgn||'');
+      location.hash='game='+row.id;
+      subscribeOnline();
+      onlineNote(describeOnlineStatus());
+    }catch(err){
+      onlineNote('Could not join game: '+(err.message||'This game is unavailable.'));
+    }
+  }
+
+  // Reconnects a page reload to the online game it was showing before,
+  // without re-running the join RPC (that would try to claim a seat again).
+  function reconnectOnline(id,color){
+    if(!db) return false;
+    generation++;
+    humanColor=color;
+    onlineState={id,color,waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:null};
+    showOnlinePanel();
+    onlineNote('Reconnecting to online game…');
+    location.hash='game='+id;
+    subscribeOnline();
+    pollOnline();
+    return true;
+  }
+
+  function leaveOnline(){
+    if(onlineState){
+      try{ onlineState.channel?.unsubscribe(); }catch(e){}
+      clearInterval(onlineState.pollTimer);
+    }
+    onlineState=null;
+    hideOnlinePanel();
+    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
+    onlineNote('Create an online game, then send the invite link to a friend on another device.');
+  }
+
+  createOnlineBtn.addEventListener('click',createOnline);
+  copyInviteBtn.addEventListener('click',async()=>{
+    const link=location.href;
+    try{ await navigator.clipboard.writeText(link); onlineNote('Invite link copied — send it to your opponent.'); }
+    catch(e){ prompt('Copy this invite link:',link); }
+  });
+
+  // ===============================================================
   // Settings + boot
   // ===============================================================
-  modeSelect.addEventListener('change',()=>{ mode=modeSelect.value; startNewGame(); });
+  modeSelect.addEventListener('change',()=>{
+    const prevMode=mode;
+    mode=modeSelect.value;
+    if(prevMode==='online'&&mode!=='online') leaveOnline();
+    if(mode==='online') showOnlinePanel();
+    else{ hideOnlinePanel(); startNewGame(); }
+  });
   levelSelect.addEventListener('change',()=>{ searchDepth=+levelSelect.value; saveState(); });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); saveState(); });
-  newGameBtn.addEventListener('click',startNewGame);
+  newGameBtn.addEventListener('click',()=>{
+    if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
+    startNewGame();
+  });
 
   function startNewGame(){
     generation++;
@@ -984,7 +1179,8 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,verbosity,voiceOn,handsFree,humanColor,boardHidden
+        pgn:game.pgn(),mode,searchDepth,verbosity,voiceOn,handsFree,humanColor,boardHidden,
+        onlineId:onlineState?onlineState.id:null,onlineColor:onlineState?onlineState.color:null
       }));
     }catch(e){}
   }
@@ -995,12 +1191,17 @@
     let saved;
     try{ saved=JSON.parse(raw); }catch(e){ return false; }
     try{
-      if(saved.pgn) game.load_pgn(saved.pgn);
-      mode=saved.mode||'computer'; modeSelect.value=mode;
       searchDepth=saved.searchDepth||2; levelSelect.value=String(searchDepth);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
+      if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
+        mode='online'; modeSelect.value='online';
+        transcript.innerHTML='';
+        return true;
+      }
+      if(saved.pgn) game.load_pgn(saved.pgn);
+      mode=(saved.mode==='online')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
       humanColor=saved.humanColor||'w';
       lastMove=game.history({verbose:true}).slice(-1)[0]||null;
       gameOver=game.game_over();
@@ -1024,7 +1225,13 @@
   applyTheme();
 
   setupRecognition();
-  if(!loadState()) startNewGame();
+  const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
+  if(inviteMatch){
+    mode='online'; modeSelect.value='online'; showOnlinePanel();
+    joinOnline(inviteMatch[1]);
+  }else if(!loadState()){
+    startNewGame();
+  }
 })();
 </script>
 </body>

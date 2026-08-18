@@ -16,7 +16,7 @@ Then open http://localhost:8000
 
 ## Status
 
-Day 1 — promoted from three prototype iterations (see git history / `Downloads/mind-chess*.html` for earlier snapshots) into a real project. Current feature set:
+Day 2 — promoted from three prototype iterations (see git history / `Downloads/mind-chess*.html` for earlier snapshots) into a real project. Current feature set:
 
 - Voice input with a constrained-vocabulary matcher (scores speech alternatives against the actual legal move list)
 - Text input fallback
@@ -27,6 +27,10 @@ Day 1 — promoted from three prototype iterations (see git history / `Downloads
 - Board/piece theming, ported from Giga Chess — 5 board themes, 4 piece themes, persisted to localStorage
 - Move/capture sound effects, with a synthesized WebAudio fallback if the sample fails to load
 - Game state (position, history, settings) persists across reloads via localStorage
+- Mobile: accurate messaging when voice input isn't available (iOS has no `SpeechRecognition` in any browser), no auto-zoom on the text input, no autocorrect mangling notation
+- Play online — realtime multiplayer via Supabase, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s pattern (its own project, own `mind_chess_games` table). "Play online" in the Opponent select, then "Create online game" and send the invite link. Reconnects automatically on reload. Note: opening the invite link in a second tab of the *same* browser where you're already signed in anonymously rejoins you as yourself, not as an opponent — test with two different browsers/devices, or an incognito window.
+
+Requires `supabase-config.js` (committed — it only holds the publishable/anon key, which is safe for the browser, same as Giga Chess's own config file) for online play; everything else works without it.
 
 See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 
@@ -34,5 +38,3 @@ See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 
 Tracked in Linear (project "Mind Chess", team OUR):
 - Clock — deliberately parked, not decided yet
-- Multiplayer — Giga Chess's Supabase realtime pattern would port cleanly if voice-to-voice remote play is ever wanted; not scoped now
-- Mobile mic UX pass
