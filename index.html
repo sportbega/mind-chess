@@ -71,6 +71,15 @@
   .online-status{margin:0;font-size:13px;color:var(--text-dim)}
   .online-actions{display:flex;gap:8px;flex-wrap:wrap}
 
+  .lobby-panel{display:none;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .lobby-panel.show{display:flex}
+  .lobby-head{display:flex;justify-content:space-between;align-items:center}
+  .lobby-list{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto}
+  .lobby-row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .lobby-row .meta{font-size:13px;color:var(--text-dim)}
+  .lobby-row .meta b{color:var(--text);font-weight:500}
+  .lobby-empty{margin:0;font-size:13px;color:var(--text-dim);font-style:italic;text-align:center;padding:10px 0}
+
   .hero{display:flex;flex-direction:column;align-items:center;gap:12px;padding:26px 20px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);text-align:center}
   .mic-wrap{position:relative;width:104px;height:104px;display:flex;align-items:center;justify-content:center}
   .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--accent-2);opacity:0;transform:scale(.6)}
@@ -164,9 +173,19 @@
     <p class="online-status" id="onlineStatus">Create an online game, then send the invite link to a friend on another device.</p>
     <div class="online-actions">
       <button class="btn primary" id="createOnlineBtn" type="button">Create online game</button>
+      <button class="btn" id="lobbyBtn" type="button">Browse games</button>
       <button class="btn" id="copyInviteBtn" type="button" style="display:none">Copy invite link</button>
       <button class="btn primary" id="rematchBtn" type="button" style="display:none">Rematch</button>
+      <button class="btn" id="stopSpectateBtn" type="button" style="display:none">Stop watching</button>
     </div>
+  </div>
+
+  <div class="lobby-panel" id="lobbyPanel">
+    <div class="lobby-head">
+      <p class="online-status" style="margin:0">Open games</p>
+      <button class="btn" id="closeLobbyBtn" type="button">Close</button>
+    </div>
+    <div class="lobby-list" id="lobbyList"><p class="lobby-empty">Loading…</p></div>
   </div>
 
   <div class="hero">
@@ -322,7 +341,8 @@
   let pendingAction = null;
   let gameOver = false;
   let generation = 0;          // invalidates in-flight computer-move timers
-  let onlineState = null;      // {id,color,waiting,starting,channel,pollTimer,lastUpdated}
+  let onlineState = null;      // {id,color,spectating,waiting,starting,channel,pollTimer,lastUpdated}
+  let lobbyChannel = null, lobbyPollTimer = null;
 
   // Clock: 0 = no clock. Runs off game.turn(), so it works the same for
   // computer/two-player/online without per-mode special-casing — the
@@ -360,7 +380,9 @@
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
         handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
-        copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn');
+        copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn'), lobbyBtn=$('lobbyBtn'),
+        stopSpectateBtn=$('stopSpectateBtn'), lobbyPanel=$('lobbyPanel'), lobbyList=$('lobbyList'),
+        closeLobbyBtn=$('closeLobbyBtn');
 
   // ===============================================================
   // Output
@@ -434,12 +456,13 @@
     const t=game.turn()==='w'?'White':'Black';
     let extra=gameOver?' — game over':(pendingAction?' — waiting on you':'');
     if(mode==='online'&&onlineState&&!gameOver){
-      extra=onlineState.waiting?' — waiting for opponent':(game.turn()===onlineState.color?' — your move':' — opponent’s move');
+      if(onlineState.spectating) extra=onlineState.waiting?' — waiting for a second player':'';
+      else extra=onlineState.waiting?' — waiting for opponent':(game.turn()===onlineState.color?' — your move':' — opponent’s move');
     }
     statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
     turnPill.textContent=gameOver?'Game over':t+' to move';
     renderClock();
-    rematchBtn.style.display=(mode==='online'&&onlineState&&gameOver)?'':'none';
+    rematchBtn.style.display=(mode==='online'&&onlineState&&!onlineState.spectating&&gameOver)?'':'none';
   }
   function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
@@ -1128,6 +1151,7 @@
       if(mode==='computer'&&game.turn()!==humanColor){ warn('The computer is thinking.'); return; }
       if(mode==='online'){
         if(!onlineState){ warn('Not connected to an online game.'); return; }
+        if(onlineState.spectating){ warn('You’re spectating — moves are disabled.'); return; }
         if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return; }
         if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return; }
       }
@@ -1280,6 +1304,7 @@
   function hideOnlinePanel(){ onlinePanel.classList.remove('show'); copyInviteBtn.style.display='none'; rematchBtn.style.display='none'; }
   function describeOnlineStatus(){
     if(!onlineState) return '';
+    if(onlineState.spectating) return onlineState.waiting?'Spectating — waiting for a second player.':'Spectating — White vs Black.';
     if(onlineState.waiting) return 'Waiting for an opponent — send them the invite link.';
     return 'Connected — you are '+(onlineState.color==='w'?'White':'Black')+'.';
   }
@@ -1371,7 +1396,7 @@
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'mind_chess_games',filter:'id=eq.'+onlineState.id},e=>receiveOnline(e.new))
       .subscribe();
     onlineState.pollTimer=setInterval(pollOnline,2000);
-    copyInviteBtn.style.display='';
+    copyInviteBtn.style.display=onlineState.spectating?'none':'';
   }
 
   async function rematchOnline(){
@@ -1498,8 +1523,98 @@
     clockSelect.disabled=false;
     syncClockUI();
     hideOnlinePanel();
+    createOnlineBtn.style.display=''; lobbyBtn.style.display=''; stopSpectateBtn.style.display='none';
     try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
     onlineNote('Create an online game, then send the invite link to a friend on another device.');
+  }
+
+  // Read-only: loads the row directly (no join RPC, no seat claimed) and
+  // rides the same subscribeOnline()/receiveOnline() plumbing a player uses.
+  // route()'s gating on onlineState.spectating is what actually keeps a
+  // spectator from moving — this function never lets input reach that point
+  // anyway, since it doesn't touch humanColor/onlineState.color at all.
+  async function spectateOnline(gameId){
+    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    try{
+      onlineNote('Loading game…');
+      const r=await db.from('mind_chess_games').select('*').eq('id',gameId).single();
+      if(r.error||!r.data) throw new Error('Game not found');
+      const row=r.data;
+      generation++;
+      mode='online'; modeSelect.value='online';
+      onlineState={id:row.id,color:null,spectating:true,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at,
+        userId:null,whiteId:row.white_id,blackId:row.black_id,
+        clockPreset:row.clock_preset||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
+        lastMoveAt:row.last_move_at?new Date(row.last_move_at).getTime():Date.now()};
+      transcript.innerHTML='';
+      log('Board','Spectating — White vs Black.'+(onlineState.waiting?' Waiting for a second player.':''));
+      loadOnlinePgn(row.pgn||'');
+      location.hash='spectate='+row.id;
+      showOnlinePanel();
+      createOnlineBtn.style.display='none'; lobbyBtn.style.display='none'; stopSpectateBtn.style.display='';
+      clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
+      subscribeOnline();
+      startOnlineClock();
+      setBoardHidden(false);
+      onlineNote(describeOnlineStatus());
+    }catch(err){
+      onlineNote('Could not open game: '+(err.message||'try again.'));
+    }
+  }
+
+  // ===============================================================
+  // Lobby — browse open/in-progress games instead of needing a direct
+  // invite link. No new backend access needed: the games table's SELECT
+  // policy already allows reading any row ("Anyone can read mind chess
+  // games"), so this is just a list view over the same data joinOnline/
+  // spectateOnline already read one row at a time.
+  // ===============================================================
+  function lobbyRelativeTime(iso){
+    const m=Math.max(0,Math.round((Date.now()-new Date(iso).getTime())/60000));
+    if(m<1) return 'just now';
+    if(m<60) return m+'m ago';
+    const h=Math.round(m/60);
+    return h<24?h+'h ago':Math.round(h/24)+'d ago';
+  }
+  async function refreshLobby(){
+    if(!db) return;
+    const r=await db.from('mind_chess_games').select('id,white_id,black_id,pgn,clock_preset,updated_at').order('updated_at',{ascending:false}).limit(30);
+    if(r.error){ lobbyList.innerHTML='<p class="lobby-empty">Could not load games: '+r.error.message+'</p>'; return; }
+    // Games only carry a pgn, not an explicit "finished" flag, so a finished
+    // game is filtered out by loading its pgn into a scratch board and
+    // asking chess.js directly — cheap at lobby-list sizes, no schema change.
+    const rows=(r.data||[]).filter(row=>{
+      if(!row.black_id) return true;
+      const probe=new Chess();
+      try{ if(row.pgn) probe.load_pgn(row.pgn); }catch(e){ return false; }
+      return !probe.game_over();
+    });
+    if(!rows.length){ lobbyList.innerHTML='<p class="lobby-empty">No open games right now. Create one!</p>'; return; }
+    lobbyList.innerHTML=rows.map(row=>{
+      const waiting=!row.black_id;
+      const clockLabel=row.clock_preset?row.clock_preset+' min':'No clock';
+      const status=waiting?'Waiting for opponent':'In progress';
+      const action=waiting
+        ?'<button class="btn primary" data-action="join" data-id="'+row.id+'">Join</button>'
+        :'<button class="btn" data-action="watch" data-id="'+row.id+'">Watch</button>';
+      return '<div class="lobby-row"><span class="meta"><b>'+status+'</b> · '+clockLabel+' · '+lobbyRelativeTime(row.updated_at)+'</span>'+action+'</div>';
+    }).join('');
+  }
+  async function openLobby(){
+    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    lobbyPanel.classList.add('show');
+    lobbyList.innerHTML='<p class="lobby-empty">Loading…</p>';
+    await refreshLobby();
+    lobbyChannel=db.channel('mind-chess-lobby')
+      .on('postgres_changes',{event:'*',schema:'public',table:'mind_chess_games'},()=>refreshLobby())
+      .subscribe();
+    lobbyPollTimer=setInterval(refreshLobby,5000);
+  }
+  function closeLobby(){
+    lobbyPanel.classList.remove('show');
+    try{ lobbyChannel?.unsubscribe(); }catch(e){}
+    lobbyChannel=null;
+    clearInterval(lobbyPollTimer); lobbyPollTimer=null;
   }
 
   createOnlineBtn.addEventListener('click',createOnline);
@@ -1508,6 +1623,22 @@
     const link=location.href;
     try{ await navigator.clipboard.writeText(link); onlineNote('Invite link copied — send it to your opponent.'); }
     catch(e){ prompt('Copy this invite link:',link); }
+  });
+  stopSpectateBtn.addEventListener('click',()=>{
+    leaveOnline(); mode='computer'; modeSelect.value='computer'; startNewGame();
+  });
+  lobbyBtn.addEventListener('click',openLobby);
+  closeLobbyBtn.addEventListener('click',closeLobby);
+  lobbyList.addEventListener('click',e=>{
+    const btn=e.target.closest('button[data-action]');
+    if(!btn) return;
+    const id=btn.dataset.id;
+    closeLobby();
+    // Joining/watching from the lobby can happen while already connected to
+    // a different game (the online panel stays reachable throughout) — tear
+    // that session down first so its channel/poll timer doesn't leak.
+    if(onlineState) leaveOnline();
+    if(btn.dataset.action==='join') joinOnline(id); else spectateOnline(id);
   });
 
   // ===============================================================
@@ -1558,7 +1689,11 @@
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
         pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,voiceOn,handsFree,humanColor,boardHidden,
-        onlineId:onlineState?onlineState.id:null,onlineColor:onlineState?onlineState.color:null,
+        // Spectating rides someone else's game, not the reader's own — a
+        // reload just drops back to vs-computer rather than resuming as if
+        // this client held a seat (reconnectOnline() assumes a real color).
+        onlineId:(onlineState&&!onlineState.spectating)?onlineState.id:null,
+        onlineColor:(onlineState&&!onlineState.spectating)?onlineState.color:null,
         clockPreset,whiteMs,blackMs
       }));
     }catch(e){}
@@ -1609,9 +1744,12 @@
 
   setupRecognition();
   const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
+  const spectateMatch=location.hash.match(/^#spectate=([0-9a-fA-F-]{36})$/);
   if(inviteMatch){
     mode='online'; modeSelect.value='online'; showOnlinePanel();
     joinOnline(inviteMatch[1]);
+  }else if(spectateMatch){
+    spectateOnline(spectateMatch[1]);
   }else if(!loadState()){
     startNewGame();
   }
