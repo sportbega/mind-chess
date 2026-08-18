@@ -1151,7 +1151,7 @@
 
     // Commands are always allowed, even after game over / while computer thinks.
     if(best.type!=='command'){
-      if(gameOver){ warn('Game over. Say "new game" to start another.'); return; }
+      if(gameOver){ warnSilent('Game over. Say "new game" to start another.'); return; }
       if(mode==='computer'&&game.turn()!==humanColor){ warn('The computer is thinking.'); return; }
       if(mode==='online'){
         if(!onlineState){ warn('Not connected to an online game.'); return; }
