@@ -173,3 +173,24 @@ Made the one improvement that *is* within reach: when the best-scoring alternati
 Verified all three cases in-browser: pure-digit noise gets the new targeted message, alphabetic gibberish gets the original message, and the actually-intended move still applies correctly. No console errors.
 
 Working tree clean.
+
+## 2026-08-18 — Day 2.4 wrap
+
+Closing here — five commits since Day 2.3 (OUR-49 through OUR-54, one issue per commit), all closed except OUR-51 (the join-race bug, correctly left in Backlog since it wasn't fixed). Linear, DEVLOG, and README are all in sync as of this entry.
+
+**Shipped today:**
+- Synced online clock (move-timestamp anchor, no periodic sync writes) and always-swap color-on-rematch, with the client re-deriving its own color from the row on every update — OUR-49, OUR-50
+- 20/30 min clock presets + a "Custom…" +/-1 min stepper (1–180 min, persists across reload) — OUR-52
+- Three real bugs found and fixed from live play: Casual/Club's flat-tie eval that let a knight shuffle back and forth (centrality bonus + anti-reversal nudge), `stockfishInit()` permanently downgrading Master after one transient load failure (now retries), and letter-homophone voice parsing silently failing on spoken-out numbers like "ay three" (now matches digit or word form, same as the NATO path) — OUR-53
+- A clearer fallback message when the recognizer returns pure noise with no letters at all, pointing at what actually helps (phonetic spelling or the text box) instead of repeating an unhelpful generic example — OUR-54
+
+**End-of-session cleanup:** deleted all 6 accumulated empty-`pgn` test rows from the shared `mind_chess_games` Supabase table (confirmed every row had `pgn=''` — no real game data — before deleting; user explicitly approved this one, unlike the deletes blocked by guardrails in earlier sessions). Table is clean. No repo remote exists yet (git history is local-only) — nothing to push to GitHub for this session; flagging in case a remote gets added later.
+
+**Known state carried forward:**
+- OUR-51 (online join can silently fail right after a fresh anonymous sign-in) is still open in Backlog, not yet fixed.
+- Supabase security advisors show the expected set (anonymous-auth policies, `SECURITY DEFINER` join RPCs) — all intentional and already accepted as of the OUR-44 design decision, nothing new.
+- `~/mind-chess` is no longer single-file: `index.html` + self-hosted `stockfish-18-lite-single.js`/`.wasm` (~7.3MB) + `supabase-config.js`.
+
+**Naming note for next time:** every session so far has landed on the same calendar date (2026-08-18) — the "Day N" label tracks *sessions*, not calendar days. The next new-direction session should be **Day 2.5** (continuing the Day 2.x line, matching how 2.2/2.3/2.4 each opened a new feature area; a jump to "Day 3" isn't warranted by anything in this history). Open threads to pick from for 2.5: lobby/spectator mode for online games, real iOS Safari verification (blocked on this machine's Xcode setup), or OUR-51's join-race fix.
+
+Working tree clean.
