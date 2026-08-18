@@ -22,14 +22,14 @@ Day 2 — promoted from three prototype iterations (see git history / `Downloads
 - Text input fallback
 - Blindfold mode: board hidden by default, toggle to reveal
 - Vs. computer — alpha-beta minimax over material + pawn advancement, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s engine, 3 depth levels (Casual/Club/Sharp), plus a "Master" level backed by real Stockfish — or pass-and-play
-- Clock — optional per-side time control (3/5/10 min presets), silent by default in blindfold mode except for the flag-fall announcement; vs-computer and pass-and-play only for now (not synced for online games yet)
+- Clock — optional per-side time control (3/5/10 min presets), silent by default in blindfold mode except for the flag-fall announcement; works vs-computer, pass-and-play, and online. Online clocks are synced through the shared game row (remaining ms + a `last_move_at` anchor) rather than each peer ticking an independent local timer, so both sides agree without any periodic sync write.
 - Disambiguation / promotion prompts when a spoken move is ambiguous
 - Move narration at terse / standard / verbose levels, speech synthesis toggle
 - Board/piece theming, ported from Giga Chess — 5 board themes, 4 piece themes, persisted to localStorage
 - Move/capture sound effects, with a synthesized WebAudio fallback if the sample fails to load
 - Game state (position, history, settings) persists across reloads via localStorage
 - Mobile: accurate messaging when voice input isn't available (iOS has no `SpeechRecognition` in any browser), no auto-zoom on the text input, no autocorrect mangling notation
-- Play online — realtime multiplayer via Supabase, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s pattern (its own project, own `mind_chess_games` table). "Play online" in the Opponent select, then "Create online game" and send the invite link. Reconnects automatically on reload, one-click "Rematch" after a game ends (reuses the same game row/link, same opponent, colors unchanged). Note: opening the invite link in a second tab of the *same* browser where you're already signed in anonymously rejoins you as yourself, not as an opponent — test with two different browsers/devices, or an incognito window.
+- Play online — realtime multiplayer via Supabase, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s pattern (its own project, own `mind_chess_games` table). "Play online" in the Opponent select, then "Create online game" and send the invite link. Reconnects automatically on reload, one-click "Rematch" after a game ends (reuses the same game row/link, same opponent, colors always swap — chess-club style). Note: opening the invite link in a second tab of the *same* browser where you're already signed in anonymously rejoins you as yourself, not as an opponent — test with two different browsers/devices, or an incognito window. Also note: `localStorage` (and the anonymous auth session it holds) is shared across *all* tabs of the same browser/origin, not just the invite-link tab — clearing it in one online-mode tab signs every other tab out too.
 
 Requires `supabase-config.js` (committed — it only holds the publishable/anon key, which is safe for the browser, same as Giga Chess's own config file) for online play; everything else works without it.
 
@@ -38,7 +38,6 @@ See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 ## Next ideas
 
 Tracked in Linear (project "Mind Chess", team OUR):
-- Color-swap on rematch (needs a look at the `mind_chess_games` RLS policies, which were written for create/join, not a same-row reset)
 - Lobby / open-games list, spectator mode for online games
-- Synced clock for online games (needs move-timestamp sync through the shared game row)
 - Real iOS Safari verification (blocked on this machine only having Xcode Command Line Tools, not the full Xcode the Simulator needs)
+- Online join-flow auth race: joining immediately after a fresh anonymous sign-in can occasionally fail to attach the new session to the join RPC call, leaving the game stuck on "waiting for opponent" even though the joiner's client thinks it succeeded (found during Day 2.4 testing, not fixed — pre-existing in `onlineUser()`/`joinOnline()`, unrelated to that session's changes)

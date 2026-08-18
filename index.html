@@ -451,12 +451,13 @@
     return Math.floor(total/60)+':'+String(total%60).padStart(2,'0');
   }
   function renderClock(){
-    // Online isn't wired up here: each peer would tick an independent local
-    // timer with no server-side reconciliation, which would just disagree
-    // between the two browsers. Real online clocks need move timestamps
-    // synced through the shared game row — natural to add alongside the
-    // rest of the online-mode work, not as a silent half-measure here.
-    if(!clockPreset||boardHidden||mode==='online'){ clockLine.textContent=''; return; }
+    if(mode==='online'){
+      if(!onlineState||!onlineState.clockPreset||boardHidden){ clockLine.textContent=''; return; }
+      const {w,b}=computeOnlineMs();
+      clockLine.textContent='White '+formatClock(w)+' · Black '+formatClock(b);
+      return;
+    }
+    if(!clockPreset||boardHidden){ clockLine.textContent=''; return; }
     clockLine.textContent='White '+formatClock(whiteMs)+' · Black '+formatClock(blackMs);
   }
   function stopClock(){ if(clockTimer){ clearInterval(clockTimer); clockTimer=null; } }
@@ -580,7 +581,7 @@
     lastMove=applied;
     playMoveSound(!!applied.captured);
     speak(describeMove(applied,verbosity)+endSuffix());
-    if(game.game_over()){ gameOver=true; stopClock(); }
+    if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); }
     renderAll();
     if(mode==='online') saveOnline();
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
@@ -941,6 +942,12 @@
     return [mPart,sPart].filter(Boolean).join(' ');
   }
   function announceClock(){
+    if(mode==='online'){
+      if(!onlineState||!onlineState.clockPreset){ speak('No clock this game.'); return; }
+      const {w,b}=computeOnlineMs();
+      speak('White has '+spokenClock(w)+'. Black has '+spokenClock(b)+'.');
+      return;
+    }
     if(!clockPreset){ speak('No clock this game.'); return; }
     speak('White has '+spokenClock(whiteMs)+'. Black has '+spokenClock(blackMs)+'.');
   }
@@ -1160,8 +1167,40 @@
   const db=(window.MIND_CHESS_SUPABASE_URL&&window.MIND_CHESS_SUPABASE_ANON_KEY&&window.supabase?.createClient)
     ?window.supabase.createClient(window.MIND_CHESS_SUPABASE_URL,window.MIND_CHESS_SUPABASE_ANON_KEY):null;
 
+  let onlineClockTimer=null;
   const onlineActive=()=>onlineState!==null;
   function onlineNote(text){ onlineStatusEl.textContent=text; }
+  // Synced online clock: rather than each peer ticking an independent local
+  // timer, the row stores each side's remaining ms as of `last_move_at`
+  // (the moment the side now on move started thinking). Both peers derive
+  // the live remaining time the same way from that shared anchor, so they
+  // agree without any periodic tick write — only real transitions (a move,
+  // a rematch) touch the row.
+  function computeOnlineMs(){
+    if(!onlineState) return {w:0,b:0};
+    const running=(!gameOver&&!onlineState.waiting)?game.turn():null;
+    const elapsed=running?Date.now()-onlineState.lastMoveAt:0;
+    return{
+      w:Math.max(0,onlineState.whiteMs-(running==='w'?elapsed:0)),
+      b:Math.max(0,onlineState.blackMs-(running==='b'?elapsed:0))
+    };
+  }
+  function stopOnlineClock(){ if(onlineClockTimer){ clearInterval(onlineClockTimer); onlineClockTimer=null; } }
+  function startOnlineClock(){
+    stopOnlineClock();
+    if(!onlineState||!onlineState.clockPreset||gameOver||onlineState.waiting) return;
+    onlineClockTimer=setInterval(()=>{
+      const {w,b}=computeOnlineMs();
+      renderClock();
+      if(w<=0||b<=0){
+        stopOnlineClock();
+        gameOver=true;
+        const loser=w<=0?'White':'Black';
+        speak(loser+'’s time is up. '+(loser==='White'?'Black':'White')+' wins on time.');
+        renderAll();
+      }
+    },200);
+  }
   function showOnlinePanel(){ onlinePanel.classList.add('show'); }
   function hideOnlinePanel(){ onlinePanel.classList.remove('show'); copyInviteBtn.style.display='none'; rematchBtn.style.display='none'; }
   function describeOnlineStatus(){
@@ -1180,7 +1219,20 @@
 
   async function saveOnline(){
     if(!onlineActive()) return;
-    const r=await db.from('mind_chess_games').update({pgn:game.pgn(),updated_at:new Date().toISOString()}).eq('id',onlineState.id);
+    const patch={pgn:game.pgn(),updated_at:new Date().toISOString()};
+    if(onlineState.clockPreset){
+      // Deduct the mover's think time now, optimistically, so this client's
+      // own display doesn't jump when the realtime echo of this same write
+      // comes back — the echo will just confirm what's already shown.
+      const nowMs=Date.now();
+      const elapsed=Math.max(0,nowMs-onlineState.lastMoveAt);
+      const mover=game.turn()==='w'?'b':'w';
+      let w=onlineState.whiteMs, b=onlineState.blackMs;
+      if(mover==='w') w=Math.max(0,w-elapsed); else b=Math.max(0,b-elapsed);
+      onlineState.whiteMs=w; onlineState.blackMs=b; onlineState.lastMoveAt=nowMs;
+      patch.white_ms=w; patch.black_ms=b; patch.last_move_at=new Date(nowMs).toISOString();
+    }
+    const r=await db.from('mind_chess_games').update(patch).eq('id',onlineState.id);
     if(r.error) log('System','Move could not sync: '+r.error.message);
   }
 
@@ -1204,6 +1256,18 @@
     onlineState.lastUpdated=row.updated_at;
     const wasWaiting=onlineState.waiting;
     onlineState.waiting=!row.black_id;
+    onlineState.whiteId=row.white_id;
+    onlineState.blackId=row.black_id;
+    onlineState.clockPreset=row.clock_preset||0;
+    onlineState.whiteMs=row.white_ms||0;
+    onlineState.blackMs=row.black_ms||0;
+    onlineState.lastMoveAt=row.last_move_at?new Date(row.last_move_at).getTime():Date.now();
+    // Re-derive this client's own color from the row rather than assuming
+    // it's fixed — a rematch may have swapped white_id/black_id.
+    if(onlineState.userId){
+      const newColor=row.white_id===onlineState.userId?'w':(row.black_id===onlineState.userId?'b':onlineState.color);
+      if(newColor!==onlineState.color){ onlineState.color=newColor; humanColor=newColor; }
+    }
     if(wasWaiting&&!onlineState.waiting) log('Board','Opponent joined.');
     // A rematch resets the same row's pgn to '' rather than creating a new
     // game/invite link, so it rides the exact same subscription both peers
@@ -1212,9 +1276,11 @@
     if(row.pgn!==game.pgn()) loadOnlinePgn(row.pgn); else updateStatus();
     if(wasRematch){
       transcript.innerHTML='';
-      log('Board','Rematch! '+(game.turn()==='w'?'White':'Black')+' to move.');
+      log('Board','Rematch! You’re now '+(onlineState.color==='w'?'White':'Black')+'. '+(game.turn()==='w'?'White':'Black')+' to move.');
     }
     onlineNote(describeOnlineStatus());
+    renderClock();
+    startOnlineClock();
   }
 
   async function pollOnline(){
@@ -1237,7 +1303,16 @@
     if(!onlineActive()) return;
     rematchBtn.disabled=true;
     try{
-      const r=await db.from('mind_chess_games').update({pgn:'',updated_at:new Date().toISOString()}).eq('id',onlineState.id);
+      const initMs=(onlineState.clockPreset||0)*60000;
+      // Colors always swap on rematch, chess-club style. Reads the two IDs
+      // from onlineState (kept fresh by every receiveOnline call) rather
+      // than a fresh SELECT — fine for two players taking turns clicking
+      // one button, not a contended write.
+      const r=await db.from('mind_chess_games').update({
+        pgn:'',updated_at:new Date().toISOString(),
+        white_id:onlineState.blackId,black_id:onlineState.whiteId,
+        white_ms:initMs,black_ms:initMs,last_move_at:new Date().toISOString()
+      }).eq('id',onlineState.id);
       if(r.error) throw r.error;
       // The actual reset happens for both players via the same
       // subscription/poll path a move update already uses (see
@@ -1255,16 +1330,22 @@
     try{
       onlineNote('Creating online game…');
       const user=await onlineUser();
-      const r=await db.from('mind_chess_games').insert({white_id:user.id,pgn:''}).select().single();
+      const preset=clockPreset, initMs=preset*60000;
+      const r=await db.from('mind_chess_games').insert({
+        white_id:user.id,pgn:'',clock_preset:preset,white_ms:initMs,black_ms:initMs,last_move_at:new Date().toISOString()
+      }).select().single();
       if(r.error) throw r.error;
       generation++;
       game.reset(); lastMove=null; pendingAction=null; gameOver=false;
       humanColor='w';
-      onlineState={id:r.data.id,color:'w',waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:r.data.updated_at};
+      onlineState={id:r.data.id,color:'w',waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:r.data.updated_at,
+        userId:user.id,whiteId:r.data.white_id,blackId:r.data.black_id,
+        clockPreset:preset,whiteMs:initMs,blackMs:initMs,lastMoveAt:Date.now()};
       location.hash='game='+r.data.id;
       subscribeOnline();
+      clockSelect.disabled=true;
       transcript.innerHTML='';
-      log('Board','Online game created. You’re White. Copy the invite link and send it to your opponent.');
+      log('Board','Online game created. You’re White.'+(preset?(' Clock: '+preset+' min per side.'):'')+' Copy the invite link and send it to your opponent.');
       setBoardHidden(true);
       renderAll();
       onlineNote(describeOnlineStatus());
@@ -1286,12 +1367,17 @@
       if(!row) throw new Error('Game not found');
       generation++;
       humanColor=row.white_id===user.id?'w':'b';
-      onlineState={id:row.id,color:humanColor,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at};
+      onlineState={id:row.id,color:humanColor,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at,
+        userId:user.id,whiteId:row.white_id,blackId:row.black_id,
+        clockPreset:row.clock_preset||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
+        lastMoveAt:row.last_move_at?new Date(row.last_move_at).getTime():Date.now()};
       transcript.innerHTML='';
       log('Board','Joined online game. You’re '+(humanColor==='w'?'White':'Black')+'.');
       loadOnlinePgn(row.pgn||'');
       location.hash='game='+row.id;
       subscribeOnline();
+      clockSelect.disabled=true;
+      startOnlineClock();
       onlineNote(describeOnlineStatus());
     }catch(err){
       onlineNote('Could not join game: '+(err.message||'This game is unavailable.'));
@@ -1304,8 +1390,11 @@
     if(!db) return false;
     generation++;
     humanColor=color;
-    onlineState={id,color,waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:null};
+    onlineState={id,color,waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:null,
+      userId:null,whiteId:null,blackId:null,clockPreset:0,whiteMs:0,blackMs:0,lastMoveAt:Date.now()};
+    db.auth.getSession().then(({data:{session}})=>{ if(onlineState&&onlineState.id===id) onlineState.userId=session?.user?.id||null; });
     showOnlinePanel();
+    clockSelect.disabled=true;
     onlineNote('Reconnecting to online game…');
     location.hash='game='+id;
     subscribeOnline();
@@ -1318,7 +1407,9 @@
       try{ onlineState.channel?.unsubscribe(); }catch(e){}
       clearInterval(onlineState.pollTimer);
     }
+    stopOnlineClock();
     onlineState=null;
+    clockSelect.disabled=false;
     hideOnlinePanel();
     try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
     onlineNote('Create an online game, then send the invite link to a friend on another device.');
