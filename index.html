@@ -190,6 +190,14 @@
       </select>
     </div>
     <div class="field">
+      <label for="levelSelect">Level</label>
+      <select id="levelSelect">
+        <option value="1">Casual</option>
+        <option value="2" selected>Club</option>
+        <option value="3">Sharp</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="verbositySelect">Narration</label>
       <select id="verbositySelect">
         <option value="terse" selected>Terse</option>
@@ -234,6 +242,7 @@
   let boardHidden = true;
   let mode = 'computer';
   let humanColor = 'w';
+  let searchDepth = 2;
   let verbosity = 'terse';
   let voiceOn = true;
   let handsFree = true;
@@ -263,7 +272,7 @@
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
-        boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'),
+        boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
         handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner');
 
@@ -398,16 +407,46 @@
       setTimeout(()=>{ if(g===generation && !gameOver) computerMove(); },650);
     }
   }
+  // Alpha-beta minimax over material + pawn advancement, ported from
+  // Giga Chess's search()/value() so both chess projects play at
+  // comparable strength. Depth comes from the Level select.
+  function evaluate(g){
+    const board=g.board();
+    let score=0;
+    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
+      const cell=board[r][f]; if(!cell) continue;
+      let v=PIECE_VALUE[cell.type];
+      if(cell.type==='p'){ v+=(cell.color==='w'?r:7-r)*0.04; }
+      score+=cell.color==='w'?v:-v;
+    }
+    return score;
+  }
+  function searchScore(g,depth,alpha,beta,maximizing){
+    if(depth===0||g.game_over()) return evaluate(g);
+    const moves=g.moves();
+    let best=maximizing?-Infinity:Infinity;
+    for(const m of moves){
+      g.move(m);
+      const score=searchScore(g,depth-1,alpha,beta,!maximizing);
+      g.undo();
+      if(maximizing){ best=Math.max(best,score); alpha=Math.max(alpha,best); }
+      else{ best=Math.min(best,score); beta=Math.min(beta,best); }
+      if(beta<=alpha) break;
+    }
+    return best;
+  }
   function computerMove(){
     const moves=game.moves({verbose:true});
     if(!moves.length) return;
-    let pick=null;
-    for(const c of moves){ const cl=new Chess(game.fen()); cl.move(c.san); if(cl.in_checkmate()){ pick=c; break; } }
-    if(!pick){
-      const caps=moves.filter(m=>m.captured);
-      pick=(caps.length&&Math.random()<0.6)?caps[Math.random()*caps.length|0]:moves[Math.random()*moves.length|0];
+    const white=game.turn()==='w';
+    let best=null,bestScore=white?-Infinity:Infinity;
+    for(const m of moves){
+      game.move(m.san);
+      const score=searchScore(game,searchDepth-1,-Infinity,Infinity,!white);
+      game.undo();
+      if(white?score>bestScore:score<bestScore){ bestScore=score; best=m; }
     }
-    applyMove(pick);
+    applyMove(best);
   }
 
   // ===============================================================
@@ -839,6 +878,7 @@
   // Settings + boot
   // ===============================================================
   modeSelect.addEventListener('change',()=>{ mode=modeSelect.value; startNewGame(); });
+  levelSelect.addEventListener('change',()=>{ searchDepth=+levelSelect.value; });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; });
   voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); });
   newGameBtn.addEventListener('click',startNewGame);
