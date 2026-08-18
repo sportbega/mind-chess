@@ -91,7 +91,7 @@
   .transcript .heard{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-style:italic}
 
   .textrow{display:flex;gap:8px}
-  .textrow input[type=text]{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 16px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px}
+  .textrow input[type=text]{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 16px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px}
   .textrow input[type=text]::placeholder{color:var(--text-dim)}
 
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
@@ -167,7 +167,7 @@
   <div class="transcript" id="transcript" aria-live="polite"></div>
 
   <form class="textrow" id="textForm">
-    <input type="text" id="textInput" placeholder="Or type a move — &quot;knight f3&quot;, &quot;e4&quot;, &quot;show board&quot;" autocomplete="off" />
+    <input type="text" id="textInput" placeholder="Or type a move — &quot;knight f3&quot;, &quot;e4&quot;, &quot;show board&quot;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
     <button class="btn primary" type="submit">Send</button>
   </form>
 
@@ -883,7 +883,12 @@
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR){
       micBtn.disabled=true;
-      note('Speech recognition needs Chrome or Edge. Use the text box.','err');
+      // Every iOS browser (Safari, Chrome, Edge) runs on WebKit, which has no
+      // SpeechRecognition — "switch browsers" is not a fix there like it is on desktop.
+      const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+      note(isIOS
+        ? 'iOS doesn’t support voice input in any browser (Apple limitation). Use the text box below.'
+        : 'Speech recognition needs Chrome or Edge. Use the text box.','err');
       return;
     }
     recognition=new SR();
