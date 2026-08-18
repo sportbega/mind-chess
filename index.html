@@ -1436,7 +1436,18 @@
     try{
       onlineNote('Joining online game…');
       const user=await onlineUser();
-      const r=await db.rpc('join_mind_chess_game',{game_id:gameId});
+      // Right after signInAnonymously(), the new session can take a moment
+      // to actually attach to the client's outgoing auth header — firing the
+      // join RPC too early makes auth.uid() read null server-side. The RPC
+      // now raises a real 'Not authenticated' error in that case (see
+      // OUR-51) instead of silently no-op'ing, so retry a couple of times
+      // with a short backoff rather than surfacing a false failure.
+      let r;
+      for(let attempt=0;attempt<4;attempt++){
+        r=await db.rpc('join_mind_chess_game',{game_id:gameId});
+        if(!r.error || !/not authenticated/i.test(r.error.message||'')) break;
+        await new Promise(res=>setTimeout(res,250*(attempt+1)));
+      }
       if(r.error) throw r.error;
       const row=r.data;
       if(!row) throw new Error('Game not found');
