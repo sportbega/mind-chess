@@ -277,3 +277,12 @@ Audited every other `warn()` call site for the same shape (a message that restat
 **Verified in-browser:** monkey-patched `speechSynthesis.speak` to record calls, submitted an unparseable string ("gibberish nonsense not a move") through the text-input path (which reaches the same `route()`/`execPlan()` code as voice), and confirmed the transcript still logged *"I didn't catch a move. Try 'knight to f3', 'e4', or 'castle kingside'."* while `speak` was never invoked. Did not have a live Windows/Edge environment to reproduce the actual loop end-to-end — this fix removes the mechanism described (spoken suggestion re-entering the mic), so the next real Edge/Windows session should confirm the loop is gone in practice.
 
 OUR-58 closed. Working tree: `index.html`, this DEVLOG entry.
+
+**Day 2.8 wrap.** Two more threads closed out the same sitting, no new code beyond the two commits above:
+
+- **Edge/Windows deprioritized.** User tried the live URL again after the fix, reported Edge on Windows "still a little buggy" but Chrome "works really good," and made the call to stop chasing Edge-specific polish for now rather than debug blind without a concrete repro. Chrome is the primary target going forward; revisit only if a tester reports something specific.
+- **Invite-link / play-vs-human already exists — no build needed.** User asked for a Giga-Chess-style invite link; turns out Mind Chess already has one (Opponent → "Play online" → "Create online game" → shareable `#game=<uuid>` link + "Copy invite link" button, same pattern as Giga Chess, built in an earlier session along with a lobby and spectator mode). Verified live in-browser: created a real game, confirmed the hash link and "Waiting for an opponent" status. Nothing to add here; this was a "does X exist" question, not a feature gap.
+- **Supabase test-row cleanup — attempted, blocked, not done.** That verification (and one earlier from Day 2.7) left two harmless empty-`pgn` waiting rows in `mind_chess_games` (`fd8c349b…` from this session, `74dee581…` from Day 2.7). User approved deleting them, but the direct `DELETE` was blocked by this environment's auto-mode safety classifier (destructive-action guard), not by the user. **Still sitting in the table — flag for a future session or for the user to run directly**, e.g.:
+  `delete from mind_chess_games where id in ('fd8c349b-253d-454d-ac48-970c18d52600', '74dee581-c7bf-4545-9586-eb3732db2708');`
+
+No open Linear issues going into the next session. Working tree clean.
