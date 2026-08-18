@@ -137,3 +137,15 @@ Given the tab/session fragility, final verification used one real connected tab 
 Both issues closed. Two more harmless test rows added to the shared `mind_chess_games` table from this session's SQL-simulated-opponent testing (same guardrail as Day 2.1/2.3 — deletion blocked as a write against shared infrastructure) — the cleanup backlog for that table is now three sessions deep, worth an actual cleanup pass sometime rather than continuing to let it grow.
 
 Working tree clean.
+
+## 2026-08-18 — Day 2.4.1: more clock presets + custom time picker
+
+Small follow-up in the same sitting: 20 min and 30 min added as fixed presets alongside the existing 3/5/10, plus a "Custom…" option with +/-1 min stepper buttons for dialing in any starting time (clamped 1–180 min).
+
+Clarified the ask first rather than guessing — "custom" here means a custom *starting time* (any total minutes beyond the fixed list), not a Fischer-style per-move increment; the latter would have meant touching the move-apply/clock-deduction path in all three modes, this is scoped to settings UI only.
+
+Kept `clockPreset` as the single source of truth (already just an integer number of minutes, used unchanged by local/vs-computer/online clock logic) rather than adding a parallel "custom mode" flag — a `CLOCK_FIXED` set just distinguishes "matches one of the dedicated `<option>`s" from "custom", so a `syncClockUI()` helper can correctly show either the matching preset or the Custom stepper (with the right minute value) from `clockPreset` alone. That helper does double duty: it runs both when the select changes and when `loadState()` restores a saved `clockPreset` on reload, since a saved custom value (e.g. 16) won't match any fixed `<option>` and needs the stepper shown instead of a blank-looking select.
+
+Verified in-browser: 20/30 min presets tick down correctly; Custom stepper's +/-1 buttons adjust and clamp correctly at the 1 min and 180 min bounds; a custom value (16 min) survived a reload with the select correctly showing "Custom…", the stepper showing "16 min", and the clock continuing to tick from the right point; switching from Custom back to a fixed preset correctly hides the stepper; the stepper buttons correctly disable alongside the Clock select while an online game is connected.
+
+Working tree clean.

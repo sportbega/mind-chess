@@ -127,6 +127,9 @@
   .field{display:flex;flex-direction:column;gap:4px}
   .field label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
   select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-family:'Inter',sans-serif}
+  .stepper{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .stepper .btn{padding:4px 12px;font-size:14px;line-height:1;font-weight:600}
+  .stepper span{font-size:13px;min-width:44px;text-align:center}
   .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);padding-bottom:6px}
   .spacer{flex:1}
 
@@ -241,7 +244,15 @@
         <option value="3">3 min</option>
         <option value="5">5 min</option>
         <option value="10">10 min</option>
+        <option value="20">20 min</option>
+        <option value="30">30 min</option>
+        <option value="custom">Custom…</option>
       </select>
+      <div class="stepper" id="customClockRow" style="display:none">
+        <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
+        <span id="customClockLabel">15 min</span>
+        <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
+      </div>
     </div>
     <div class="field">
       <label for="boardThemeSelect">Board</label>
@@ -318,6 +329,8 @@
   let clockPreset = 0;         // minutes per side, 0 = off
   let whiteMs = 0, blackMs = 0;
   let clockTimer = null;
+  let customClockMin = 15;     // remembers the last value dialed in via the Custom stepper
+  const CLOCK_FIXED = new Set([0,3,5,10,20,30]); // values with a dedicated <option>; anything else is "Custom"
 
   const PIECE_NAME = {p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
   const PIECE_VALUE = {p:1,n:3,b:3,r:5,q:9,k:0};
@@ -342,6 +355,8 @@
         verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
+        customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
+        customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
         handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
         copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn');
@@ -486,11 +501,37 @@
     whiteMs=blackMs=clockPreset*60000;
     startClock();
   }
+  // Reflects clockPreset onto the select + custom stepper — needed both
+  // after a user picks "Custom…" and after restoring a saved custom value
+  // on reload (which won't match any of the select's fixed <option>s).
+  function syncClockUI(){
+    if(CLOCK_FIXED.has(clockPreset)){
+      clockSelect.value=String(clockPreset);
+      customClockRow.style.display='none';
+    }else{
+      customClockMin=clockPreset;
+      clockSelect.value='custom';
+      customClockLabel.textContent=customClockMin+' min';
+      customClockRow.style.display='';
+    }
+    customClockMinus.disabled=customClockMin<=1;
+    customClockPlus.disabled=customClockMin>=180;
+  }
   clockSelect.addEventListener('change',()=>{
-    clockPreset=+clockSelect.value;
+    clockPreset=(clockSelect.value==='custom')?customClockMin:+clockSelect.value;
+    syncClockUI();
     resetClock();
     renderAll();
   });
+  function nudgeCustomClock(delta){
+    customClockMin=Math.max(1,Math.min(180,customClockMin+delta));
+    clockPreset=customClockMin;
+    syncClockUI();
+    resetClock();
+    renderAll();
+  }
+  customClockMinus.addEventListener('click',()=>nudgeCustomClock(-1));
+  customClockPlus.addEventListener('click',()=>nudgeCustomClock(1));
   window.addEventListener('beforeunload',saveState);
 
   // ===============================================================
@@ -1343,7 +1384,7 @@
         clockPreset:preset,whiteMs:initMs,blackMs:initMs,lastMoveAt:Date.now()};
       location.hash='game='+r.data.id;
       subscribeOnline();
-      clockSelect.disabled=true;
+      clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
       transcript.innerHTML='';
       log('Board','Online game created. You’re White.'+(preset?(' Clock: '+preset+' min per side.'):'')+' Copy the invite link and send it to your opponent.');
       setBoardHidden(true);
@@ -1376,7 +1417,7 @@
       loadOnlinePgn(row.pgn||'');
       location.hash='game='+row.id;
       subscribeOnline();
-      clockSelect.disabled=true;
+      clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
       startOnlineClock();
       onlineNote(describeOnlineStatus());
     }catch(err){
@@ -1394,7 +1435,7 @@
       userId:null,whiteId:null,blackId:null,clockPreset:0,whiteMs:0,blackMs:0,lastMoveAt:Date.now()};
     db.auth.getSession().then(({data:{session}})=>{ if(onlineState&&onlineState.id===id) onlineState.userId=session?.user?.id||null; });
     showOnlinePanel();
-    clockSelect.disabled=true;
+    clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
     onlineNote('Reconnecting to online game…');
     location.hash='game='+id;
     subscribeOnline();
@@ -1410,6 +1451,7 @@
     stopOnlineClock();
     onlineState=null;
     clockSelect.disabled=false;
+    syncClockUI();
     hideOnlinePanel();
     try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
     onlineNote('Create an online game, then send the invite link to a friend on another device.');
@@ -1487,7 +1529,7 @@
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
-      clockPreset=saved.clockPreset||0; clockSelect.value=String(clockPreset);
+      clockPreset=saved.clockPreset||0; syncClockUI();
       whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
         mode='online'; modeSelect.value='online';
