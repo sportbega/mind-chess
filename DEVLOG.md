@@ -261,3 +261,7 @@ Live at **https://sportbega.github.io/mind-chess/**. Called out to the user befo
 One incidental win: HTTPS hosting means testers on Chrome/Edge get *real* voice input, which local `file://` testing could never exercise.
 
 Working tree: `README.md`, `DEVLOG.md`, `.nojekyll` (new file).
+
+**Day 2.7 wrap.** User tried the live URL themselves: confirmed it works well in Chrome on Mac, but hit unspecified issues in Edge on Windows. No details gathered yet — deliberately left untriaged rather than guessing, filed as OUR-58 (Backlog) for Day 2.8 to reproduce and fix. Next session should start there.
+
+Working tree clean.
