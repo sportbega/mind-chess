@@ -1386,7 +1386,16 @@
   async function pollOnline(){
     if(!onlineActive()) return;
     const r=await db.from('mind_chess_games').select('*').eq('id',onlineState.id).single();
-    if(!r.error) receiveOnline(r.data);
+    if(!r.error){ receiveOnline(r.data); return; }
+    // PGRST116 = .single() matched zero rows — the row is gone for good
+    // (deleted, or this reconnect is stale), not a transient network blip.
+    // Without this, a dead reconnect polls silently forever every 2s with
+    // no way for the user to escape "Reconnecting to online game…".
+    if(r.error.code==='PGRST116'){
+      leaveOnline(); mode='computer'; modeSelect.value='computer';
+      log('System','This online game is no longer available — switched to Vs. computer.');
+      saveState();
+    }
   }
 
   function subscribeOnline(){

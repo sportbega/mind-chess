@@ -233,3 +233,17 @@ Picked up the one thread that survived Day 2.5 clean: real iOS Safari verificati
 Linear had nothing open going into this session and still doesn't — this was a verification pass, not a code change, so no issue was filed or closed. README's "Next ideas" section updated to reflect the confirmed result instead of a blocked TODO. No git commit needed (nothing in the working tree changed except docs — see next commit).
 
 Working tree: README.md and this DEVLOG entry are the only changes.
+
+## 2026-08-18 — Day 2.7: play-test triage + Supabase cleanup check
+
+No queued thread going into this session (Day 2.6 closed the last open item), so this was a fresh-direction sitting: a play-test/bug-triage pass plus a check on the accumulated Supabase test-row cleanup flagged since Day 2.4.
+
+**Found and fixed a real bug during play-testing, not a contrived one:** this session's own browser tab had a leftover `mind-chess-save-v1` localStorage entry from earlier testing, pointing at an online game row (`2aaea12c-...`) that no longer exists. Reloading with that state present left the UI stuck on "Reconnecting to online game…" forever — `pollOnline()`'s `.single()` query returns `PGRST116` ("0 rows") for a dead row, and the function silently swallowed *any* error (`if(!r.error) receiveOnline(...)`, no else branch), so it just kept polling every 2s indefinitely with no console-visible message and no UI escape route besides manually clearing localStorage. Root-caused by inspecting the actual PostgREST error shape directly (`code: 'PGRST116', details: 'The result contains 0 rows'`) via a scratch Supabase client in the page console, rather than guessing.
+
+Fixed `pollOnline()` to special-case `PGRST116` specifically (not a blanket catch-all, so a real transient network blip still retries silently as before): leaves online mode, switches to Vs. computer, logs a visible "This online game is no longer available — switched to Vs. computer." message, and calls `saveState()` so the reset actually persists — without that last part, the next reload would've repeated the exact same dead-reconnect-then-recover cycle forever, just non-silently instead of silently. Filed and closed OUR-56 for this.
+
+**Verified in-browser:** reproduced the stuck state (screenshot showed "Reconnecting to online game…" with mismatched Rematch/Stop-watching buttons both visible, real 406 network errors piling up every 2s), confirmed the fix recovers cleanly with the new log message and `mode`/`onlineId` correctly reset in localStorage, and confirmed the normal vs-computer path is unaffected (played `1.e4 Nc6`, computer replied correctly, board reveal/hide toggled correctly, no console errors). One tool-usage note: the Browser preview tab was still serving a cached copy of `index.html` after the edit even after a plain reload — a cache-busting query string (`?cb=N`) forced a fresh fetch each time; worth remembering for future sessions editing this project live in the preview pane.
+
+**Supabase cleanup check — nothing to clean up.** Queried `mind_chess_games` directly: 0 rows. The "three sessions deep" backlog of empty-pgn test rows flagged since Day 2.4 is gone — either already cleaned up outside of what's tracked here, or never actually landed as described. Table is empty and RLS/schema are unchanged from Day 2.4/2.5.
+
+Working tree: `index.html` only.
