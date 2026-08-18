@@ -21,7 +21,7 @@ Day 2 — promoted from three prototype iterations (see git history / `Downloads
 - Voice input with a constrained-vocabulary matcher (scores speech alternatives against the actual legal move list)
 - Text input fallback
 - Blindfold mode: board hidden by default, toggle to reveal
-- Vs. computer — alpha-beta minimax over material + pawn advancement, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s engine, 3 depth levels (Casual/Club/Sharp), plus a "Master" level backed by real Stockfish — or pass-and-play
+- Vs. computer — alpha-beta minimax over material + pawn advancement + a small knight/bishop centrality bonus, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s engine, 3 depth levels (Casual/Club/Sharp), plus a "Master" level backed by real Stockfish — or pass-and-play
 - Clock — optional per-side time control (3/5/10/20/30 min presets, or "Custom…" with +/-1 min stepper buttons for any starting time from 1–180 min), silent by default in blindfold mode except for the flag-fall announcement; works vs-computer, pass-and-play, and online. Online clocks are synced through the shared game row (remaining ms + a `last_move_at` anchor) rather than each peer ticking an independent local timer, so both sides agree without any periodic sync write.
 - Disambiguation / promotion prompts when a spoken move is ambiguous
 - Move narration at terse / standard / verbose levels, speech synthesis toggle

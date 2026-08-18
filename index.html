@@ -316,6 +316,7 @@
   let voiceOn = true;
   let handsFree = true;
   let lastMove = null;
+  let lastComputerMove = null; // {from,to} the engine itself last played — used to discourage immediately undoing it
   let lastNarration = '';
   let speechGeneration = 0;
   let pendingAction = null;
@@ -640,6 +641,12 @@
       const cell=board[r][f]; if(!cell) continue;
       let v=PIECE_VALUE[cell.type];
       if(cell.type==='p'){ v+=(cell.color==='w'?r:7-r)*0.04; }
+      // Small centrality bonus for knights/bishops. Without this, a knight
+      // move that doesn't change material is a dead tie with every other
+      // knight move at shallow depth, so Casual/Club had nothing to prefer
+      // a developed knight over shuffling it back where it came from.
+      else if(cell.type==='n') v+=(1-Math.max(Math.abs(f-3.5),Math.abs(r-3.5))/3.5)*0.3;
+      else if(cell.type==='b') v+=(1-Math.max(Math.abs(f-3.5),Math.abs(r-3.5))/3.5)*0.15;
       score+=cell.color==='w'?v:-v;
     }
     return score;
@@ -665,10 +672,17 @@
     let best=null,bestScore=white?-Infinity:Infinity;
     for(const m of moves){
       game.move(m.san);
-      const score=searchScore(game,searchDepth-1,-Infinity,Infinity,!white);
+      let score=searchScore(game,searchDepth-1,-Infinity,Infinity,!white);
       game.undo();
+      // Undoing the engine's own last move is legal but usually pointless —
+      // nudge it away from an exact reversal unless that's genuinely the
+      // best-scoring option by a real margin, not just a tie.
+      if(lastComputerMove&&m.from===lastComputerMove.to&&m.to===lastComputerMove.from){
+        score+=white?-0.15:0.15;
+      }
       if(white?score>bestScore:score<bestScore){ bestScore=score; best=m; }
     }
+    lastComputerMove={from:best.from,to:best.to};
     applyMove(best);
   }
 
@@ -695,6 +709,11 @@
       };
       worker.postMessage('uci');
     });
+    // A rejected promise would otherwise be cached here forever — one
+    // transient load failure (slow network, a hiccup) would permanently
+    // downgrade "Master" to the weak custom engine for the rest of the
+    // session, with no further attempt to load the real engine again.
+    sfInitPromise.catch(()=>{ sfInitPromise=null; });
     return sfInitPromise;
   }
   function stockfishBestMove(fen, movetimeMs){
@@ -734,6 +753,13 @@
   const NUMWORD={one:'1',won:'1',two:'2',too:'2',three:'3',tree:'3',four:'4',for:'4',fore:'4',
                  five:'5',six:'6',sicks:'6',seven:'7',eight:'8',ate:'8'};
   const NATO_RE=new RegExp('\\b('+Object.keys(NATO).join('|')+')\\s*(?:('+Object.keys(NUMWORD).join('|')+')|([1-8]))\\b','g');
+  // Casual letter homophones ("ay three", "jay 4") \u2014 Chrome's recognizer often
+  // spells the number out as a word rather than a digit, so this needs the
+  // same digit-OR-number-word alternation NATO_RE already gets below; it used
+  // to only match a literal digit, silently missing "ay three"/"eh three" etc.
+  const HOMO={eat:'e',heat:'e',eaten:'e',bee:'b',be:'b',see:'c',sea:'c',cee:'c',dee:'d',
+              gee:'g',jee:'g',jay:'g',aitch:'h',age:'h',ache:'h',ay:'a',eh:'a',ef:'f',eff:'f'};
+  const HOMO_RE=new RegExp('\\b('+Object.keys(HOMO).join('|')+')\\s*(?:('+Object.keys(NUMWORD).join('|')+')|([1-8]))\\b','g');
 
   function preprocess(t){
     t=t.replace(/([a-h])[-\u2013 ]([1-8])\b/g,'$1$2');
@@ -741,10 +767,8 @@
     t=t.replace(/\ba\s*for\b/g,'a4');
     // NATO phonetic file + digit OR spoken number word ("echo 4", "echo four")
     t=t.replace(NATO_RE,(_,w,numw,dig)=>NATO[w]+(dig||NUMWORD[numw]));
-    // letter homophones, only when a digit follows
-    const homo={eat:'e',heat:'e',eaten:'e',bee:'b',be:'b',see:'c',sea:'c',cee:'c',dee:'d',
-                gee:'g',jee:'g',jay:'g',aitch:'h',age:'h',ache:'h',ay:'a',eh:'a',ef:'f',eff:'f'};
-    Object.keys(homo).forEach(w=>{ t=t.replace(new RegExp('\\b'+w+'\\s*([1-8])\\b','g'),homo[w]+'$1'); });
+    // letter homophones + digit OR spoken number word ("ay 3", "ay three")
+    t=t.replace(HOMO_RE,(_,w,numw,dig)=>HOMO[w]+(dig||NUMWORD[numw]));
     // number words after a file letter ("e four" -> e4)
     Object.keys(NUMWORD).forEach(w=>{ t=t.replace(new RegExp('\\b([a-h])\\s*'+w+'\\b','g'),'$1'+NUMWORD[w]); });
     return t;
@@ -1000,6 +1024,7 @@
     if(mode==='computer' && game.turn()!==humanColor) game.undo();  // undo the pair
     gameOver=false; pendingAction=null;
     lastMove=game.history({verbose:true}).slice(-1)[0]||null;
+    lastComputerMove=null;
     startClock();
     renderAll();
     speak('Taken back. '+(game.turn()==='w'?'White':'Black')+' to move.');
@@ -1495,6 +1520,7 @@
   function startNewGame(){
     generation++;
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
+    lastComputerMove=null;
     resetClock();
     setBoardHidden(true);
     transcript.innerHTML='';
