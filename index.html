@@ -20,6 +20,14 @@
     --piece-dark-stroke:transparent; --piece-shadow:0 2px 3px #0007;
     --radius:14px;
   }
+  /* Board/piece themes, ported from Giga Chess's data-attribute system. */
+  :root[data-board="green"]{--wood:#263d2b;--wood-2:#54775b;--sq-light:#eeecd2;--sq-dark:#779556;--accent:#b58863}
+  :root[data-board="blue"]{--wood:#1f354d;--wood-2:#476d8d;--sq-light:#dce9ef;--sq-dark:#7198b6;--accent:#d27d46}
+  :root[data-board="midnight"]{--wood:#181a28;--wood-2:#383d5b;--sq-light:#c8cdd7;--sq-dark:#667085;--accent:#e0ad57}
+  :root[data-board="rose"]{--wood:#4b2931;--wood-2:#81515d;--sq-light:#f3dfd5;--sq-dark:#bb7f83;--accent:#7d3b4a}
+  :root[data-pieces="ivory"]{--piece-light:#fff9e8;--piece-dark:#4a3927;--piece-light-stroke:#725b3e;--piece-dark-stroke:#efe2c4;--piece-shadow:0 2px 2px #0006}
+  :root[data-pieces="midnight"]{--piece-light:#e8f1fa;--piece-dark:#111827;--piece-light-stroke:#1f2937;--piece-dark-stroke:#aebfd1;--piece-shadow:0 2px 3px #0009}
+  :root[data-pieces="gold"]{--piece-light:#f6d37a;--piece-dark:#4c2d0a;--piece-light-stroke:#765112;--piece-dark-stroke:#dcae46;--piece-shadow:0 2px 3px #0009}
   @media (prefers-reduced-motion: reduce){ *{animation-duration:.001ms !important;transition-duration:.001ms !important} }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -205,6 +213,25 @@
         <option value="verbose">Verbose</option>
       </select>
     </div>
+    <div class="field">
+      <label for="boardThemeSelect">Board</label>
+      <select id="boardThemeSelect">
+        <option value="wood" selected>Walnut</option>
+        <option value="green">Tournament Green</option>
+        <option value="blue">Ocean Blue</option>
+        <option value="midnight">Midnight</option>
+        <option value="rose">Rosewood</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="pieceThemeSelect">Pieces</label>
+      <select id="pieceThemeSelect">
+        <option value="classic" selected>Classic</option>
+        <option value="ivory">Ivory &amp; Onyx</option>
+        <option value="midnight">Midnight</option>
+        <option value="gold">Gold</option>
+      </select>
+    </div>
     <div class="spacer"></div>
     <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
     <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
@@ -274,6 +301,7 @@
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
+        boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner');
 
   // ===============================================================
@@ -350,7 +378,7 @@
     statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
     turnPill.textContent=gameOver?'Game over':t+' to move';
   }
-  function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); }
+  function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
   function setBoardHidden(h){
     boardHidden=h;
@@ -358,8 +386,24 @@
     boardToggleBtn.textContent=h?'Reveal board':'Hide board';
     if(!h) renderBoard();
     updateStatus();
+    saveState();
   }
   boardToggleBtn.addEventListener('click',()=>setBoardHidden(!boardHidden));
+
+  // ===============================================================
+  // Board/piece theme — ported from Giga Chess's applyTheme()
+  // ===============================================================
+  function applyTheme(){
+    const root=document.documentElement;
+    root.dataset.board=boardThemeSelect.value;
+    root.dataset.pieces=pieceThemeSelect.value;
+    try{
+      localStorage.setItem('mind-chess-board-theme',boardThemeSelect.value);
+      localStorage.setItem('mind-chess-piece-theme',pieceThemeSelect.value);
+    }catch(e){}
+  }
+  boardThemeSelect.addEventListener('change',applyTheme);
+  pieceThemeSelect.addEventListener('change',applyTheme);
 
   // ===============================================================
   // Narration
@@ -393,12 +437,46 @@
   }
 
   // ===============================================================
+  // Move/capture sound \u2014 ported from Giga Chess's sound()/woodFallback().
+  // Gives instant confirmation a spoken move registered, ahead of the
+  // narration's own ~120ms startup delay.
+  // ===============================================================
+  const MOVE_SOUND_URL='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3';
+  const CAPTURE_SOUND_URL='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3';
+  function woodFallback(capture){
+    try{
+      const C=window.AudioContext||window.webkitAudioContext;
+      const ctx=woodFallback.ctx||(woodFallback.ctx=new C());
+      const now=ctx.currentTime, duration=capture?.085:.06;
+      const size=Math.ceil(ctx.sampleRate*duration);
+      const buffer=ctx.createBuffer(1,size,ctx.sampleRate), data=buffer.getChannelData(0);
+      for(let i=0;i<size;i++) data[i]=(Math.random()*2-1)*(1-i/size);
+      const tap=ctx.createBufferSource(); tap.buffer=buffer;
+      const filter=ctx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.value=capture?850:1250; filter.Q.value=1.1;
+      const gain=ctx.createGain();
+      gain.gain.setValueAtTime(.0001,now);
+      gain.gain.exponentialRampToValueAtTime(capture?.253:.1725,now+.003);
+      gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+      tap.connect(filter).connect(gain).connect(ctx.destination);
+      tap.start(now); tap.stop(now+duration);
+    }catch(e){}
+  }
+  function playMoveSound(capture){
+    try{
+      const audio=new Audio(capture?CAPTURE_SOUND_URL:MOVE_SOUND_URL);
+      audio.preload='auto'; audio.volume=.92;
+      audio.play().catch(()=>woodFallback(capture));
+    }catch(e){ woodFallback(capture); }
+  }
+
+  // ===============================================================
   // Applying moves
   // ===============================================================
   function applyMove(spec){
     const applied=game.move({from:spec.from,to:spec.to,promotion:spec.promotion});
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
+    playMoveSound(!!applied.captured);
     speak(describeMove(applied,verbosity)+endSuffix());
     if(game.game_over()) gameOver=true;
     renderAll();
@@ -878,9 +956,9 @@
   // Settings + boot
   // ===============================================================
   modeSelect.addEventListener('change',()=>{ mode=modeSelect.value; startNewGame(); });
-  levelSelect.addEventListener('change',()=>{ searchDepth=+levelSelect.value; });
-  verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; });
-  voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); });
+  levelSelect.addEventListener('change',()=>{ searchDepth=+levelSelect.value; saveState(); });
+  verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
+  voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); saveState(); });
   newGameBtn.addEventListener('click',startNewGame);
 
   function startNewGame(){
@@ -892,10 +970,56 @@
     renderAll();
   }
 
+  // ===============================================================
+  // Persistence — save FEN/history + settings so a reload resumes the
+  // game in progress. Giga Chess only persists preferences, not game
+  // state, so this pattern is Mind Chess's own.
+  // ===============================================================
+  const SAVE_KEY='mind-chess-save-v1';
+  function saveState(){
+    try{
+      localStorage.setItem(SAVE_KEY,JSON.stringify({
+        pgn:game.pgn(),mode,searchDepth,verbosity,voiceOn,handsFree,humanColor,boardHidden
+      }));
+    }catch(e){}
+  }
+  function loadState(){
+    let raw;
+    try{ raw=localStorage.getItem(SAVE_KEY); }catch(e){ return false; }
+    if(!raw) return false;
+    let saved;
+    try{ saved=JSON.parse(raw); }catch(e){ return false; }
+    try{
+      if(saved.pgn) game.load_pgn(saved.pgn);
+      mode=saved.mode||'computer'; modeSelect.value=mode;
+      searchDepth=saved.searchDepth||2; levelSelect.value=String(searchDepth);
+      verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
+      voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
+      handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
+      humanColor=saved.humanColor||'w';
+      lastMove=game.history({verbose:true}).slice(-1)[0]||null;
+      gameOver=game.game_over();
+      pendingAction=null;
+      transcript.innerHTML='';
+      log('Board',game.history().length
+        ? 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.'
+        : 'Restored settings. New game.');
+      setBoardHidden(saved.boardHidden!==false);
+      renderAll();
+      return true;
+    }catch(e){ return false; }
+  }
+
   if(location.protocol==='file:') originBanner.classList.add('show');
 
+  try{
+    boardThemeSelect.value=localStorage.getItem('mind-chess-board-theme')||'wood';
+    pieceThemeSelect.value=localStorage.getItem('mind-chess-piece-theme')||'classic';
+  }catch(e){}
+  applyTheme();
+
   setupRecognition();
-  startNewGame();
+  if(!loadState()) startNewGame();
 })();
 </script>
 </body>

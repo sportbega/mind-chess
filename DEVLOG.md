@@ -29,3 +29,13 @@ Decisions:
 Replaced the random/greedy `computerMove()` with alpha-beta minimax (`searchScore()`) over a material + pawn-advancement `evaluate()`, ported from Giga Chess's algorithm onto chess.js. Added a Level select (Casual/Club/Sharp → search depth 1/2/3) next to the Opponent select.
 
 Verified in-browser at all three depths: legal, sensible replies (e.g. `1. e4 Nc6 2. Nf3 Nb4`), no lag even at Sharp/depth 3, no console errors. Closed OUR-39.
+
+## 2026-08-18 — OUR-40, OUR-41, OUR-42: persistence, theming, sound
+
+Three more in one sitting, all built and verified before closing:
+
+- **OUR-41 (theming):** ported Giga Chess's `data-board`/`data-pieces` CSS system, translated onto Mind Chess's own variable names (`--sq-light/dark` vs Giga's `--light/dark`, etc). Added Board/Pieces selects, persisted to localStorage. Verified: switched to Midnight board + Gold pieces, confirmed the board actually re-rendered with the new colors and survived a reload.
+- **OUR-42 (sound):** ported `sound()`/`woodFallback()` from Giga Chess unchanged in approach — hosted click/thud sample, synthesized WebAudio fallback if it fails to load. Wired into `applyMove()` ahead of the narration call.
+- **OUR-40 (persistence):** no existing pattern in Giga Chess to copy (it only persists preferences, not game state), so built from scratch: `game.pgn()` → localStorage on every `renderAll()`/`setBoardHidden()`/settings change, restored via `game.load_pgn()` on boot with a "Game restored" message in place of "New game." Verified: played `1. e4 Nc6`, reloaded, move strip and turn state came back intact.
+
+All three closed. Gotcha worth remembering: `index.html` writes a couple of apostrophes as a JS unicode escape sequence in the source rather than as the literal character — a find/replace edit that pastes in the rendered apostrophe glyph will silently fail to match. Isolate the surrounding line into its own edit rather than fighting the escape.

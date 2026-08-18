@@ -24,16 +24,15 @@ Day 1 — promoted from three prototype iterations (see git history / `Downloads
 - Vs. computer — alpha-beta minimax over material + pawn advancement, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s engine, 3 depth levels (Casual/Club/Sharp) — or pass-and-play
 - Disambiguation / promotion prompts when a spoken move is ambiguous
 - Move narration at terse / standard / verbose levels, speech synthesis toggle
-- Board visuals carry over the Giga Chess board lineage (wood frame, tournament square colors)
+- Board/piece theming, ported from Giga Chess — 5 board themes, 4 piece themes, persisted to localStorage
+- Move/capture sound effects, with a synthesized WebAudio fallback if the sample fails to load
+- Game state (position, history, settings) persists across reloads via localStorage
 
 See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 
 ## Next ideas
 
 Tracked in Linear (project "Mind Chess", team OUR):
-- Persist game state across reloads (OUR-40)
-- Board/piece theming, ported from Giga Chess (OUR-41)
-- Move/capture sound effects (OUR-42)
 - Clock — deliberately parked, not decided yet
 - Multiplayer — Giga Chess's Supabase realtime pattern would port cleanly if voice-to-voice remote play is ever wanted; not scoped now
 - Mobile mic UX pass
