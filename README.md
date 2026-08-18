@@ -37,7 +37,6 @@ See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 
 ## Next ideas
 
-Tracked in Linear (project "Mind Chess", team OUR):
-- Lobby / open-games list, spectator mode for online games
-- Real iOS Safari verification (blocked on this machine only having Xcode Command Line Tools, not the full Xcode the Simulator needs)
-- Online join-flow auth race: joining immediately after a fresh anonymous sign-in can occasionally fail to attach the new session to the join RPC call, leaving the game stuck on "waiting for opponent" even though the joiner's client thinks it succeeded (found during Day 2.4 testing, not fixed — pre-existing in `onlineUser()`/`joinOnline()`, unrelated to that session's changes)
+Tracked in Linear (project "Mind Chess", team OUR) — currently empty; nothing open as of Day 2.6.
+
+Real iOS Safari verification (Day 2.6, Simulator via iPhone 17 Pro / iOS 26.5): confirmed working — the iOS-specific no-`SpeechRecognition` message shows correctly (rather than the old wrong "switch to Chrome/Edge" text), text input has no auto-zoom or autocorrect mangling, moves apply and the computer opponent replies correctly, board reveal/hide and theming render cleanly at phone width, and game state (position + revealed/hidden state) survives a reload. Not covered: a real physical device, and voice input itself (Simulator has no mic/speech pipeline — Apple's WebKit limitation on iOS means this was never expected to work there anyway).

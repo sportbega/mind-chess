@@ -212,3 +212,24 @@ Verified in-browser end-to-end: created a game, confirmed it listed in the lobby
 Both issues closed (OUR-51, and a new OUR-55 filed and closed for the lobby/spectator work). Two harmless empty-`pgn` test rows accumulated in the shared `mind_chess_games` table from this session's testing — flagged for cleanup, not deleted without asking (consistent with the guardrail from prior sessions).
 
 Working tree clean.
+
+## 2026-08-18 — Day 2.6: real iOS Safari verification
+
+Picked up the one thread that survived Day 2.5 clean: real iOS Safari verification, blocked since Day 2.4 because this machine only had Xcode Command Line Tools, not the full Xcode the Simulator needs. All other threads (OUR-51, lobby/spectator) were closed in Day 2.5, so this was the only open item — user installed full Xcode between sessions (their own call, needed their password) and confirmed it was done at the start of this one.
+
+**Verified `xcode-select`/`xcodebuild`/`simctl` all work now** (Xcode 26.6), booted an iPhone 17 Pro (iOS 26.5) Simulator, attached the live panel, and served the app over the Mac's LAN IP (`python3 -m http.server 8934 --bind 0.0.0.0`, since `localhost` inside the Simulator refers to the Simulator itself, not the host Mac).
+
+**One tool-usage snag, not an app bug:** the Simulator control tool's tap coordinates are in *device points* (402×874 for this phone), not the screenshot's actual pixel dimensions — my first several taps used raw screenshot-pixel coordinates and silently landed nowhere (out of bounds, past the 874-point height). Recovered by converting visual position estimates to fractions of the screenshot and scaling to the 402×874 point space. Also mis-tapped the physical HOME button once while trying to submit the address bar, backgrounding Safari — recovered by reopening via `open_url` rather than hunting for the app icon.
+
+**Verified end-to-end, all correct:**
+- iOS-specific messaging: the no-`SpeechRecognition` fallback correctly shows "iOS doesn't support voice input in any browser (Apple limitation). Use the text box below." — not the old wrong "switch to Chrome or Edge" text that prompted OUR-43 originally.
+- Text input: typed "e4" with no auto-zoom on focus (font-size fix from OUR-43 holding) and no autocorrect mangling.
+- Move pipeline: `e4` applied correctly, computer replied `Nc6`, move log narrated both.
+- Board reveal/hide toggle renders correctly at phone width — board, pieces, and the full settings grid (Opponent/Level/Narration/Clock/Board/Pieces dropdowns + checkboxes) all fit cleanly with no horizontal overflow.
+- Reload persistence: reloading mid-game correctly restored the position, move history, and the revealed (not hidden) board state via localStorage.
+
+**Not covered by this pass, worth naming explicitly:** a real physical iPhone (Simulator only), and actual voice recognition (Simulator has no mic/speech pipeline to test against — moot anyway, since iOS WebKit doesn't implement `SpeechRecognition` at all, which is exactly what this messaging exists to explain).
+
+Linear had nothing open going into this session and still doesn't — this was a verification pass, not a code change, so no issue was filed or closed. README's "Next ideas" section updated to reflect the confirmed result instead of a blocked TODO. No git commit needed (nothing in the working tree changed except docs — see next commit).
+
+Working tree: README.md and this DEVLOG entry are the only changes.
