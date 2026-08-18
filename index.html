@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mind Chess — voice &amp; blindfold mode</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<style>
+  :root{
+    --bg:#12141a; --panel:#1b1e27; --panel-2:#232733; --line:#2c3140;
+    --text:#ede9e2; --text-dim:#9aa0ae;
+    --accent:#c9a25d; --accent-2:#5fa8a0; --danger:#c06b52; --ok:#7fb069;
+    /* Giga Chess board lineage: rigid geometry, walnut frame, high-contrast
+       tournament squares, and stable container-relative piece sizing. */
+    --wood:#39271c; --wood-2:#6a4933; --sq-light:#e8d9c0; --sq-dark:#9c7451;
+    --piece-light:#f7f1e4; --piece-dark:#1c140d; --piece-light-stroke:#2b2118;
+    --piece-dark-stroke:transparent; --piece-shadow:0 2px 3px #0007;
+    --radius:14px;
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation-duration:.001ms !important;transition-duration:.001ms !important} }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:radial-gradient(ellipse 900px 600px at 50% -10%,#1a1e29 0%,var(--bg) 55%);
+    color:var(--text); font-family:'Inter',system-ui,sans-serif; min-height:100vh;
+    padding:clamp(16px,4vw,40px); display:flex; justify-content:center;
+  }
+  .app{width:100%;max-width:720px;display:flex;flex-direction:column;gap:16px}
+
+  /* banner */
+  .banner{
+    display:none; background:rgba(192,107,82,.12); border:1px solid var(--danger);
+    border-radius:var(--radius); padding:12px 16px; font-size:13px; line-height:1.55; color:var(--text);
+  }
+  .banner.show{display:block}
+  .banner b{color:var(--danger)}
+  .banner code{font-family:'IBM Plex Mono',monospace;background:var(--panel-2);padding:1px 6px;border-radius:4px;font-size:12px}
+
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2);margin:0 0 4px}
+  h1{font-family:'Newsreader',serif;font-weight:500;font-style:italic;font-size:clamp(28px,5vw,38px);margin:0}
+  .status{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);margin-top:6px}
+
+  button{font-family:'Inter',sans-serif;cursor:pointer}
+  button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+  .btn{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:13px;font-weight:500;transition:border-color .15s,background .15s}
+  .btn:hover:not(:disabled){border-color:var(--accent-2)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#1b140a}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+
+  .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
+  .movestrip .num{color:var(--accent-2);margin-right:2px}
+  .movestrip .san{color:var(--text);margin-right:14px}
+  .movestrip .empty{font-style:italic}
+
+  .hero{display:flex;flex-direction:column;align-items:center;gap:12px;padding:26px 20px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);text-align:center}
+  .mic-wrap{position:relative;width:104px;height:104px;display:flex;align-items:center;justify-content:center}
+  .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--accent-2);opacity:0;transform:scale(.6)}
+  .mic-wrap.listening .ring{animation:ripple 1.6s ease-out infinite}
+  .mic-wrap.listening .ring:nth-child(2){animation-delay:.4s}
+  .mic-wrap.listening .ring:nth-child(3){animation-delay:.8s}
+  @keyframes ripple{0%{opacity:.55;transform:scale(.6)}100%{opacity:0;transform:scale(1.7)}}
+  #micBtn{position:relative;z-index:1;width:84px;height:84px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);color:var(--accent);display:flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s}
+  #micBtn:hover:not(:disabled){border-color:var(--accent)}
+  .mic-wrap.listening #micBtn{background:var(--accent-2);border-color:var(--accent-2);color:#0e2320}
+  #micBtn svg{width:30px;height:30px}
+  .hero .hint{font-size:13px;color:var(--text-dim);max-width:38ch;margin:0}
+  .hero .hint b{color:var(--text);font-weight:500}
+  .mic-note{font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0}
+  .mic-note.err{color:var(--danger)}
+  .mic-note.ok{color:var(--ok)}
+
+  .transcript{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;height:190px;overflow-y:auto;font-family:'Newsreader',serif;font-size:15px}
+  .transcript .line{margin:0 0 10px;line-height:1.45}
+  .transcript .line:last-child{margin-bottom:0}
+  .transcript .who{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-right:8px}
+  .transcript .who.you{color:var(--accent)}
+  .transcript .who.board{color:var(--accent-2)}
+  .transcript .who.system{color:var(--danger)}
+  .transcript .heard{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-style:italic}
+
+  .textrow{display:flex;gap:8px}
+  .textrow input[type=text]{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 16px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px}
+  .textrow input[type=text]::placeholder{color:var(--text-dim)}
+
+  .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
+  .board-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .board-head h2{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0;font-weight:500}
+  .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
+  .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
+  .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
+  .board-col{flex:1;min-width:0;container-type:inline-size}
+  .board-grid{width:100%;max-width:680px;aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
+  .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,70px)!important;line-height:1;user-select:none}
+  .sq.light{background:var(--sq-light)}
+  .sq.dark{background:var(--sq-dark)}
+  /* solid glyphs for both sides, separated by fill + stroke so both read on any square */
+  .sq.white-piece{color:var(--piece-light);-webkit-text-stroke:1.3px var(--piece-light-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
+  .sq.black-piece{color:var(--piece-dark);-webkit-text-stroke:1px var(--piece-dark-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
+  .sq.last{background-color:#cbb87c!important;box-shadow:none}
+  .sq.checked{box-shadow:inset 0 0 0 2px var(--danger)}
+  .files{display:grid;grid-template-columns:repeat(8,1fr);font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center}
+
+  .board-veil{position:absolute;inset:0;border-radius:var(--radius);background:rgba(18,20,26,.9);backdrop-filter:blur(6px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px}
+  .board-veil svg{width:34px;height:34px;color:var(--accent-2);opacity:.8}
+  .board-veil p{font-size:13px;color:var(--text-dim);max-width:30ch;margin:0}
+
+  .settings{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+  select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-family:'Inter',sans-serif}
+  .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);padding-bottom:6px}
+  .spacer{flex:1}
+
+  details.help{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px}
+  details.help summary{cursor:pointer;font-size:13px;color:var(--accent-2);font-weight:500}
+  details.help ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
+  details.help code{font-family:'IBM Plex Mono',monospace;color:var(--text);background:var(--panel-2);padding:1px 6px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="banner" id="originBanner">
+    <b>Microphone tip:</b><br />
+    For permission to persist, open this page from <code>http://localhost</code> rather than a local file.
+    In the Mind Chess folder, run <code>python3 -m http.server 8000</code>, then visit
+    <code>http://localhost:8000/mind-chess_2.html</code>.
+  </div>
+
+  <header>
+    <div>
+      <p class="eyebrow">Voice / blindfold mode</p>
+      <h1>Mind Chess</h1>
+      <p class="status" id="statusLine">White to move — board hidden</p>
+    </div>
+    <div><button class="btn" id="boardToggleBtn" type="button">Reveal board</button></div>
+  </header>
+
+  <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
+
+  <div class="hero">
+    <div class="mic-wrap" id="micWrap">
+      <span class="ring"></span><span class="ring"></span><span class="ring"></span>
+      <button id="micBtn" type="button" aria-label="Speak your move">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
+          <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
+        </svg>
+      </button>
+    </div>
+    <p class="hint">Tap and speak — <b>"e4"</b>, <b>"knight to f3"</b>, <b>"queen takes e5"</b>, <b>"castle kingside"</b>.</p>
+    <p class="mic-note" id="micNote"></p>
+  </div>
+
+  <div class="transcript" id="transcript" aria-live="polite"></div>
+
+  <form class="textrow" id="textForm">
+    <input type="text" id="textInput" placeholder="Or type a move — &quot;knight f3&quot;, &quot;e4&quot;, &quot;show board&quot;" autocomplete="off" />
+    <button class="btn primary" type="submit">Send</button>
+  </form>
+
+  <div class="boardpanel">
+    <div class="board-head">
+      <h2>Board</h2>
+      <span class="status" id="turnPill" style="margin:0"></span>
+    </div>
+    <div class="board-outer">
+      <div class="ranks" id="ranks"></div>
+      <div class="board-col">
+        <div class="board-grid" id="boardGrid"></div>
+        <div class="files" id="files"></div>
+      </div>
+    </div>
+    <div class="board-veil" id="boardVeil">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><line x1="3" y1="21" x2="21" y2="3"/></svg>
+      <p>Board hidden. Play by ear, or tap "Reveal board" to check the position.</p>
+    </div>
+  </div>
+
+  <div class="settings">
+    <div class="field">
+      <label for="modeSelect">Opponent</label>
+      <select id="modeSelect">
+        <option value="computer" selected>Vs. computer</option>
+        <option value="two-player">Pass &amp; play</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="verbositySelect">Narration</label>
+      <select id="verbositySelect">
+        <option value="terse" selected>Terse</option>
+        <option value="standard">Standard</option>
+        <option value="verbose">Verbose</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+    <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
+    <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
+    <button class="btn" id="newGameBtn" type="button">New game</button>
+  </div>
+
+  <details class="help">
+    <summary>Voice commands</summary>
+    <ul>
+      <li><code>e4</code> — pawn moves by square alone</li>
+      <li><code>knight f3</code> / <code>knight to f3</code> — piece + destination</li>
+      <li><code>queen takes e5</code> — captures</li>
+      <li><code>castle kingside</code> / <code>short castle</code> / <code>long castle</code></li>
+      <li><code>e8 promote to queen</code> — or just say <code>e8</code> and it will ask</li>
+      <li><code>show board</code> / <code>hide board</code> — works any time, even mid-game</li>
+      <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
+      <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
+    </ul>
+  </details>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  if(typeof Chess === 'undefined'){
+    document.body.innerHTML = '<div style="max-width:520px;margin:60px auto;padding:24px;background:#1b1e27;border:1px solid #c06b52;border-radius:14px;color:#ede9e2;font-family:sans-serif"><h2 style="margin-top:0;color:#c06b52">Chess engine didn\u2019t load</h2><p>chess.js couldn\u2019t be fetched from the CDN. Check your network and refresh.</p></div>';
+    return;
+  }
+
+  // ===============================================================
+  // State
+  // ===============================================================
+  const game = new Chess();
+  let boardHidden = true;
+  let mode = 'computer';
+  let humanColor = 'w';
+  let verbosity = 'terse';
+  let voiceOn = true;
+  let handsFree = true;
+  let lastMove = null;
+  let lastNarration = '';
+  let speechGeneration = 0;
+  let pendingAction = null;
+  let gameOver = false;
+  let generation = 0;          // invalidates in-flight computer-move timers
+
+  const PIECE_NAME = {p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
+  const PIECE_VALUE = {p:1,n:3,b:3,r:5,q:9,k:0};
+  // Solid glyphs for BOTH colors; fill+stroke in CSS separates them legibly.
+  const SOLID = {p:'\u265F',n:'\u265E',b:'\u265D',r:'\u265C',q:'\u265B',k:'\u265A'};
+
+  const PIECE_WORDS = {
+    pawn:'p',pawns:'p',pond:'p',ponds:'p',porn:'p',
+    knight:'n',knights:'n',night:'n',nights:'n',horse:'n',horses:'n','k-night':'n',
+    bishop:'b',bishops:'b','bishop\u2019s':'b',
+    rook:'r',rooks:'r',rock:'r',rocks:'r',ruck:'r',brook:'r',
+    queen:'q',queens:'q',green:'q',
+    king:'k',kings:'k'
+  };
+
+  const $ = id => document.getElementById(id);
+  const transcript=$('transcript'), moveStrip=$('moveStrip'), statusLine=$('statusLine'),
+        turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
+        textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
+        ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
+        boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'),
+        verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
+        handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner');
+
+  // ===============================================================
+  // Output
+  // ===============================================================
+  function log(who, text, sub){
+    const p=document.createElement('p'); p.className='line';
+    const tag=document.createElement('span'); tag.className='who '+who.toLowerCase(); tag.textContent=who;
+    p.appendChild(tag); p.appendChild(document.createTextNode(text));
+    if(sub){ const s=document.createElement('div'); s.className='heard'; s.textContent=sub; p.appendChild(s); }
+    transcript.appendChild(p); transcript.scrollTop=transcript.scrollHeight;
+  }
+  function say(text){
+    if(!voiceOn || !('speechSynthesis' in window)) return;
+    try{
+      const myGeneration=++speechGeneration;
+      speechSynthesis.cancel();
+      // Let Chrome finish closing the recognition audio session before
+      // starting narration; without this small gap the first words can clip.
+      setTimeout(()=>{
+        if(myGeneration!==speechGeneration || !voiceOn) return;
+        const u=new SpeechSynthesisUtterance(text);
+        u.rate=0.7;
+        u.pitch=0.98;
+        u.volume=1;
+        speechSynthesis.speak(u);
+      },120);
+    }catch(e){}
+  }
+  function speak(text){ lastNarration=text; log('Board',text); say(text); }
+  function warn(text){ log('System',text); say(text); }
+  function note(text, cls){ micNote.className='mic-note'+(cls?' '+cls:''); micNote.textContent=text; }
+
+  // ===============================================================
+  // Rendering
+  // ===============================================================
+  function renderBoard(){
+    boardGrid.innerHTML=''; ranksEl.innerHTML=''; filesEl.innerHTML='';
+    const board=game.board();
+    let checkSq=null;
+    if(game.in_check()){
+      const c=game.turn();
+      outer: for(let r=0;r<8;r++) for(let f=0;f<8;f++){
+        const cell=board[r][f];
+        if(cell&&cell.type==='k'&&cell.color===c){ checkSq=String.fromCharCode(97+f)+(8-r); break outer; }
+      }
+    }
+    for(let r=0;r<8;r++){
+      for(let f=0;f<8;f++){
+        const sq=String.fromCharCode(97+f)+(8-r);
+        const rank=8-r;
+        const div=document.createElement('div');
+        div.className='sq '+(((f+1)+rank)%2===1?'light':'dark');
+        const cell=board[r][f];
+        if(cell){ div.textContent=SOLID[cell.type]; div.classList.add(cell.color==='w'?'white-piece':'black-piece'); }
+        if(lastMove&&(sq===lastMove.from||sq===lastMove.to)) div.classList.add('last');
+        if(checkSq&&sq===checkSq) div.classList.add('checked');
+        boardGrid.appendChild(div);
+      }
+      const rl=document.createElement('div'); rl.textContent=8-r; ranksEl.appendChild(rl);
+    }
+    'abcdefgh'.split('').forEach(f=>{ const d=document.createElement('div'); d.textContent=f; filesEl.appendChild(d); });
+  }
+  function renderMoveStrip(){
+    const h=game.history();
+    if(!h.length){ moveStrip.innerHTML='<span class="empty">No moves yet.</span>'; return; }
+    let s='';
+    for(let i=0;i<h.length;i+=2) s+='<span class="num">'+(i/2+1)+'.</span><span class="san">'+h[i]+(h[i+1]?' '+h[i+1]:'')+'</span>';
+    moveStrip.innerHTML=s; moveStrip.scrollLeft=moveStrip.scrollWidth;
+  }
+  function updateStatus(){
+    const t=game.turn()==='w'?'White':'Black';
+    let extra=gameOver?' — game over':(pendingAction?' — waiting on you':'');
+    statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
+    turnPill.textContent=gameOver?'Game over':t+' to move';
+  }
+  function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); }
+
+  function setBoardHidden(h){
+    boardHidden=h;
+    boardVeil.style.display=h?'flex':'none';
+    boardToggleBtn.textContent=h?'Reveal board':'Hide board';
+    if(!h) renderBoard();
+    updateStatus();
+  }
+  boardToggleBtn.addEventListener('click',()=>setBoardHidden(!boardHidden));
+
+  // ===============================================================
+  // Narration
+  // ===============================================================
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  const spokenFile={a:'ay',b:'bee',c:'see',d:'dee',e:'ee',f:'eff',g:'gee',h:'aitch'};
+  function spokenSquare(s){ return spokenFile[s[0]]+' '+s[1]; }
+  function describeMove(m,v){
+    const color=m.color==='w'?'White':'Black', piece=PIECE_NAME[m.piece];
+    let base;
+    if(m.flags.indexOf('k')!==-1) base='castles kingside';
+    else if(m.flags.indexOf('q')!==-1) base='castles queenside';
+    else{
+      base=cap(piece)+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
+      if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
+    }
+    if(v==='terse') return color+' plays. '+base+'.';
+    if(v==='standard') return color+' plays. '+base+'.';
+    let t=color+' plays '+piece+' from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
+    if(m.captured) t+=' Captures the '+PIECE_NAME[m.captured]+'.';
+    if(m.promotion) t+=' Promotes to '+PIECE_NAME[m.promotion]+'.';
+    return t;
+  }
+  function endSuffix(){
+    if(game.in_checkmate()) return ' Checkmate — '+(game.turn()==='w'?'Black':'White')+' wins.';
+    if(game.in_stalemate()) return ' Stalemate — draw.';
+    if(game.insufficient_material()) return ' Draw — insufficient material.';
+    if(game.in_threefold_repetition()) return ' Draw by repetition.';
+    if(game.in_check()) return ' Check.';
+    return '';
+  }
+
+  // ===============================================================
+  // Applying moves
+  // ===============================================================
+  function applyMove(spec){
+    const applied=game.move({from:spec.from,to:spec.to,promotion:spec.promotion});
+    if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
+    lastMove=applied;
+    speak(describeMove(applied,verbosity)+endSuffix());
+    if(game.game_over()) gameOver=true;
+    renderAll();
+    if(!gameOver && mode==='computer' && game.turn()!==humanColor){
+      const g=generation;
+      setTimeout(()=>{ if(g===generation && !gameOver) computerMove(); },650);
+    }
+  }
+  function computerMove(){
+    const moves=game.moves({verbose:true});
+    if(!moves.length) return;
+    let pick=null;
+    for(const c of moves){ const cl=new Chess(game.fen()); cl.move(c.san); if(cl.in_checkmate()){ pick=c; break; } }
+    if(!pick){
+      const caps=moves.filter(m=>m.captured);
+      pick=(caps.length&&Math.random()<0.6)?caps[Math.random()*caps.length|0]:moves[Math.random()*moves.length|0];
+    }
+    applyMove(pick);
+  }
+
+  // ===============================================================
+  // Speech normalisation
+  // ===============================================================
+  const NATO={alpha:'a',alfa:'a',bravo:'b',charlie:'c',delta:'d',echo:'e',foxtrot:'f',golf:'g',hotel:'h'};
+  const NUMWORD={one:'1',won:'1',two:'2',too:'2',three:'3',tree:'3',four:'4',for:'4',fore:'4',
+                 five:'5',six:'6',sicks:'6',seven:'7',eight:'8',ate:'8'};
+  const NATO_RE=new RegExp('\\b('+Object.keys(NATO).join('|')+')\\s*(?:('+Object.keys(NUMWORD).join('|')+')|([1-8]))\\b','g');
+
+  function preprocess(t){
+    t=t.replace(/([a-h])[-\u2013 ]([1-8])\b/g,'$1$2');
+    t=t.replace(/\bbefore\b/g,'b4').replace(/\bbefour\b/g,'b4');
+    t=t.replace(/\ba\s*for\b/g,'a4');
+    // NATO phonetic file + digit OR spoken number word ("echo 4", "echo four")
+    t=t.replace(NATO_RE,(_,w,numw,dig)=>NATO[w]+(dig||NUMWORD[numw]));
+    // letter homophones, only when a digit follows
+    const homo={eat:'e',heat:'e',eaten:'e',bee:'b',be:'b',see:'c',sea:'c',cee:'c',dee:'d',
+                gee:'g',jee:'g',jay:'g',aitch:'h',age:'h',ache:'h',ay:'a',eh:'a',ef:'f',eff:'f'};
+    Object.keys(homo).forEach(w=>{ t=t.replace(new RegExp('\\b'+w+'\\s*([1-8])\\b','g'),homo[w]+'$1'); });
+    // number words after a file letter ("e four" -> e4)
+    Object.keys(NUMWORD).forEach(w=>{ t=t.replace(new RegExp('\\b([a-h])\\s*'+w+'\\b','g'),'$1'+NUMWORD[w]); });
+    return t;
+  }
+  function normalize(raw){
+    let t=raw.toLowerCase().trim().replace(/[.,!?]/g,' ');
+    t=preprocess(t);
+    t=t.replace(/\bplease\b/g,' ').replace(/\bmove\b/g,' ')
+       .replace(/\bcaptures?\b/g,' x ').replace(/\btakes?\b/g,' x ');
+    return t.replace(/\s+/g,' ').trim();
+  }
+
+  // ===============================================================
+  // Parsing  →  a plan (pure; never mutates game state)
+  // ===============================================================
+  function parseRequest(text){
+    const t=normalize(text);
+    if(/\b(short castle|castle kingside|kingside castle|castles kingside|o-?o)\b/.test(t)&&!/queenside|long/.test(t))
+      return {kind:'castle',side:'k'};
+    if(/\b(long castle|castle queenside|queenside castle|castles queenside|o-?o-?o)\b/.test(t))
+      return {kind:'castle',side:'q'};
+    if(/\bcastles?\b/.test(t)) return {kind:'castle',side:null};
+
+    let tokens=t.split(' ').filter(Boolean);
+    let promotion=null;
+    const pIdx=tokens.findIndex(x=>/^promot/.test(x));
+    if(pIdx!==-1){
+      for(let i=pIdx+1;i<tokens.length;i++){
+        const L=PIECE_WORDS[tokens[i]];
+        if(L&&L!=='p'&&L!=='k'){ promotion=L; break; }
+      }
+      tokens=tokens.filter((x,i)=>!(i>=pIdx&&(/^promot/.test(x)||x==='to'||PIECE_WORDS[x])));
+    }
+    const squares=tokens.filter(x=>/^[a-h][1-8]$/.test(x));
+    let piece=null,pi=-1;
+    tokens.forEach((x,i)=>{ if(PIECE_WORDS[x]&&pi===-1){ piece=PIECE_WORDS[x]; pi=i; } });
+    let dis=null;
+    if(pi!==-1){
+      const nx=tokens[pi+1];
+      if(nx&&/^[a-h]$/.test(nx)) dis={type:'file',value:nx};
+      else if(nx&&/^[1-8]$/.test(nx)) dis={type:'rank',value:nx};
+    }
+    if(squares.length>=2) return {kind:'move',from:squares[0],to:squares[1],piece:null,dis:null,promotion};
+    if(squares.length===1) return {kind:'move',from:null,to:squares[0],piece,dis,promotion};
+    return {kind:'none'};
+  }
+
+  function candidates(req){
+    return game.moves({verbose:true}).filter(m=>{
+      if(req.from&&m.from!==req.from) return false;
+      if(req.to&&m.to!==req.to) return false;
+      if(req.piece&&m.piece!==req.piece) return false;
+      if(!req.piece&&!req.from&&m.piece!=='p') return false;
+      if(req.dis){
+        if(req.dis.type==='file'&&m.from[0]!==req.dis.value) return false;
+        if(req.dis.type==='rank'&&m.from[1]!==req.dis.value) return false;
+      }
+      return true;
+    });
+  }
+
+  // ===============================================================
+  // Constrained-vocabulary speech matching
+  // ===============================================================
+  // Speech recognition is noisy, but the legal move set is small. Match the
+  // transcript against legal moves first, then let the normal parser execute
+  // the selected move. This is deliberately conservative: a clear question
+  // is safer than silently making the wrong move.
+  const SPOKEN_NUMBER={1:['1','one','won'],2:['2','two','to','too'],3:['3','three','tree'],
+    4:['4','four','for','fore'],5:['5','five'],6:['6','six'],7:['7','seven'],8:['8','eight','ate']};
+  const SPOKEN_FILE={a:['a','ay','eh'],b:['b','bee','be'],c:['c','see','sea','cee'],d:['d','dee'],
+    e:['e','ee','he','hee'],f:['f','ef','eff'],g:['g','gee','jee','jay'],h:['h','aitch','age','ache']};
+  const FILE_WORDS={alpha:'a',alfa:'a',a:'a',ay:'a',eh:'a',bee:'b',be:'b',bravo:'b',
+    see:'c',sea:'c',cee:'c',charlie:'c',dee:'d',delta:'d',ee:'e',he:'e',hee:'e',echo:'e',
+    ef:'f',eff:'f',foxtrot:'f',gee:'g',jee:'g',jay:'g',golf:'g',aitch:'h',hotel:'h',age:'h',ache:'h'};
+
+  function movePhrases(m){
+    const piece=PIECE_NAME[m.piece];
+    const fromFile=SPOKEN_FILE[m.from[0]]||[m.from[0]], toFile=SPOKEN_FILE[m.to[0]]||[m.to[0]];
+    const fromRank=SPOKEN_NUMBER[m.from[1]]||[m.from[1]], toRank=SPOKEN_NUMBER[m.to[1]]||[m.to[1]];
+    const from=m.from, to=m.to;
+    if(m.flags.indexOf('k')!==-1) return ['castle kingside','short castle','king side castle','o o'];
+    if(m.flags.indexOf('q')!==-1) return ['castle queenside','long castle','queen side castle','o o o'];
+    const out=[to, `move to ${to}`, `go to ${to}`];
+    for(const f of toFile) for(const r of toRank) out.push(`${f} ${r}`);
+    out.push(`${piece} to ${to}`, `${piece} ${to}`, `${piece} move to ${to}`);
+    for(const f of toFile) for(const r of toRank) out.push(`${piece} to ${f} ${r}`);
+    out.push(`${from} to ${to}`, `${fromFile[0]} ${fromRank[0]} to ${toFile[0]} ${toRank[0]}`);
+    for(const ff of fromFile) for(const fr of fromRank) for(const tf of toFile) for(const tr of toRank)
+      out.push(`${ff} ${fr} to ${tf} ${tr}`);
+    if(m.captured) out.push(`${piece} takes ${to}`, `${piece} captures ${to}`, `takes ${to}`);
+    if(m.piece==='p') out.push(`pawn to ${to}`, `pawn ${to}`);
+    return out;
+  }
+
+  function speechKey(raw){
+    let t=String(raw||'').toLowerCase().replace(/[^a-z0-9 ]+/g,' ');
+    t=preprocess(t).replace(/[^a-z0-9 ]+/g,' ');
+    const words=t.split(/\s+/).filter(Boolean);
+    const aliases={move:'',go:'',play:'',please:'',the:'',to:'',two:'2',too:'2',for:'4',four:'4',
+      takes:'x',take:'x',captures:'x',capture:'x',kingside:'kingside',queenside:'queenside'};
+    return words.map(w=>FILE_WORDS[w]|| (aliases[w]!==undefined?aliases[w]:w)).filter(Boolean).join(' ');
+  }
+
+  function spokenFileCode(raw){
+    const k=speechKey(raw).trim();
+    return /^[a-h]$/.test(k)?k:null;
+  }
+
+  function tokenDistance(a,b){
+    const A=speechKey(a).split(' ').filter(Boolean), B=speechKey(b).split(' ').filter(Boolean);
+    const d=Array.from({length:A.length+1},(_,i)=>Array(B.length+1).fill(0));
+    for(let i=0;i<=A.length;i++) d[i][0]=i;
+    for(let j=0;j<=B.length;j++) d[0][j]=j;
+    for(let i=1;i<=A.length;i++) for(let j=1;j<=B.length;j++){
+      const same=A[i-1]===B[j-1];
+      const near=!same && (A[i-1][0]===B[j-1][0] || A[i-1].slice(0,2)===B[j-1].slice(0,2));
+      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(same?0:near?.35:1));
+    }
+    return d[A.length][B.length];
+  }
+
+  function constrainedMove(text){
+    const legal=game.moves({verbose:true});
+    if(!legal.length) return null;
+    const heard=speechKey(text);
+    if(!heard) return null;
+    const scored=legal.map(m=>{
+      const phrases=movePhrases(m);
+      const distance=Math.min(...phrases.map(p=>tokenDistance(heard,p)));
+      const exact=phrases.some(p=>speechKey(p)===heard);
+      // Reward exact destination and piece words while keeping the score
+      // normalized so short moves such as "e4" are not unfairly penalized.
+      const target=heard.includes(speechKey(m.to))?1.2:0;
+      return {m,distance,exact,score:(exact?8:0)+target- distance/Math.max(1,heard.split(' ').length)};
+    }).sort((a,b)=>b.score-a.score);
+    const best=scored[0], second=scored[1];
+    const margin=best.score-(second?second.score:-10);
+    // Exact legal destination phrases win immediately. Fuzzy matches need a
+    // meaningful margin; otherwise route() will ask the user to repeat.
+    if(best.exact || (best.score>=1.05 && margin>=0.7)) return {move:best.m,score:best.score,margin};
+    return null;
+  }
+
+  // Build a plan without touching state, so we can score speech alternatives.
+  function planFor(text){
+    const t=normalize(text);
+    const cmd=matchCommand(t);
+    if(cmd) return {score:6,type:'command',run:cmd};
+
+    const constrained=constrainedMove(text);
+    if(constrained) return {score:constrained.score,type:'move',move:constrained.move};
+
+    const req=parseRequest(text);
+    if(req.kind==='castle'){
+      if(!req.side) return {score:3,type:'ask-castle'};
+      const m=game.moves({verbose:true}).find(x=>x.san===(req.side==='k'?'O-O':'O-O-O'));
+      return m?{score:6,type:'move',move:m}:{score:1,type:'illegal',msg:'Castling isn\u2019t legal right now.'};
+    }
+    if(req.kind!=='move') return {score:0,type:'none'};
+
+    let cands=candidates(req);
+    if(!cands.length){
+      const who=req.piece?PIECE_NAME[req.piece]:'pawn';
+      return {score:1,type:'illegal',msg:'There\u2019s no legal '+who+' move to '+(req.to||'that square')+'.'};
+    }
+    // Promotion: chess.js emits one move per promotion piece, all sharing from/to.
+    const isPromo=cands.every(m=>m.promotion);
+    if(isPromo){
+      if(req.promotion){
+        const m=cands.find(x=>x.promotion===req.promotion);
+        if(m) return {score:6,type:'move',move:m};
+      }
+      const froms=[...new Set(cands.map(m=>m.from))];
+      if(froms.length===1) return {score:5,type:'ask-promotion',from:froms[0],to:cands[0].to};
+      return {score:4,type:'disambiguate',cands:froms.map(f=>cands.find(m=>m.from===f))};
+    }
+    const froms=[...new Set(cands.map(m=>m.from))];
+    if(froms.length===1) return {score:6,type:'move',move:cands[0]};
+    return {score:4,type:'disambiguate',cands:froms.map(f=>cands.find(m=>m.from===f))};
+  }
+
+  // ===============================================================
+  // Commands — returned as closures so planFor() stays pure
+  // ===============================================================
+  function matchCommand(t){
+    if(/\b(show|reveal|unhide)\b.*\bboard\b/.test(t)) return ()=>{ setBoardHidden(false); log('Board','Board revealed.'); };
+    if(/\bhide\b.*\bboard\b/.test(t)) return ()=>{ setBoardHidden(true); log('Board','Board hidden.'); };
+    if(/what.{0,3}s on the board|board state|describe the board|read the board/.test(t)) return announceBoard;
+    if(/\bmaterial\b|who.{0,3}s ahead/.test(t)) return announceMaterial;
+    if(/whose turn|who.{0,3}s turn|who moves/.test(t)) return ()=>speak((game.turn()==='w'?'White':'Black')+' to move.');
+    if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
+    if(/new game|restart|reset/.test(t)) return startNewGame;
+    if(/take back|takeback|undo/.test(t)) return takeBack;
+    return null;
+  }
+  function announceBoard(){
+    const b=game.board(), out={w:[],b:[]};
+    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
+      const c=b[r][f]; if(!c) continue;
+      out[c.color].push(PIECE_NAME[c.type]+' '+String.fromCharCode(97+f)+(8-r));
+    }
+    speak('White: '+out.w.join(', ')+'. Black: '+out.b.join(', ')+'.');
+  }
+  function announceMaterial(){
+    const b=game.board(); let w=0,bl=0;
+    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
+      const c=b[r][f]; if(!c) continue;
+      if(c.color==='w') w+=PIECE_VALUE[c.type]; else bl+=PIECE_VALUE[c.type];
+    }
+    const d=w-bl;
+    speak(d===0?'Material is even.':(d>0?'White':'Black')+' is up '+Math.abs(d)+' point'+(Math.abs(d)===1?'':'s')+'.');
+  }
+  function takeBack(){
+    generation++;                       // cancel any pending computer move
+    const undone=game.undo();
+    if(!undone){ warn('Nothing to take back.'); return; }
+    if(mode==='computer' && game.turn()!==humanColor) game.undo();  // undo the pair
+    gameOver=false; pendingAction=null;
+    lastMove=game.history({verbose:true}).slice(-1)[0]||null;
+    renderAll();
+    speak('Taken back. '+(game.turn()==='w'?'White':'Black')+' to move.');
+  }
+
+  // ===============================================================
+  // Pending-question resolution
+  // ===============================================================
+  function askDisambiguation(cands){
+    pendingAction={type:'piece',cands};
+    const files=[...new Set(cands.map(c=>c.from[0]))];
+    const name=PIECE_NAME[cands[0].piece];
+    if(files.length>1) warn('Which '+name+' — '+files.join(' or ')+'? Say the file.');
+    else warn('Which '+name+' — rank '+[...new Set(cands.map(c=>c.from[1]))].join(' or ')+'?');
+    updateStatus();
+  }
+  function askPromotion(from,to){
+    pendingAction={type:'promotion',from,to};
+    warn('Promote to what — queen, rook, bishop, or knight?');
+    updateStatus();
+  }
+  function askCastleSide(){ pendingAction={type:'castle'}; warn('Kingside or queenside?'); updateStatus(); }
+
+  function resolvePending(texts){
+    const pa=pendingAction;
+    for(const raw of texts){
+      const t=normalize(raw).trim();
+      if(pa.type==='piece'){
+        let m=null;
+        const file=spokenFileCode(t);
+        if(file) m=pa.cands.find(c=>c.from[0]===file);
+        else if(/^[1-8]$/.test(t)) m=pa.cands.find(c=>c.from[1]===t);
+        else if(/^[a-h][1-8]$/.test(t)) m=pa.cands.find(c=>c.from===t);
+        if(m){ pendingAction=null; updateStatus(); execPlan(planForMove(m)); return true; }
+      }
+      if(pa.type==='promotion'){
+        let L=null;
+        t.split(' ').forEach(w=>{ const x=PIECE_WORDS[w]; if(x&&x!=='p'&&x!=='k') L=x; });
+        if(L){ const from=pa.from,to=pa.to; pendingAction=null; updateStatus(); applyMove({from,to,promotion:L}); return true; }
+      }
+      if(pa.type==='castle'){
+        if(/kingside|short/.test(t)){ pendingAction=null; updateStatus(); execPlan(planFor('castle kingside')); return true; }
+        if(/queenside|long/.test(t)){ pendingAction=null; updateStatus(); execPlan(planFor('castle queenside')); return true; }
+      }
+    }
+    return false;
+  }
+  function planForMove(m){
+    if(m.promotion) return {type:'ask-promotion',from:m.from,to:m.to};
+    return {type:'move',move:m};
+  }
+
+  function execPlan(plan){
+    switch(plan.type){
+      case 'command': plan.run(); break;
+      case 'move': applyMove(plan.move); break;
+      case 'ask-promotion': askPromotion(plan.from,plan.to); break;
+      case 'disambiguate': askDisambiguation(plan.cands); break;
+      case 'ask-castle': askCastleSide(); break;
+      case 'illegal': warn(plan.msg); break;
+      default: warn('I didn\u2019t catch a move. Try "knight to f3", "e4", or "castle kingside".');
+    }
+  }
+
+  // ===============================================================
+  // Routing — accepts a RANKED LIST of speech alternatives
+  // ===============================================================
+  function route(alternatives){
+    const list=(Array.isArray(alternatives)?alternatives:[alternatives])
+      .map(s=>String(s||'').trim()).filter(Boolean);
+    if(!list.length) return;
+
+    if(pendingAction){
+      log('You',list[0],list.length>1?'also heard: '+list.slice(1,3).join(' / '):null);
+      if(resolvePending(list)) return;
+      pendingAction=null; updateStatus();   // treat as a fresh utterance instead
+    }
+
+    // Score every alternative; the one producing a legal move / command wins.
+    let best=null,bestText=list[0];
+    for(const text of list){
+      const plan=planFor(text);
+      if(!best||plan.score>best.score){ best=plan; bestText=text; }
+      if(best.score>=6) break;
+    }
+    const others=list.filter(x=>x!==bestText).slice(0,2);
+    log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
+
+    // Commands are always allowed, even after game over / while computer thinks.
+    if(best.type!=='command'){
+      if(gameOver){ warn('Game over. Say "new game" to start another.'); return; }
+      if(mode==='computer'&&game.turn()!==humanColor){ warn('The computer is thinking.'); return; }
+    }
+    execPlan(best);
+  }
+
+  textForm.addEventListener('submit',e=>{
+    e.preventDefault();
+    const v=textInput.value; textInput.value='';
+    if(v.trim()) route([v]);
+  });
+
+  // ===============================================================
+  // Speech input
+  // ===============================================================
+  let recognition=null,listening=false,wantLoop=false;
+
+  function setListening(v){ listening=v; micWrap.classList.toggle('listening',v); }
+
+  async function primeMic(){
+    // SpeechRecognition owns the microphone. Do not open a second getUserMedia
+    // stream: competing capture sessions can make Chrome recognition unstable.
+    return true;
+  }
+
+  function setupRecognition(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){
+      micBtn.disabled=true;
+      note('Speech recognition needs Chrome or Edge. Use the text box.','err');
+      return;
+    }
+    recognition=new SR();
+    recognition.lang='en-US';
+    recognition.interimResults=true;
+    recognition.maxAlternatives=10;     // constrained matcher scores all returned candidates
+    recognition.continuous=false;
+
+    recognition.onstart=()=>note('Listening\u2026');
+    recognition.onspeechstart=()=>note('Hearing you\u2026');
+    recognition.onresult=e=>{
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const res=e.results[i];
+        if(res.isFinal){
+          const alts=[];
+          for(let a=0;a<res.length;a++) alts.push(res[a].transcript);
+          note('');
+          route(alts);
+        }else{
+          note('\u201C'+res[0].transcript.trim()+'\u201D');
+        }
+      }
+    };
+    recognition.onerror=e=>{
+      setListening(false);
+      const map={
+        'not-allowed': location.protocol==='file:'
+          ? 'Microphone permission is temporary on file://. Open this page through http://localhost.'
+          : 'Microphone blocked. Check the padlock icon in the address bar.',
+        'service-not-allowed':'Speech service blocked by the browser.',
+        'no-speech':'Didn\u2019t hear anything — tap and try again.',
+        'audio-capture':'No microphone found on this device.',
+        'network':'Speech recognition needs internet.',
+        'aborted':''
+      };
+      const msg=map[e.error]!==undefined?map[e.error]:'Mic error: '+e.error;
+      if(msg) note(msg,'err'); else note('');
+      if(e.error==='not-allowed'||e.error==='service-not-allowed') wantLoop=false;
+    };
+    recognition.onend=()=>{
+      setListening(false);
+      if(micNote.textContent==='Listening\u2026'||micNote.textContent==='Hearing you\u2026') note('');
+      if(wantLoop&&handsFree){
+        setTimeout(()=>{ if(wantLoop&&handsFree) startListening(); },250);
+      }
+    };
+  }
+
+  async function startListening(){
+    if(!recognition||listening) return;
+    const ok=await primeMic();
+    if(!ok) return;
+    try{ recognition.start(); setListening(true); }
+    catch(err){ /* already started — ignore */ }
+  }
+
+  micBtn.addEventListener('click',async()=>{
+    if(listening){ wantLoop=false; try{recognition.stop();}catch(e){} return; }
+    wantLoop=handsFree;
+    await startListening();
+  });
+
+  handsFreeToggle.addEventListener('change',()=>{
+    handsFree=handsFreeToggle.checked;
+    if(!handsFree){ wantLoop=false; }
+    else if(listening){ wantLoop=true; }
+  });
+
+  // ===============================================================
+  // Settings + boot
+  // ===============================================================
+  modeSelect.addEventListener('change',()=>{ mode=modeSelect.value; startNewGame(); });
+  verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; });
+  voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); });
+  newGameBtn.addEventListener('click',startNewGame);
+
+  function startNewGame(){
+    generation++;
+    game.reset(); lastMove=null; pendingAction=null; gameOver=false;
+    setBoardHidden(true);
+    transcript.innerHTML='';
+    log('Board','New game. White to move.'+(mode==='computer'?' You\u2019re White against the computer.':' Board hidden — say "show board" any time.'));
+    renderAll();
+  }
+
+  if(location.protocol==='file:') originBanner.classList.add('show');
+
+  setupRecognition();
+  startNewGame();
+})();
+</script>
+</body>
+</html>
