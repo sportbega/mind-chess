@@ -79,3 +79,19 @@ Also ruled out a red herring: Enter-to-submit on the move input appeared broken 
 One loose end: the online-mode smoke test created a real row in the shared Supabase `mind_chess_games` table; deleting it was correctly blocked as a destructive action on shared infrastructure by this session's guardrails, so it's still sitting there — low-priority cleanup for later.
 
 Working tree clean.
+
+## 2026-08-18 — Day 2.2: clock support
+
+Picked up the item parked since Day 1 — blindfold play under time pressure needed a real decision, not a default port from Giga Chess (which has no clock at all). Talked through three questions before writing code:
+
+- **Narration:** silent by default. The clock ticks and is visible whenever the board is revealed, but never interrupts blindfold play — only speaks on request ("how much time"). A flag-fall is the one exception: it's a game-ending event exactly like checkmate, so it's always announced.
+- **Time controls:** a few fixed presets (No clock / 3 / 5 / 10 minutes, no increment) via a new Clock select next to Level, matching the existing settings pattern instead of building custom minute/increment inputs.
+- **Computer's clock:** shared — the engine's think time counts against its own clock like a human's would.
+
+Implementation ties the clock to `game.turn()` rather than to a specific player, so vs-computer, pass-and-play, and (locally) online all work off one code path with no per-mode branching — the computer's ~650ms move delay and search time tick down its own clock for free. A single `setInterval` decrements whichever side is on move; hitting zero stops the clock, sets the existing `gameOver` flag (so every other gate in the app — move input, take-back, etc. — already respects it with no new plumbing), and speaks "White's time is up. Black wins on time." the same way `endSuffix()` announces checkmate.
+
+Explicitly **not** wired into online mode yet: each peer would tick an independent local timer with no server-side reconciliation, so the two browsers' clocks could just disagree. A correct version needs move timestamps synced through the shared `mind_chess_games` row — left as a natural piece of the online-mode work (next up) rather than shipping a half-working version now. The clock UI/logic no-ops in online mode until that's built.
+
+Verified in-browser: ticking display (gated on board-visible, same as the board itself — blindfold mode gets no free numeric readout), the voice/text "how much time" command, reload persistence (whiteMs/blackMs/preset saved on every move plus a `beforeunload` flush, restored and resumed correctly), flag-fall (forced via a temporary debug hook removed before commit — real announcement, game-over gating, clock stops at 0:00), take-back resuming the clock correctly, and the no-clock default rendering with no stray UI artifacts. No console errors in any path.
+
+Working tree clean.

@@ -189,7 +189,10 @@
   <div class="boardpanel">
     <div class="board-head">
       <h2>Board</h2>
-      <span class="status" id="turnPill" style="margin:0"></span>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="status clock" id="clockLine" style="margin:0"></span>
+        <span class="status" id="turnPill" style="margin:0"></span>
+      </div>
     </div>
     <div class="board-outer">
       <div class="ranks" id="ranks"></div>
@@ -230,6 +233,15 @@
       </select>
     </div>
     <div class="field">
+      <label for="clockSelect">Clock</label>
+      <select id="clockSelect">
+        <option value="0" selected>No clock</option>
+        <option value="3">3 min</option>
+        <option value="5">5 min</option>
+        <option value="10">10 min</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="boardThemeSelect">Board</label>
       <select id="boardThemeSelect">
         <option value="wood" selected>Walnut</option>
@@ -263,7 +275,7 @@
       <li><code>castle kingside</code> / <code>short castle</code> / <code>long castle</code></li>
       <li><code>e8 promote to queen</code> — or just say <code>e8</code> and it will ask</li>
       <li><code>show board</code> / <code>hide board</code> — works any time, even mid-game</li>
-      <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
+      <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>how much time</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
       <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
     </ul>
   </details>
@@ -297,6 +309,13 @@
   let generation = 0;          // invalidates in-flight computer-move timers
   let onlineState = null;      // {id,color,waiting,starting,channel,pollTimer,lastUpdated}
 
+  // Clock: 0 = no clock. Runs off game.turn(), so it works the same for
+  // computer/two-player/online without per-mode special-casing — the
+  // computer's think time counts against its own clock for free.
+  let clockPreset = 0;         // minutes per side, 0 = off
+  let whiteMs = 0, blackMs = 0;
+  let clockTimer = null;
+
   const PIECE_NAME = {p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
   const PIECE_VALUE = {p:1,n:3,b:3,r:5,q:9,k:0};
   // Solid glyphs for BOTH colors; fill+stroke in CSS separates them legibly.
@@ -319,6 +338,7 @@
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
+        clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
         copyInviteBtn=$('copyInviteBtn');
@@ -399,6 +419,7 @@
     }
     statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
     turnPill.textContent=gameOver?'Game over':t+' to move';
+    renderClock();
   }
   function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
@@ -411,6 +432,61 @@
     saveState();
   }
   boardToggleBtn.addEventListener('click',()=>setBoardHidden(!boardHidden));
+
+  // ===============================================================
+  // Clock — silent by default (blindfold mode shouldn't be interrupted
+  // by routine ticking), but a flag-fall is a game-ending event like
+  // checkmate and always gets spoken. Ticks off game.turn() rather than
+  // tracking a "human" side, so vs-computer/pass-and-play/online all
+  // share one implementation for free — the computer's think time counts
+  // against its own clock the same way a slow human move would.
+  // ===============================================================
+  let clockSaveAccum=0;
+  function formatClock(ms){
+    const total=Math.ceil(Math.max(0,ms)/1000);
+    return Math.floor(total/60)+':'+String(total%60).padStart(2,'0');
+  }
+  function renderClock(){
+    // Online isn't wired up here: each peer would tick an independent local
+    // timer with no server-side reconciliation, which would just disagree
+    // between the two browsers. Real online clocks need move timestamps
+    // synced through the shared game row — natural to add alongside the
+    // rest of the online-mode work, not as a silent half-measure here.
+    if(!clockPreset||boardHidden||mode==='online'){ clockLine.textContent=''; return; }
+    clockLine.textContent='White '+formatClock(whiteMs)+' · Black '+formatClock(blackMs);
+  }
+  function stopClock(){ if(clockTimer){ clearInterval(clockTimer); clockTimer=null; } }
+  function startClock(){
+    stopClock();
+    if(!clockPreset||gameOver||mode==='online') return;
+    let last=Date.now();
+    clockTimer=setInterval(()=>{
+      const now=Date.now(), dt=now-last; last=now;
+      if(game.turn()==='w') whiteMs-=dt; else blackMs-=dt;
+      if(whiteMs<=0||blackMs<=0){
+        whiteMs=Math.max(0,whiteMs); blackMs=Math.max(0,blackMs);
+        stopClock();
+        gameOver=true;
+        const loser=whiteMs<=0?'White':'Black';
+        speak(loser+'’s time is up. '+(loser==='White'?'Black':'White')+' wins on time.');
+        renderAll();
+        return;
+      }
+      renderClock();
+      clockSaveAccum+=200;
+      if(clockSaveAccum>=5000){ clockSaveAccum=0; saveState(); }
+    },200);
+  }
+  function resetClock(){
+    whiteMs=blackMs=clockPreset*60000;
+    startClock();
+  }
+  clockSelect.addEventListener('change',()=>{
+    clockPreset=+clockSelect.value;
+    resetClock();
+    renderAll();
+  });
+  window.addEventListener('beforeunload',saveState);
 
   // ===============================================================
   // Board/piece theme — ported from Giga Chess's applyTheme()
@@ -500,7 +576,7 @@
     lastMove=applied;
     playMoveSound(!!applied.captured);
     speak(describeMove(applied,verbosity)+endSuffix());
-    if(game.game_over()) gameOver=true;
+    if(game.game_over()){ gameOver=true; stopClock(); }
     renderAll();
     if(mode==='online') saveOnline();
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
@@ -775,6 +851,7 @@
     if(/\bhide\b.*\bboard\b/.test(t)) return ()=>{ setBoardHidden(true); log('Board','Board hidden.'); };
     if(/what.{0,3}s on the board|board state|describe the board|read the board/.test(t)) return announceBoard;
     if(/\bmaterial\b|who.{0,3}s ahead/.test(t)) return announceMaterial;
+    if(/how (much )?time|time left|clock|time remaining/.test(t)) return announceClock;
     if(/whose turn|who.{0,3}s turn|who moves/.test(t)) return ()=>speak((game.turn()==='w'?'White':'Black')+' to move.');
     if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
     if(/new game|restart|reset/.test(t)) return startNewGame;
@@ -798,6 +875,16 @@
     const d=w-bl;
     speak(d===0?'Material is even.':(d>0?'White':'Black')+' is up '+Math.abs(d)+' point'+(Math.abs(d)===1?'':'s')+'.');
   }
+  function spokenClock(ms){
+    const total=Math.ceil(Math.max(0,ms)/1000), m=Math.floor(total/60), s=total%60;
+    const mPart=m?m+' minute'+(m===1?'':'s'):'';
+    const sPart=(s||!m)?s+' second'+(s===1?'':'s'):'';
+    return [mPart,sPart].filter(Boolean).join(' ');
+  }
+  function announceClock(){
+    if(!clockPreset){ speak('No clock this game.'); return; }
+    speak('White has '+spokenClock(whiteMs)+'. Black has '+spokenClock(blackMs)+'.');
+  }
   function takeBack(){
     if(mode==='online'){ warn('Take-back isn’t available in online games.'); return; }
     generation++;                       // cancel any pending computer move
@@ -806,6 +893,7 @@
     if(mode==='computer' && game.turn()!==humanColor) game.undo();  // undo the pair
     gameOver=false; pendingAction=null;
     lastMove=game.history({verbose:true}).slice(-1)[0]||null;
+    startClock();
     renderAll();
     speak('Taken back. '+(game.turn()==='w'?'White':'Black')+' to move.');
   }
@@ -1181,6 +1269,7 @@
   function startNewGame(){
     generation++;
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
+    resetClock();
     setBoardHidden(true);
     transcript.innerHTML='';
     log('Board','New game. White to move.'+(mode==='computer'?' You\u2019re White against the computer.':' Board hidden — say "show board" any time.'));
@@ -1197,7 +1286,8 @@
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
         pgn:game.pgn(),mode,searchDepth,verbosity,voiceOn,handsFree,humanColor,boardHidden,
-        onlineId:onlineState?onlineState.id:null,onlineColor:onlineState?onlineState.color:null
+        onlineId:onlineState?onlineState.id:null,onlineColor:onlineState?onlineState.color:null,
+        clockPreset,whiteMs,blackMs
       }));
     }catch(e){}
   }
@@ -1212,6 +1302,8 @@
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
+      clockPreset=saved.clockPreset||0; clockSelect.value=String(clockPreset);
+      whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
         mode='online'; modeSelect.value='online';
         transcript.innerHTML='';
@@ -1228,6 +1320,7 @@
         ? 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.'
         : 'Restored settings. New game.');
       setBoardHidden(saved.boardHidden!==false);
+      startClock();
       renderAll();
       return true;
     }catch(e){ return false; }
