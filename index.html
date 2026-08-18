@@ -143,7 +143,7 @@
     <b>Microphone tip:</b><br />
     For permission to persist, open this page from <code>http://localhost</code> rather than a local file.
     In the Mind Chess folder, run <code>python3 -m http.server 8000</code>, then visit
-    <code>http://localhost:8000/mind-chess_2.html</code>.
+    <code>http://localhost:8000/index.html</code>.
   </div>
 
   <header>
@@ -690,6 +690,20 @@
     return d[A.length][B.length];
   }
 
+  // Typed input is often standard algebraic notation ("Nf3", "Bxc4", "e8=Q")
+  // rather than a spoken phrase. Try chess.js's own SAN parser first — it's
+  // an exact, unambiguous match, so it should win over the fuzzy speech
+  // scorer below. move+undo keeps this pure, matching the pattern already
+  // used by computerMove()'s search.
+  function matchSan(raw){
+    const tok=raw.trim();
+    if(!tok||/\s/.test(tok)) return null;
+    const applied=game.move(tok,{sloppy:true});
+    if(!applied) return null;
+    game.undo();
+    return applied;
+  }
+
   function constrainedMove(text){
     const legal=game.moves({verbose:true});
     if(!legal.length) return null;
@@ -717,6 +731,9 @@
     const t=normalize(text);
     const cmd=matchCommand(t);
     if(cmd) return {score:6,type:'command',run:cmd};
+
+    const san=matchSan(text);
+    if(san) return {score:8,type:'move',move:san};
 
     const constrained=constrainedMove(text);
     if(constrained) return {score:constrained.score,type:'move',move:constrained.move};

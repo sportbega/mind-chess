@@ -61,3 +61,21 @@ Schema: `mind_chess_games` stores PGN (not Giga's custom board array, since Mind
 Tested end-to-end with two browser tabs acting as both players — hit a real gotcha along the way: Supabase anonymous-auth sessions live in localStorage, which is shared across tabs of the same origin/browser profile, so a second tab in the *same* browser rejoins as the *same* anonymous user instead of a distinct opponent. Not a bug in the app — same limitation would hit Giga Chess's identical pattern — but worth remembering for future testing (need a second browser/incognito window, or manually clear `localStorage` + force a real reload, same-URL same-hash navigations don't always reload the page). Once tested with genuinely separate identities: create/join, realtime sync in both directions, turn-gating, and reconnect-on-reload all verified with no console errors. Cleaned up the test game row afterward.
 
 Both issues closed. Working tree clean.
+
+## 2026-08-18 — Day 2.1: bug/polish pass
+
+No new feature this time — played through single-player, settings, reload persistence, and an online-mode smoke test looking for rough edges instead.
+
+Found and fixed two real issues:
+- **Typed algebraic notation was silently rejected.** The text/voice parser only understood spoken-style phrases ("knight f3") or bare pawn squares ("e4") — standard SAN like "Bc4", "Nf3", "Qxe5" all failed with "I didn't catch a move," even though it's the first thing any chess-literate typist reaches for. Fixed by trying chess.js's own SAN parser (`game.move(text,{sloppy:true})`) as an exact-match fast path before falling through to the fuzzy speech-phrase scorer — move+undo keeps it side-effect-free, the same idiom `computerMove()`'s search already uses. Verified: "Bc4"/"Nf3"-style input now applies correctly and shows proper notation in the move strip; gibberish is still correctly rejected, no regression.
+- **Stale filename in the file:// mic-permission banner.** Told users opening the page directly to visit `http://localhost:8000/mind-chess_2.html` — a leftover from before Day 1's promotion to `index.html`. Fixed the reference.
+
+Also re-verified with no regressions: reload persistence (game state + theme both restore correctly), board/piece theming, and online mode's create-game flow (smoke-tested only — no console errors — since OUR-44 already covered a full two-identity sync test and re-establishing two distinct anonymous sessions in this session's browser tooling is expensive to redo for a recheck).
+
+Gotcha for future sessions: the in-session preview/browser tool renders local `file://` pages as opaque `data:` URL snapshots — localStorage and the file://-triggered mic banner can't be exercised there. Serving over `python3 -m http.server` (a real `http://` origin) is required to test persistence or Supabase auth.
+
+Also ruled out a red herring: Enter-to-submit on the move input appeared broken during testing, but a throwaway injected test form proved it's the browser-automation tool's synthetic key events not being treated as trusted for native form-submit — not an app bug. Left alone.
+
+One loose end: the online-mode smoke test created a real row in the shared Supabase `mind_chess_games` table; deleting it was correctly blocked as a destructive action on shared infrastructure by this session's guardrails, so it's still sitting there — low-priority cleanup for later.
+
+Working tree clean.
