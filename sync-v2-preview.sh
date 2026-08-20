@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "run this on main"; exit 1; }
 mkdir -p v2
-for f in index.html stockfish-18-lite-single.js stockfish-18-lite-single.wasm supabase-config.js; do
+for f in index.html chess-0.10.3.js stockfish-18-lite-single.js stockfish-18-lite-single.wasm supabase-config.js; do
   git show "v2:$f" > "v2/$f"
 done
 chmod +x v2/stockfish-18-lite-single.wasm

@@ -7,7 +7,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<!-- The rules engine is vendored, not fetched: Stockfish was already
+     self-hosted, and having the *rules* be the one thing a game of blindfold
+     chess needs a network for was backwards. Pinned at 0.10.3 on purpose —
+     see VOICE-2.0-PLAYBOOK.md. Supabase stays remote because online mode is
+     inherently remote; if it fails to load, online mode disables itself and
+     everything else keeps working. -->
+<script src="chess-0.10.3.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <style>
@@ -322,8 +328,11 @@
 (function(){
   "use strict";
 
+  // Kept, but it no longer means "your network is down" — chess-0.10.3.js
+  // ships next to this file, so the only way to get here is a deploy that
+  // dropped it (which is exactly what sync-v2-preview.sh's copy list is for).
   if(typeof Chess === 'undefined'){
-    document.body.innerHTML = '<div style="max-width:520px;margin:60px auto;padding:24px;background:#1b1e27;border:1px solid #c06b52;border-radius:14px;color:#ede9e2;font-family:sans-serif"><h2 style="margin-top:0;color:#c06b52">Chess engine didn\u2019t load</h2><p>chess.js couldn\u2019t be fetched from the CDN. Check your network and refresh.</p></div>';
+    document.body.innerHTML = '<div style="max-width:520px;margin:60px auto;padding:24px;background:#1b1e27;border:1px solid #c06b52;border-radius:14px;color:#ede9e2;font-family:sans-serif"><h2 style="margin-top:0;color:#c06b52">Chess engine didn\u2019t load</h2><p><code>chess-0.10.3.js</code> is missing \u2014 it should sit next to <code>index.html</code>. Refresh, and if that doesn\u2019t help the deploy is incomplete.</p></div>';
     return;
   }
 
@@ -1036,7 +1045,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r6 (board questions)';
+  const BUILD='v2-r7 (self-hosted chess.js)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -2172,7 +2181,7 @@
   }
 
   async function createOnline(){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     createOnlineBtn.disabled=true;
     try{
       onlineNote('Creating online game…');
@@ -2204,7 +2213,7 @@
   }
 
   async function joinOnline(gameId){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     try{
       onlineNote('Joining online game…');
       const user=await onlineUser();
@@ -2281,7 +2290,7 @@
   // spectator from moving — this function never lets input reach that point
   // anyway, since it doesn't touch humanColor/onlineState.color at all.
   async function spectateOnline(gameId){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     try{
       onlineNote('Loading game…');
       const r=await db.from('mind_chess_games').select('*').eq('id',gameId).single();
@@ -2348,7 +2357,7 @@
     }).join('');
   }
   async function openLobby(){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     lobbyPanel.classList.add('show');
     lobbyList.innerHTML='<p class="lobby-empty">Loading…</p>';
     await refreshLobby();
