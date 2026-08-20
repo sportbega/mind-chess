@@ -1031,7 +1031,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r4 (castling + sticky questions)';
+  const BUILD='v2-r5 (digit-file + fuzzy castle)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -1108,10 +1108,17 @@
       const m=game.moves({verbose:true}).find(x=>x.san===(req.side==='k'?'O-O':'O-O-O'));
       return m?{score:6,type:'move',move:m}:{score:1,type:'illegal',msg:'Castling isn\u2019t legal right now.'};
     }
-    // Carry the near-miss evidence forward so execPlan can ask a question
-    // instead of discarding the utterance (A3).
-    if(req.kind!=='move') return {score:0,type:'none',text,
-      said:spokenPiece(speechKey(text)), top:lastScoring?lastScoring.top:null};
+    if(req.kind!=='move'){
+      const fz=fuzzyCastleSide(t);
+      if(fz){
+        const m=game.moves({verbose:true}).find(x=>x.san===(fz==='k'?'O-O':'O-O-O'));
+        if(m) return {score:5,type:'move',move:m};
+      }
+      // Carry the near-miss evidence forward so execPlan can ask a question
+      // instead of discarding the utterance (A3).
+      return {score:0,type:'none',text,
+        said:spokenPiece(speechKey(text)), top:lastScoring?lastScoring.top:null};
+    }
 
     let cands=candidates(req);
     if(!cands.length){
@@ -1217,6 +1224,23 @@
     updateStatus();
   }
   function askCastleSide(){ pendingAction={type:'castle'}; warn('Kingside or queenside?'); updateStatus(); }
+
+  // "castle kingside" degrades badly and in ways no word list can enumerate:
+  // observed as "cats looking side", "cats looking inside", "cats looking
+  // site". Match the *shape* instead — something that sounds like "king"
+  // (phon "kng", which "looking" ends with) next to something that sounds
+  // like "side". Restricted to short utterances so ordinary speech
+  // containing those sounds can't trigger a castle.
+  function fuzzyCastleSide(t){
+    const toks=t.split(/\s+/).filter(Boolean);
+    if(!toks.length||toks.length>4) return null;
+    const P=toks.map(phon);
+    const side=P.some(p=>/sd$|st$|sz$/.test(p));
+    if(!side) return null;
+    if(P.some(p=>p.includes('kng'))) return 'k';
+    if(P.some(p=>p.includes('kn')&&!p.includes('kng'))) return 'q';
+    return null;
+  }
 
   // A3 — a near miss is worth a question, not a rejection.
   // Measured against real speech: "rook g1" came back as "Rock Jeep" / "Rook
@@ -1393,10 +1417,32 @@
     return '';
   }
 
+  // The recognizer writes a spoken file letter as a digit constantly: "a6"
+  // and "h6" both come back as "86", which parses as nothing at all — seen
+  // three times in a row, rejected every time, until the move was rephrased.
+  // Guessing which letter was meant would be wrong half the time, so offer
+  // both readings as extra alternatives and let the legal-move scorer pick.
+  function expandAlternatives(list){
+    const dests=new Set(game.moves({verbose:true}).map(m=>m.to));
+    const extra=[];
+    for(const t of list){
+      const m=t.match(/\b8([1-8])\b/);
+      if(!m) continue;
+      const reachable=['a'+m[1],'h'+m[1]].filter(sq=>dests.has(sq));
+      // If both readings are legal it's a coin flip, and silently playing the
+      // wrong move is far worse than asking again — a blindfold player can't
+      // see it happen. Expand only when the position makes it unambiguous.
+      if(reachable.length!==1) continue;
+      extra.push(t.replace(/\b8([1-8])\b/g,reachable[0]));
+    }
+    return extra.length ? list.concat(extra.filter(x=>list.indexOf(x)===-1)) : list;
+  }
+
   function route(alternatives){
-    const list=(Array.isArray(alternatives)?alternatives:[alternatives])
+    let list=(Array.isArray(alternatives)?alternatives:[alternatives])
       .map(s=>String(s||'').trim()).filter(Boolean);
     if(!list.length) return;
+    list=expandAlternatives(list);
 
     let scored=null, alreadyLogged=false;
     if(pendingAction){
