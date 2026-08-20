@@ -440,3 +440,21 @@ Verification note that mattered twice now: **replay a voice log only in a positi
 Deployed: `/v2/` on the live site now serves `v2-r4`, verified by fetching the deployed file and checking the build marker plus the presence of each fix.
 
 Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r4`.
+
+## 2026-08-20 — Day 3.4: a full game by voice, ending in mate (r5)
+
+The `v2-r4` log is a complete game played entirely by speech, finishing **`Qh5#`**. Everything fixed in r3/r4 held up live: `#8` "Castle king size" → O-O (the castling family fix), `#2`/`#6` "nice to F3"/"nice to E5" → Nf3/Ne5 (`nice`→knight), `#31` "Palm to H6" → h6 (`palm`→pawn), `#20`/`#23` "Pawn to E6"/"Pawn to H4" → fxe6/gxh4. Two failures left, both interesting.
+
+**Digit-as-file: "86" rejected three times in a row.** The recognizer renders a spoken file letter as a digit constantly — "a6" and "h6" both arrive as `86`, which parses as nothing at all. The user repeated it three times, got nowhere, and rephrased as "Palm to H6" to get the move in.
+
+Fixed by *not guessing*: both readings are offered as extra alternatives and the existing legal-move scorer picks. **Important guard — if both readings are legal in the current position it expands nothing and lets the utterance be rejected.** From the opening, "84" is genuinely ambiguous between a4 and h4, and silently playing a coin-flip move is much worse than a repeat when the player cannot see the board. Verified both branches: "84" from the opening refuses; "86" with only h6 reachable plays h6.
+
+**Castling by shape, not by vocabulary.** "castle kingside" came back as "cats looking side" / "cats looking inside" / "cats looking site". No word list will ever cover that. Matched the *shape* instead: a token that sounds like "king" (phon `kng` — which "looking" ends with) adjacent to one that sounds like "side". Restricted to utterances of four words or fewer so ordinary speech can't castle by accident; confirmed "seems to be stuck like a side note" (which contains "side") still doesn't trigger it.
+
+**Pattern worth naming after five rounds of this:** the fixes that keep paying off are the ones that *widen the candidate set and let the legal-move scorer decide*, not the ones that add another word to a lookup table. Digit-file expansion, alternative rescoring, phonetic distance — all of them hand more options to the thing that already knows what's legal. Vocabulary entries fix exactly one transcription each; scoring changes fix a whole class.
+
+**Corollary that now has its own guard:** widening is only safe while the scorer can still discriminate. Where it can't — two equally legal readings — the right answer is to refuse rather than pick, because in blindfold play a wrong move is unrecoverable and a rejection costs one repeat.
+
+Deployed to `/v2/` as `v2-r5`, verified by fetching the deployed file and checking the build marker and both fixes are present.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r5`.
