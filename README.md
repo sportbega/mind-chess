@@ -43,8 +43,17 @@ Both versions stay online, permanently:
 
 | | URL | What it is |
 |---|---|---|
-| **Current** | https://sportbega.github.io/mind-chess/ | The latest version. Right now that's v1.0; it becomes 2.0 when 2.0 ships. |
+| **Current** | https://sportbega.github.io/mind-chess/ | The latest release. Right now that's v1.0; it becomes 2.0 when 2.0 ships. |
 | **v1.0 (frozen)** | https://sportbega.github.io/mind-chess/v1/ | A permanent, byte-identical copy of the `v1.0` tag. Never changes. |
+| **2.0 preview** | https://sportbega.github.io/mind-chess/v2/ | Work in progress from the `v2` branch. Expect rough edges. |
+
+Add `?debug=1` to the 2.0 preview for the voice diagnostics panel. Its header prints a build id — check it matches what you expect before trusting a log, since a cached page and a broken fix look identical.
+
+GitHub Pages only serves the default branch, so `v2` work is invisible until copied onto `main`. Refresh the preview with:
+
+```bash
+./sync-v2-preview.sh   # run on main, after pushing to v2
+```
 
 `v1/` is a frozen snapshot kept for reference and comparison — extracted directly from the `v1.0` git tag and verified byte-for-byte. Don't edit it. If it ever needs to change, re-extract it from the tag.
 
