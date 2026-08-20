@@ -458,3 +458,84 @@ Fixed by *not guessing*: both readings are offered as extra alternatives and the
 Deployed to `/v2/` as `v2-r5`, verified by fetching the deployed file and checking the build marker and both fixes are present.
 
 Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r5`.
+
+## 2026-08-20 — Day 3.5: A5, the board answers questions (r6)
+
+Phase A's last real feature. `matchCommand()` handled about eight fixed
+phrases and `announceBoard()` read out all 32 pieces one at a time; neither is
+usable mid-game when you can't see the board. There are now thirteen computed
+answers: where a piece is, where it can go, what's on a square, what's
+attacking or defending something, what's loose, whether you're in check,
+whether you can still castle, what was played (yours, theirs, or the last N),
+how much material is left, and what you can take.
+
+**Everything is read straight off chess.js.** No engine, no model, no
+heuristics past counting material on a square. That isn't caution for its own
+sake — a blindfold player has nothing to check an answer against, so a
+confident wrong one is worse here than in any other kind of app.
+
+**chess.js stays at 0.10.3; the open decision is closed.** A5 needed
+`attackers()`, which 0.10.3 doesn't have, and the alternative was a breaking
+upgrade to 1.x for one function. Computing it from the board instead is about
+thirty lines and better on two counts: it never mutates `game` (the FEN
+round-trip would have had to, then restore it), and it stays *pseudo-legal* —
+`moves()` would have silently dropped pinned attackers, and a pinned piece
+still attacks. Telling a blindfold player their queen is safe when it isn't is
+the worst thing this app could do.
+
+**The phonetic matcher, turned on question phrasing, invents pieces and
+players.** This was the whole substance of the session. Sound-alike matching
+is what makes moves robust, and A5's note in the playbook said to expect the
+same for questions — but running it over *function* words is where it goes
+wrong, because short words carry almost no phonemes and collapse into each
+other:
+
+| heard | `phon` | collides with |
+|---|---|---|
+| `can` | `kn` | **queen** — "where can my bishop go" answered about the queen |
+| `what` | `wht` | **white** — every "what…?" question answered about White |
+| `the` | `th` | **they** — "what were *the* last three moves" read as "what did *they* play" |
+| `three` | `thr` | **their** |
+| `not`, `hers`, `many`, `has`, `here`, `there`, `or` | | knight, horse, mine, his, her, their, our |
+
+The `what`/`white` one is the instructive one: it was invisible for a whole
+round of testing because the seat under test happened to be White, so every
+wrong answer was accidentally right. It would have mangled every question in
+every game played as Black.
+
+The fix isn't more vocabulary, it's knowing where the technique applies:
+**match content words by sound, function words literally.** Piece names,
+"attacking", "defended", "kingside" — those are worth matching phonetically and
+the recognizer really does mangle them. Pronouns, colours and articles are
+short, common, and transcribed correctly nearly always; running them through
+`phon()` can only invent meaning that was never spoken. Question words are now
+a stoplist that piece detection skips entirely, and colour/ownership words are
+compared literally.
+
+**Measured, not guessed** — the same lesson as Day 3.1. The collision table
+above came out of a script that runs every word the matcher uses against the
+piece vocabulary and the ownership words and prints what overlaps. Three of the
+eight I'd never have predicted, and `three`→`their` would have broken the exact
+question the playbook uses as its own example. It's kept as
+`tools/phon-collisions.js` rather than thrown away, and it lifts `phon()`,
+`PIECE_WORDS` and `Q_STOP` out of `index.html` at run time instead of copying
+them, so it can't quietly go stale — run it after adding a word to any of those
+lists. It reports 12 collisions today, all neutralised.
+
+**Guard against the reverse failure:** every question rule needs an
+interrogative cue *and* its own keyword, and the utterance must be nine words
+or fewer. "what's on e4" contains a perfectly legal move, and playing it
+instead of answering would be unrecoverable. Verified the other direction too —
+`e4`, `nice to F3`, `bishop to c4`, `castle kingside`, `pawn to d3`,
+`night to c3` all still play, including the mangled forms from the r4/r5 logs.
+Questions are `type:'command'`, so they answer while the computer is thinking
+and after the game ends, which is when you most want them.
+
+Two smaller things: `announceBoard()` now groups by piece type and leads with
+your own side, and "what can I take" sorts by what's being won, because the
+list is cut at six and the free queen must not be the entry that got trimmed.
+
+Deployed to `/v2/` as `v2-r6`.
+
+Working tree: `index.html`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`.
+Branch `v2`, build `v2-r6`.

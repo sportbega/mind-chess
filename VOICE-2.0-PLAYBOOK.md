@@ -4,9 +4,9 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r5`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63). **Next session: A5 — [OUR-64](https://linear.app/bega-workspace/issue/OUR-64).**
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r6`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64). **Next session: A6, then Phase B.**
 >
-> **Done:** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate. **Remaining in Phase A: A5** (board questions) and A6 (self-host chess.js).
+> **Done:** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers. **Remaining in Phase A: A6** (self-host chess.js) — small, and the last thing standing between 2.0 and working offline.
 >
 > ### What the build actually taught us
 >
@@ -21,6 +21,10 @@
 > **Aggressive homophones need a length guard.** `nice`/`light`/`like` are what Chrome returns for a spoken "knight" in most real utterances — but the same words are filler in a sentence. Spoken moves are short; that's the cheapest reliable separator.
 >
 > **Half the input surface was missed at first.** A2 gave *moves* phonetic matching; commands stayed exact-regex, so "hide board" ("hi board", "Highboy") was rejected for a whole session. Worth remembering for A5, where question phrasing will vary at least as much.
+>
+> **Match content words by sound, function words literally** (A5, Day 3.5). Turning the phonetic matcher on question phrasing made it invent pieces and players, because short words carry almost no phonemes and collapse into each other: `can`→**queen**, `what`→**white**, `the`→**they**, `three`→**their**, plus `not`→knight, `hers`→horse, `many`→mine, `has`→his. Piece names and verbs are worth matching by sound and the recognizer really does mangle them; pronouns, colours and articles are short, common, correctly transcribed, and running them through `phon()` can only invent meaning that was never spoken. **`what`→`white` is the one to remember** — it was invisible for a whole test round because the seat under test was White, so every wrong answer came out accidentally right.
+>
+> **Keep the collision instrument.** That table was measured, not guessed, by `tools/phon-collisions.js` — it runs every word the matcher uses against the piece and ownership vocabularies and prints the overlaps. Three of the eight were unguessable. It reads `phon()`, `PIECE_WORDS` and `Q_STOP` out of `index.html` at run time rather than copying them, so it can't drift; **run it whenever a word is added to any of those lists.**
 
 **Status:** Phase A shipped (see above). Phases B–D not yet built. v1.0 is tagged and frozen (`git tag v1.0`).
 **Goal:** make the voice layer good enough that you can play a whole blindfold game without touching the keyboard — and talk to the board while you do it.
@@ -131,7 +135,7 @@ Three bands instead of two:
 **A4. Formalize the mic state machine.**
 Explicit `IDLE → LISTENING → THINKING → SPEAKING → LISTENING`, with the mic **hard-muted** during `SPEAKING`. This replaces the 120 ms timing hack in `say()` ([index.html:404](index.html)) and makes the OUR-58 class of bug structurally impossible rather than patched case-by-case.
 
-**A5. Widen the deterministic question set.** *(This is most of the "answer questions about the board" ask — and the trustworthy part of it.)*
+**A5. Widen the deterministic question set.** ✅ **Done — Day 3.5, `v2-r6`.** Thirteen computed answers; question phrasing is matched by sound (content words only — see the retrospective above). *(This was most of the "answer questions about the board" ask — and the trustworthy part of it.)*
 `matchCommand()` ([index.html:1001](index.html)) currently handles ~8 things, and `announceBoard()` dumps *every piece on the board* — unusable mid-game. Add exact, computed answers for:
 - "where are my knights?" / "where's my queen?"
 - "what's on e4?" / "is d5 empty?"
@@ -140,7 +144,7 @@ Explicit `IDLE → LISTENING → THINKING → SPEAKING → LISTENING`, with the 
 - "what were the last three moves?" / "what did I just play?"
 - "how many pieces do I have left?"
 
-⚠️ **Note:** the project pins **chess.js 0.10.3** (CDN, [index.html:10](index.html)), which has no `attackers()`. Attack/defence queries need a helper (enumerate opponent moves targeting the square) — or upgrade to chess.js 1.x, which is a breaking API change. Decide before writing A5.
+✅ **Decided:** stayed on **chess.js 0.10.3**. `attackersOf()` reads the board directly (~30 lines) instead of upgrading to 1.x for one function. Two reasons beyond avoiding a breaking change: it never mutates `game`, and it is deliberately **pseudo-legal** — enumerating `moves()` would silently drop *pinned* attackers, and a pinned piece still attacks. Telling a blindfold player their queen is safe when it isn't is the worst failure this app has.
 
 **A6. Self-host chess.js.**
 Stockfish is self-hosted but chess.js still comes from a CDN. If 2.0 is meant to work offline, fix the inconsistency.
@@ -300,7 +304,7 @@ Ship A before C. A working matcher makes everything above it optional rather tha
 
 ## Open decisions
 
-- [ ] **chess.js 0.10.3 → 1.x?** Needed for clean `attackers()` in A5. Breaking API change; decide before A5.
+- [x] **chess.js 0.10.3 → 1.x?** ~~Needed for clean `attackers()` in A5.~~ **Closed Day 3.5: staying on 0.10.3**, with a hand-rolled `attackersOf()` that is pseudo-legal on purpose. A6 (self-hosting) is unaffected either way.
 - [ ] **Coach setting default.** Recommendation: off. Engine-backed answers are strong enough to become accidental cheating, and unsolicited hints undermine blindfold training.
 - [ ] **How coarse should evaluations be?** "Slightly better" vs "+0.43" — recommendation: words, not numbers, unless you ask for precision.
 - [ ] **Is C3 worth it at all?** Try C2 first. A 0.5–2 GB download to make phrasing nicer may not earn its place.
