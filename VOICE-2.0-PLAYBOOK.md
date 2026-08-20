@@ -15,6 +15,21 @@ These are three different engineering problems with three different risk profile
 
 ---
 
+## Hard constraint: it has to be free
+
+**No per-use costs. No API subscriptions. No metered anything.** Mind Chess stays a link you can hand to anyone without it costing you money when they use it.
+
+Everything in this plan runs on: the browser's own APIs, open-source models loaded from a free CDN, the Stockfish engine you already ship, GitHub Pages, and the Supabase free tier you're already on. Total marginal cost per game: **zero**.
+
+Two consequences worth stating plainly:
+
+- **No hosted LLM, not even a "free tier."** Free tiers are one shared quota tied to your key. On a public link, testers burn it, and you're still protecting a key and watching a dashboard. That isn't free in the way you mean, so it's out.
+- **"Free" still costs download size.** Kokoro is ~80 MB, Moonshine ~150 MB, a local LLM 0.5–2 GB. That's a real cost to your users even though it's not a cost to you. Every one of these ships as **opt-in progressive enhancement** — the app must be fully playable before any of them download.
+
+One thing this constraint *removes*: with no paid API to hide, there's **no need for a Supabase Edge Function proxy at all**. No key to protect, no rate limiting, no spend alerts. That's a whole component deleted from the plan.
+
+---
+
 ## The one rule everything else follows
 
 > **Deterministic core, AI only at the edges.**
@@ -27,10 +42,11 @@ So:
 |---|---|---|
 | Deciding which move to play | `chess.js` legal move list + constrained matcher | Must be exact. Never let a language model pick a move freely. |
 | Board facts ("where are my rooks?") | `chess.js` queries, computed | Must be exact. Never let a language model recall board state from memory. |
-| Understanding messy phrasing | AI (optional fallback) | Fuzzy by nature. Constrained to choosing *from the legal list*. |
-| Chat, encouragement, coaching, "how am I doing?" | AI | Wrong = annoying, not fatal. |
+| Position judgement ("how am I doing?") | **Stockfish** — which you already ship | An engine *computes* an evaluation. A language model would guess at one and sound equally confident. |
+| Understanding messy phrasing | Optional local model, last resort only | Fuzzy by nature. Constrained to choosing *from the legal list*. |
+| Wording the answer nicely | Templates, or an optional local model | Wrong here is clumsy, not fatal. |
 
-Every AI call in 2.0 is either **picking from a list we generated** or **narrating facts we computed**. It is never the source of truth.
+Anything model-shaped in 2.0 is either **picking from a list we generated** or **wording facts we computed**. It is never the source of truth.
 
 ### Two channels, not one
 
@@ -126,43 +142,45 @@ Always-on listening while the app is also *speaking* is exactly the setup that p
 
 ---
 
-### Phase C — The AI layer (chatty assistant + smarter parsing)
-*Needs a key, which needs a proxy. Highest product upside.*
+### Phase C — The board assistant, with no API at all
+*Free, offline, and more accurate than a hosted model would be.*
 
-#### The hosting problem, and the answer
-Mind Chess is a **public** static site on GitHub Pages. An API key in the client is a key you've published. So:
+**The key realization: you already ship the smartest chess entity you could ask for.** Stockfish 18 is sitting in the repo, self-hosted, running in a Worker. It answers *"how am I doing?"*, *"what should I be worried about?"*, *"is my king safe?"*, *"am I hanging anything?"* — exactly, offline, for free.
 
-> **Put a Supabase Edge Function in front of the model.** You already have the project (`lqwssctnvgpxnerahnkc`) and anonymous auth working from the online-play feature. Zero new accounts, zero new infrastructure — currently **0 edge functions deployed**, so this is greenfield.
+And it answers them **better than a language model would.** An LLM asked to evaluate a position produces a plausible-sounding guess. Stockfish produces a number it actually computed. For the one question type where being wrong is most damaging to a blindfold player, the free option is also the correct one.
 
-Non-negotiable on that function, because anyone can read the repo and find the endpoint:
-- require the Supabase anon JWT (already minted by the online-play flow)
-- rate-limit per user *and* globally
-- cap output tokens per call
-- set a spend alert at the provider
+So Phase C isn't "add an AI." It's **connect the engine you already have to the conversation, and word its answers well.**
 
-#### C1. AI as *fallback* move parser
-Only when Phase A's matcher lands in the "nothing close" band. Send the FEN, the **legal move list in SAN**, and the raw transcript(s). The model must reply with **one move from that list, or `NONE`** — validate the response against the list before touching the board. It is a chooser, never a generator.
-*Cost: negligible (small text calls, only on failure).*
+#### C1. Engine-backed position questions
+Run a short, shallow analysis (a few hundred milliseconds — not full playing strength) on demand, and translate the result:
 
-#### C2. AI as conversational board assistant — the actual feature you want
-The flow that keeps it honest:
+| You ask | Comes from | Answer |
+|---|---|---|
+| "How am I doing?" | eval score | "You're a bit better — about half a pawn." |
+| "What should I worry about?" | engine's best line for the opponent | "Their knight is eyeing f7." |
+| "Am I hanging anything?" | opponent captures, scored | "Your bishop on b5 is undefended." |
+| "Is my king safe?" | eval delta + checks in the top lines | "No immediate threats to your king." |
 
-```
-question → classify
-  ├─ factual? → answer from chess.js (Phase A5), exactly, no model involved
-  └─ open-ended? → send FEN + move history + precomputed facts → model phrases the answer
-```
+⚠️ **Design care:** this is powerful enough to become cheating-by-accident. Analysis-backed answers should be **coarse and opt-in** — "slightly better," not "+0.43," and never the actual best move unless explicitly asked. Recommendation: a **Coach setting** with off / hints / full, defaulting to off, so blindfold training stays training.
 
-Open-ended is where it earns its keep: *"how am I doing?"*, *"what should I be worried about?"*, *"remind me what happened in the last few moves"*, *"is my king safe?"*. Give it the position **and** the computed facts in the prompt so it's narrating rather than recalling.
+#### C2. Natural phrasing without a model
+"Chatty" is mostly a writing problem, not a model problem. A well-built response layer gets you most of the way:
 
-A nice extra for blindfold play specifically: let it **track what you seem to have forgotten** — if you ask twice about the same square, it can proactively mention that piece later.
+- **Vary the wording.** Several phrasings per answer type, chosen at random, so it doesn't sound like a vending machine. This alone is most of the difference between "robotic" and "friendly."
+- **Use the existing verbosity setting** so it can be a terse move-caller or a talkative sparring partner.
+- **Be conversational about state:** "you've castled, rooks are connected" reads as chat but is pure computation.
+- **Track what you keep forgetting** — ask twice about the same square and it can bring that piece up unprompted later. Free, memorable, and genuinely useful in blindfold play.
 
-#### C3. Personality
-A short system prompt gives you the chatty tone. Keep a `verbosity` setting (one already exists) so it can be a terse move-caller or a talkative sparring partner. **Coaching should be opt-in** — unsolicited "are you sure?" would leak evaluation information and wreck the training value of blindfold play.
+Combined with A5's exact answers and C1's engine answers, this covers essentially every question you'd actually ask mid-game.
 
-**Model choice:** a fast, cheap text model is right for this — the calls are small and frequent, and latency is felt directly in conversation. Don't reach for the heaviest model; the position is given, not deduced.
+#### C3. Optional: a local model for phrasing only
+If C2 still feels mechanical, run a small model **in the browser** — [WebLLM](https://github.com/mlc-ai/web-llm) with a 0.5–3B model (Qwen, Llama 3.2, Gemma). No key, no server, no quota, no data leaving the device, cached after first download.
 
-**Done when:** you can ask "where are my rooks and is my king safe?" mid-game and get an answer you trust enough not to peek at the board.
+Its job is strictly **wording facts we hand it** — never recalling the board, never judging the position, never choosing a move. A 1B model is perfectly good at rephrasing and hopeless at chess; this split plays exactly to that.
+
+**Cost to you: zero. Cost to the user: 0.5–2 GB and a WebGPU-capable browser.** So: opt-in, off by default, behind a "make it chattier" toggle that explains the download. The app must be complete without it.
+
+**Done when:** you can ask "where are my rooks, is my king safe, and how am I doing?" mid-game and trust every part of the answer.
 
 ---
 
@@ -174,11 +192,11 @@ A short system prompt gives you the chatty tone. Keep a `verbosity` setting (one
 
 | Option | Quality | Cost | Notes |
 |---|---|---|---|
-| **Kokoro** via [`kokoro-js`](https://www.npmjs.com/package/kokoro-js) | Very good | Free | 82M params, open source, runs in-browser on WebGPU (WASM fallback). ~80 MB, more with extra voices. **Recommended** — matches your existing self-hosted-Stockfish instinct. |
-| Cloud TTS (ElevenLabs / OpenAI / Cartesia) | Excellent | Per-character | Lowest effort, best quality, needs the same proxy as Phase C. |
-| Keep `speechSynthesis` | Poor–OK | Free | Fine as the offline fallback tier. |
+| **Kokoro** via [`kokoro-js`](https://www.npmjs.com/package/kokoro-js) | Very good | **Free** | 82M params, open source, runs in-browser on WebGPU (WASM fallback). ~80 MB, loaded from a free CDN and cached. **This is the pick.** |
+| Keep `speechSynthesis` | Poor–OK | Free | Stays as the zero-download fallback tier. |
+| ~~Cloud TTS~~ | Excellent | Per character | **Ruled out** — metered. |
 
-Whichever you pick: keep `speechSynthesis` as a fallback, and **stream sentence-by-sentence** so speech starts before the full response is generated.
+Kokoro is the whole answer here: it's the one place where free and best-quality are the same option. Keep `speechSynthesis` as the fallback for machines that can't run it, and **stream sentence by sentence** so speech starts before the full response is ready.
 
 #### D2. Local STT — and the iOS unlock
 Replacing Web Speech with an in-browser model buys three things: no Google round-trip, offline operation, and — the big one — **voice on iPhone**. iOS WebKit has no `SpeechRecognition` *at all* ([index.html:1191](index.html) currently just apologises for this). A local model is the *only* path to voice on iOS.
@@ -194,15 +212,12 @@ Replacing Web Speech with an in-browser model buys three things: no Google round
 
 ---
 
-### Phase E — Full realtime speech-to-speech *(optional; probably not worth it)*
-Native speech-to-speech APIs (OpenAI Realtime, Gemini Live) collapse STT+LLM+TTS into one connection at 300–500 ms with real barge-in built in. Genuinely impressive.
+### ~~Phase E — Full realtime speech-to-speech~~ *(ruled out)*
+Native speech-to-speech APIs collapse recognition, reasoning and synthesis into one connection with real barge-in built in. Genuinely impressive — and **metered per minute**, which puts it outside the constraint. A 30-minute game would run roughly $0.60–$4.50.
 
-**Why it's listed last and marked optional:**
-- **Cost is per-minute, and chess games are long.** Roughly $0.02–0.15/min depending on model tier — a 30-minute game runs ~$0.60–$4.50. Phases A–D cost approximately nothing per game.
-- **It fights the core rule.** A speech-to-speech model wants to *be* the assistant, including reasoning about the board — exactly what we don't want it doing. You'd wire chess.js back in as tool calls and end up re-imposing all the same constraints.
-- Phases A + B + D already deliver most of the felt "continuous natural conversation."
+It also fought the core rule anyway: a speech-to-speech model wants to *be* the assistant, board reasoning included, which is exactly what we don't want. Dropped, not deferred.
 
-Revisit only if A–D land and the conversation still feels mechanical.
+**What replaces it:** Phase B's VAD and barge-in deliver the continuous-conversation *feel*, and Phase D1's Kokoro delivers the natural *voice*. The gap between that and a realtime API is much smaller than the price difference.
 
 ---
 
@@ -215,7 +230,7 @@ Honest answer: **we can copy the architecture, but we can't drop it in.**
 What that means practically:
 - **Steal the pipeline design** (VAD → STT → agent → streaming TTS, continuous mode, sentence-buffered playback for perceived speed) — that's Phases B–D.
 - **Use the same components, browser-native**: Whisper/Moonshine via Transformers.js instead of faster-whisper, `kokoro-js` instead of server Kokoro, `vad-web` instead of server Silero.
-- **Supabase Edge Functions play the role of its gateway** — the one piece that genuinely needs to be server-side (holding the API key).
+- **Skip its gateway entirely.** OpenClaw needs a server because it holds API keys and orchestrates providers. With the free constraint there are no keys, so there's nothing to put server-side — the whole gateway tier disappears. Its *local* pipeline (Whisper + Kokoro, no cloud) is exactly the configuration we're copying anyway.
 
 If you ever *do* want the full OpenClaw experience, that's a different product: a local assistant that happens to play chess, not a link you send to a friend.
 
@@ -223,33 +238,36 @@ If you ever *do* want the full OpenClaw experience, that's a different product: 
 
 ## Guardrails (carry these into every 2.0 session)
 
-1. **Never let a model choose a move outside the legal list.** Validate every AI-proposed move against `game.moves()` before applying it.
-2. **Never let a model recall board state.** Compute facts, pass them in.
-3. **Never speak a message that suggests a phrase to say back.** (OUR-58, permanently.)
-4. **Mic is hard-muted while speaking.** No exceptions, no timing hacks.
-5. **Every enhancement degrades gracefully.** No WebGPU → WASM. No model → Web Speech. No network → local matcher. No mic → text box. v1.0's feature set must keep working when everything fancy fails.
-6. **Test in a real browser, not just the preview pane.** The Day 2.3 finding still stands: cross-origin Worker construction is blocked in the Claude Browser tool, and Transformers.js/Kokoro are Worker-based. A failure there may be the tool, not the code.
-7. **Chrome is the primary target.** (Day 2.8 decision — Edge/Windows polish deprioritized.)
+1. **Nothing metered, ever.** No API keys, no subscriptions, no free tiers that meter. If a feature needs a paid service, it doesn't go in.
+2. **Never let a model choose a move outside the legal list.** Validate every proposed move against `game.moves()` before applying it.
+3. **Never let a model recall board state or judge a position.** chess.js computes facts; Stockfish computes judgement; a model only words them.
+4. **Never speak a message that suggests a phrase to say back.** (OUR-58, permanently.)
+5. **Mic is hard-muted while speaking.** No exceptions, no timing hacks.
+6. **Every enhancement degrades gracefully.** No WebGPU → WASM. No model → Web Speech. No download → templates. No mic → text box. v1.0's feature set must keep working when everything fancy fails — and the app must be fully playable before a single byte of optional model downloads.
+7. **Test in a real browser, not just the preview pane.** The Day 2.3 finding still stands: cross-origin Worker construction is blocked in the Claude Browser tool, and Transformers.js, Kokoro and WebLLM are all Worker-based. A failure there may be the tool, not the code.
+8. **Chrome is the primary target.** (Day 2.8 decision — Edge/Windows polish deprioritized.)
 
 ---
 
 ## Suggested order
 
-**A1 → A3 → A2 → A4** (a session or two; fixes most of the complaint, costs nothing)
-**→ A5** (the trustworthy half of the board-questions feature)
+**A1 → A3 → A2 → A4** (a session or two; fixes most of the complaint, zero downloads)
+**→ A5** (exact board answers)
 **→ B** (the continuous loop, safely)
-**→ C** (the chatty layer — the part you're most excited about)
-**→ D1** (natural voice) **→ D2** (iOS)
-**→ E** only if still needed.
+**→ C1 + C2** (engine-backed answers, well worded — still zero downloads)
+**→ D1** (Kokoro: the natural voice)
+**→ D2** (local recognition — and voice on iPhone)
+**→ C3** (optional local model, only if C2 still feels mechanical)
 
-Ship A before touching C. A working matcher makes the AI layer optional rather than load-bearing — and an AI layer built on top of a broken matcher will just hallucinate more confidently.
+Note what that ordering means: **everything through C2 requires no downloads at all.** That's better recognition, always-on listening, exact board answers, and engine-backed position judgement — the whole substance of your three asks — with nothing bigger shipped than the Stockfish you already have.
+
+Ship A before C. A working matcher makes everything above it optional rather than load-bearing.
 
 ---
 
 ## Open decisions
 
 - [ ] **chess.js 0.10.3 → 1.x?** Needed for clean `attackers()` in A5. Breaking API change; decide before A5.
-- [ ] **Which model provider** for Phase C (drives the Edge Function shape).
-- [ ] **Kokoro (free, ~80 MB download) vs cloud TTS (better, per-character)** for D1.
-- [ ] **Is coaching opt-in by default?** Recommendation: yes — unsolicited hints leak evaluation and undermine blindfold training.
-- [ ] **Budget ceiling** for the AI layer, so the Edge Function's rate limits can be set against a real number.
+- [ ] **Coach setting default.** Recommendation: off. Engine-backed answers are strong enough to become accidental cheating, and unsolicited hints undermine blindfold training.
+- [ ] **How coarse should evaluations be?** "Slightly better" vs "+0.43" — recommendation: words, not numbers, unless you ask for precision.
+- [ ] **Is C3 worth it at all?** Try C2 first. A 0.5–2 GB download to make phrasing nicer may not earn its place.
