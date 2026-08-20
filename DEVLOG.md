@@ -414,3 +414,29 @@ Verified each fix by replaying the user's verbatim alternative lists **in a posi
 Regression: full sequential game (e4, Bc4, Nf3, O-O), commands (reveal board, take back), and noise/off-hand speech ("banana milkshake", "seems to be stuck like a side note", pure digits) still correctly rejected without false-triggering the new questions.
 
 Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r3`.
+
+## 2026-08-20 — Day 3.3: the castling sequence (r4)
+
+First log captured on the right build (`v2-r3`, confirmed by the new build marker — which immediately proved its worth). The cross-scale fix held up live: `#7` "night to F3" → Nf3 at 6.85, `#16` "night to be five" → Nb5 at 6.69, both cases that previously lost to a bare pawn move. Bishops, castling-by-full-phrase, and bare squares all clean.
+
+**The bad part was `#9`–`#13`: the user said "kingside" three times and was rejected all three times.** Three separate defects stacked:
+
+1. **"castle kingside" is almost never transcribed as "kingside".** It came back as "Castle king size" / "King's side" / "King site" / "kingzide". The side never registered, so it fell through to the disambiguation prompt "kingside or queenside?" — a question that should never have been asked.
+2. **A misheard answer discarded the question entirely.** `route()` cleared `pendingAction` unconditionally when `resolvePending` failed. The first "kingside" was heard as "inside", which killed the question — so the next two, both transcribed correctly, had nothing waiting for them and were parsed as fresh (meaningless) utterances. **This is the worst kind of bug in a voice UI: the app appears to ignore the user repeating themselves, and repeating is exactly what a user does when unsure.**
+3. **Bare "kingside" wasn't a move.** It was only ever understood as a reply, so once the question was gone the word meant nothing.
+
+Fixed all three: normalise the king-size/king's-side/kingzide family (and queenside equivalents) in `preprocess`; hold a pending question open unless the new utterance clearly parses as something else (score ≥6); and accept a bare "kingside"/"queenside" as a castling request in its own right.
+
+**Also from this log:** when nothing parses, prefer an alternative that at least names a piece. "like to wear" and "night to wear" both scored 0, and the first won purely on list position, so the utterance was discarded instead of prompting "Knight to where?".
+
+**Piece vocabulary, again from measurement:** `nice`, `light`, `like`, `lights` → knight. In the captured logs these are what Chrome actually returns for a spoken "knight" — the correct spelling is the *minority* case.
+
+**Two regressions caught while verifying, both self-inflicted, both worth recording:**
+- An open "Knight to where?" **swallowed a complete unrelated move**: "bishop to c4" was read as the answer "c4" and answered "no knight can reach c4". Naming a different piece now means a new utterance, not a reply.
+- `like` → knight fired on ordinary speech: "seems to be stuck like a side note" asked "Knight to where?". Spoken moves are short, so utterances over five words no longer trigger the ask-back. **Adding aggressive homophones is only safe with a length guard** — the same word is a piece name in a three-word command and a filler word in a sentence.
+
+Verification note that mattered twice now: **replay a voice log only in a position where the intended move is legal.** "Bishop to C4" appeared to fail until I noticed the board was at move 1 with the bishop still boxed in; the same trap produced a false negative during Day 3.1.
+
+Deployed: `/v2/` on the live site now serves `v2-r4`, verified by fetching the deployed file and checking the build marker plus the presence of each fix.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r4`.
