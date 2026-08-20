@@ -330,3 +330,19 @@ Working tree: `README.md`, `VOICE-2.0-PLAYBOOK.md` (new), this DEVLOG entry.
 Revised order: A1→A3→A2→A4→A5→B→C1+C2→D1→D2→C3. Worth noting **everything through C2 requires no downloads at all** — better recognition, always-on listening, exact board answers, and engine-backed judgement, with nothing bigger shipped than the Stockfish already in the repo.
 
 Working tree: `VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry. Artifact republished at the same URL.
+
+**Day 2.9 addendum — v1.0 permanently online at `/v1/`.** User's requirement: v1.0 must stay playable online both *now* and after 2.0 ships, kept side by side for reference.
+
+Approach: a `v1/` directory in the same repo, extracted straight from the `v1.0` git tag with `git show v1.0:<file>` and **verified byte-identical by SHA-256** against the tag for all four files. Same Pages deploy, no second repo, no workflow, no new hosting. Deliberately kept pristine — no "you're on the old version" banner injected — so `/v1/` is a true reference copy of what v1.0 was; the cross-links live in the README and on the current version instead.
+
+Nice property: committing a second copy of the 7.3MB Stockfish WASM cost **nothing** in repo size — git is content-addressed, so identical bytes at a second path reuse the same blob. `.git` stayed at 6.7M before and after.
+
+Live and verified end-to-end at **https://sportbega.github.io/mind-chess/v1/** — not just loading: submitted `e4` through the real `route()` path and the computer replied `Nc6`, with chess.js and the transcript working. (`/` continues to serve the current version.)
+
+**Two same-origin hazards this creates for 2.0, both now recorded in the README and the playbook:**
+- **`localStorage` is shared between `/` and `/v1/`.** Confirmed live that v1.0 writes three keys — `mind-chess-save-v1`, `mind-chess-board-theme`, `mind-chess-piece-theme`. 2.0 must namespace *all* of them (`mind-chess-v2-*`), not just the save key, or playing one version corrupts the other's state. Same trap as the Day 2.4 shared-origin `localStorage` finding, now structural rather than incidental.
+- **Both versions share the `mind_chess_games` Supabase table.** Keep the schema backward-compatible — add columns, never repurpose or remove — or v1.0's online mode breaks.
+
+**Also spotted while verifying:** the spoken form of a move leaks into the on-screen transcript ("Pawn to ee 4", "Knight to see 6") because letters are spelled phonetically for the synthesizer. Speech text and display text should be generated separately in 2.0 — say "ee 4", write "e4". Logged in the playbook.
+
+Working tree: `v1/` (new, 4 files), `README.md`, `VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry.

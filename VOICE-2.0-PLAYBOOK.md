@@ -236,6 +236,17 @@ If you ever *do* want the full OpenClaw experience, that's a different product: 
 
 ---
 
+## Living alongside v1.0
+
+v1.0 is frozen and permanently online at **`/v1/`** (byte-identical to the `v1.0` tag), while `/` tracks the latest version. Both stay up. Two same-origin hazards this creates, both verified live:
+
+1. **Namespace every `localStorage` key.** v1.0 writes `mind-chess-save-v1`, `mind-chess-board-theme`, and `mind-chess-piece-theme` — and `/v1/` shares an origin with `/`, so they're the *same* storage. 2.0 must prefix all of its keys (e.g. `mind-chess-v2-*`). Reusing any of the three means playing 2.0 corrupts v1.0's saved game and themes, and vice versa. This is the same shared-origin trap that cost a session during Day 2.4 testing.
+2. **Keep the `mind_chess_games` schema backward-compatible.** Both versions talk to the same Supabase table. Add columns; never repurpose or remove one, or v1.0's online mode breaks.
+
+**Small wart worth fixing in 2.0, spotted while verifying v1:** the *spoken* form of a move leaks into the on-screen transcript — the log reads "Pawn to ee 4" and "Knight to see 6" because letters are spelled phonetically for the synthesizer. Speech text and display text should be generated separately: say "ee 4", write "e4".
+
+---
+
 ## Guardrails (carry these into every 2.0 session)
 
 1. **Nothing metered, ever.** No API keys, no subscriptions, no free tiers that meter. If a feature needs a paid service, it doesn't go in.

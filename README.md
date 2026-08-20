@@ -54,7 +54,7 @@ Both versions stay online, permanently:
 
 Both versions are served from the **same origin**, so they share browser storage and the same Supabase table:
 
-1. **2.0 must use a different `localStorage` key.** v1.0 saves to `mind-chess-save-v1`. If 2.0 writes a newer shape to that same key, opening 2.0 and then v1.0 corrupts v1.0's saved game — and vice versa. 2.0 gets its own key.
+1. **2.0 must namespace *all* its `localStorage` keys.** Verified live on `/v1/`, v1.0 writes three: `mind-chess-save-v1`, `mind-chess-board-theme`, `mind-chess-piece-theme`. If 2.0 writes a newer shape to any of them, playing 2.0 and then v1.0 corrupts v1.0 — and vice versa. Give 2.0 its own prefix (e.g. `mind-chess-v2-*`) for every key, not just the save.
 2. **Keep the `mind_chess_games` schema backward-compatible**, or v1.0's online mode breaks. Add columns, don't repurpose or remove them.
 
 ## Next ideas
