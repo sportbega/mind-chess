@@ -845,7 +845,11 @@
     let t=raw.toLowerCase().trim().replace(/[.,!?]/g,' ');
     t=preprocess(t);
     t=t.replace(/\bplease\b/g,' ').replace(/\bmove\b/g,' ')
-       .replace(/\bcaptures?\b/g,' x ').replace(/\btakes?\b/g,' x ');
+       .replace(/\bcaptures?\b/g,' x ')
+       // "takes" marks a capture — except in "take back", where rewriting it
+       // to "x" hid the command from matchCommand entirely. Documented in the
+       // help text since v1.0 and never actually worked.
+       .replace(/\btakes?\b(?!\s+back\b)/g,' x ');
     return t.replace(/\s+/g,' ').trim();
   }
 
@@ -946,6 +950,40 @@
     return /^[a-h]$/.test(k)?k:null;
   }
 
+  // Speech errors are sound errors, not spelling errors — "night"/"knight",
+  // "rock"/"rook", "bishup"/"bishop". Comparing letters charges a full
+  // substitution for words that are pronounced identically, which is what
+  // made every piece move tie with the bare pawn move to the same square.
+  // Square tokens (e4, f3) are already canonical and are left untouched, or
+  // they would collapse into each other.
+  const PHON_CACHE={};
+  function phon(w){
+    if(PHON_CACHE[w]!==undefined) return PHON_CACHE[w];
+    let s=w;
+    if(s.length<3||/^[a-h][1-8]$/.test(s)||/^\d+$/.test(s)){ PHON_CACHE[w]=s; return s; }
+    s=s.replace(/^(kn|gn|pn)/,'n').replace(/^wr/,'r').replace(/^ps/,'s');
+    s=s.replace(/ph/g,'f').replace(/gh/g,'').replace(/ck/g,'k').replace(/sch/g,'sk');
+    s=s.replace(/c(?=[eiy])/g,'s').replace(/c/g,'k');
+    s=s.replace(/q/g,'k').replace(/x/g,'ks').replace(/z/g,'s');
+    s=s.replace(/e$/,'');
+    s=s[0]+s.slice(1).replace(/[aeiouy]/g,'');   // keep the leading sound, drop interior vowels
+    s=s.replace(/(.)\1+/g,'$1');
+    PHON_CACHE[w]=s||w;
+    return PHON_CACHE[w];
+  }
+
+  // Which piece the speaker actually named, if any — matched by sound so
+  // "night", "nite" and "knight" all land on the knight.
+  const PHON_PIECE={};
+  Object.keys(PIECE_WORDS).forEach(w=>{ PHON_PIECE[phon(w)]=PIECE_WORDS[w]; });
+  function spokenPiece(heard){
+    for(const tok of heard.split(' ')){
+      const p=PHON_PIECE[phon(tok)];
+      if(p) return p;
+    }
+    return null;
+  }
+
   function tokenDistance(a,b){
     const A=speechKey(a).split(' ').filter(Boolean), B=speechKey(b).split(' ').filter(Boolean);
     const d=Array.from({length:A.length+1},(_,i)=>Array(B.length+1).fill(0));
@@ -953,8 +991,9 @@
     for(let j=0;j<=B.length;j++) d[0][j]=j;
     for(let i=1;i<=A.length;i++) for(let j=1;j<=B.length;j++){
       const same=A[i-1]===B[j-1];
-      const near=!same && (A[i-1][0]===B[j-1][0] || A[i-1].slice(0,2)===B[j-1].slice(0,2));
-      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(same?0:near?.35:1));
+      const sounds=!same && phon(A[i-1])===phon(B[j-1]);
+      const near=!same && !sounds && (A[i-1][0]===B[j-1][0] || A[i-1].slice(0,2)===B[j-1].slice(0,2));
+      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(same?0:sounds?.1:near?.35:1));
     }
     return d[A.length][B.length];
   }
@@ -973,11 +1012,16 @@
     return applied;
   }
 
+  const DEBUG=/[?&]debug=1/.test(location.search);
+  const debugLog=[];
+  let debugOut=null, debugCount=null, lastAltMeta=null;
+  let lastScoring=null;                 // diagnostics only, see ?debug=1
   function constrainedMove(text){
     const legal=game.moves({verbose:true});
     if(!legal.length) return null;
     const heard=speechKey(text);
     if(!heard) return null;
+    const said=spokenPiece(heard);
     const scored=legal.map(m=>{
       const phrases=movePhrases(m);
       const distance=Math.min(...phrases.map(p=>tokenDistance(heard,p)));
@@ -985,10 +1029,18 @@
       // Reward exact destination and piece words while keeping the score
       // normalized so short moves such as "e4" are not unfairly penalized.
       const target=heard.includes(speechKey(m.to))?1.2:0;
-      return {m,distance,exact,score:(exact?8:0)+target- distance/Math.max(1,heard.split(' ').length)};
+      // The piece word carries as much information as the destination. Without
+      // weighting it, "knight f3" scored the pawn move f3 exactly as highly as
+      // Nf3 — a dead tie that failed the margin test every single time. Naming
+      // a piece is also evidence *against* the moves of every other piece.
+      const piece = said ? (said===m.piece?1.2:-1.2) : (m.piece==='p'?0.3:0);
+      return {m,distance,exact,score:(exact?8:0)+target+piece- distance/Math.max(1,heard.split(' ').length)};
     }).sort((a,b)=>b.score-a.score);
     const best=scored[0], second=scored[1];
     const margin=best.score-(second?second.score:-10);
+    // Diagnostics only — no effect on the decision below.
+    lastScoring={heard,margin:Math.round(margin*100)/100,
+      top:scored.slice(0,4).map(s=>({san:s.m.san,score:Math.round(s.score*100)/100,exact:s.exact}))};
     // Exact legal destination phrases win immediately. Fuzzy matches need a
     // meaningful margin; otherwise route() will ask the user to repeat.
     if(best.exact || (best.score>=1.05 && margin>=0.7)) return {move:best.m,score:best.score,margin};
@@ -1189,6 +1241,7 @@
     }
     const others=list.filter(x=>x!==bestText).slice(0,2);
     log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
+    if(DEBUG) recordDiagnostic(list,best,bestText);
 
     // Commands are always allowed, even after game over / while computer thinks.
     if(best.type!=='command'){
@@ -1252,7 +1305,11 @@
         const res=e.results[i];
         if(res.isFinal){
           const alts=[];
-          for(let a=0;a<res.length;a++) alts.push(res[a].transcript);
+          lastAltMeta=[];
+          for(let a=0;a<res.length;a++){
+            alts.push(res[a].transcript);
+            lastAltMeta.push({t:res[a].transcript,c:res[a].confidence});
+          }
           note('');
           // With "Keep listening" off the mic is a push-to-talk button, and a
           // continuous session would otherwise stay open indefinitely — the
@@ -1823,6 +1880,69 @@
     }catch(e){ return false; }
   }
 
+  // ===============================================================
+  // Voice diagnostics — open with ?debug=1
+  // ===============================================================
+  // A1 didn't move the needle, so stop theorising about where accuracy is
+  // lost and record it: what the recognizer actually returned, what the
+  // normaliser reduced it to, and how the legal-move scorer ranked it.
+  function setupDebug(){
+    if(!DEBUG) return;
+    const p=document.createElement('div');
+    p.style.cssText='max-width:960px;margin:18px auto;padding:12px 14px;border:1px solid #5d6b7a;border-radius:10px;background:#141821;color:#e8e4da;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace';
+    p.innerHTML='<div style="display:flex;gap:10px;align-items:center;margin-bottom:9px">'
+      +'<b style="font:600 13px/1 system-ui,sans-serif">Voice diagnostics</b>'
+      +'<span id="dbgCount" style="opacity:.55"></span>'
+      +'<button id="dbgCopy" type="button" style="margin-left:auto;cursor:pointer;font:inherit;padding:3px 9px">Copy all</button>'
+      +'<button id="dbgClear" type="button" style="cursor:pointer;font:inherit;padding:3px 9px">Clear</button></div>'
+      +'<textarea id="dbgOut" readonly spellcheck="false" style="width:100%;height:300px;resize:vertical;background:#0e1117;color:#d9e2ec;border:1px solid #2b3440;border-radius:6px;padding:9px;font:inherit"></textarea>';
+    document.body.appendChild(p);
+    debugOut=p.querySelector('#dbgOut');
+    debugCount=p.querySelector('#dbgCount');
+    p.querySelector('#dbgClear').addEventListener('click',()=>{ debugLog.length=0; renderDebug(); });
+    p.querySelector('#dbgCopy').addEventListener('click',()=>{
+      debugOut.select();
+      let ok=false;
+      try{ ok=document.execCommand('copy'); }catch(e){}
+      if(!ok&&navigator.clipboard) navigator.clipboard.writeText(debugOut.value).catch(()=>{});
+      const b=p.querySelector('#dbgCopy'); b.textContent='Copied'; setTimeout(()=>b.textContent='Copy all',1200);
+    });
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    debugLog.push('=== Mind Chess voice diagnostics ==='
+      +'\nbuild: v2 / A1+A4  ·  continuous='+(recognition?recognition.continuous:'n-a')
+      +'  maxAlternatives='+(recognition?recognition.maxAlternatives:'n-a')
+      +'\nengine: '+(SR?'present':'MISSING')+'  ·  '+navigator.userAgent+'\n');
+    renderDebug();
+  }
+  function renderDebug(){
+    if(!debugOut) return;
+    debugOut.value=debugLog.join('\n');
+    debugOut.scrollTop=debugOut.scrollHeight;
+    const n=debugLog.filter(l=>l.startsWith('#')).length;
+    debugCount.textContent=n?n+' utterance'+(n===1?'':'s'):'speak a move…';
+  }
+  function recordDiagnostic(list,best,bestText){
+    const n=debugLog.filter(l=>l.startsWith('#')).length+1;
+    const src=lastAltMeta&&lastAltMeta.length?'voice':'typed';
+    const lines=['#'+n+'  ['+src+']  chose: "'+bestText+'"'];
+    if(src==='voice'){
+      lines.push('   heard: '+lastAltMeta.map(a=>
+        '"'+a.t.trim()+'"'+(typeof a.c==='number'&&a.c?' ('+a.c.toFixed(2)+')':'')).join('  |  '));
+    }
+    lines.push('   normalised: "'+speechKey(bestText)+'"');
+    lines.push('   result: '+best.type+(best.type==='move'&&best.move?' → '+best.move.san:'')
+      +'  (score '+(Math.round(best.score*100)/100)+')'
+      +(best.type==='none'?'   ← REJECTED':''));
+    if(lastScoring){
+      lines.push('   ranked: '+lastScoring.top.map(t=>t.san+' '+t.score+(t.exact?'*':'')).join('  |  ')
+        +'   margin '+lastScoring.margin);
+    }
+    lines.push('   turn: '+(game.turn()==='w'?'white':'black')+'  legal: '+game.moves().length+'\n');
+    debugLog.push(lines.join('\n'));
+    lastScoring=null; lastAltMeta=null;
+    renderDebug();
+  }
+
   if(location.protocol==='file:') originBanner.classList.add('show');
 
   try{
@@ -1832,6 +1952,7 @@
   applyTheme();
 
   setupRecognition();
+  setupDebug();
   const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
   const spectateMatch=location.hash.match(/^#spectate=([0-9a-fA-F-]{36})$/);
   if(inviteMatch){
