@@ -316,3 +316,17 @@ Also published the playbook as a shareable artifact for easier reading, and adde
 **No code changed this session** — deliberately. v1.0 stays exactly as tagged; 2.0 work starts next session at A1 (`continuous=true` + session watchdog).
 
 Working tree: `README.md`, `VOICE-2.0-PLAYBOOK.md` (new), this DEVLOG entry.
+
+**Day 2.9 amendment — hard zero-cost constraint.** User reviewed the playbook and accepted it with one binding change: **no extra costs of any kind, it must be free.** Rewrote the plan against that constraint rather than trimming it, and it improved in one place rather than degrading.
+
+- **Stockfish replaces the hosted LLM for position questions — and is the better answer anyway.** The project already self-hosts Stockfish 18 Lite. "How am I doing / what should I worry about / is my king safe / am I hanging anything" are engine questions, and an engine *computes* an evaluation where a language model would produce a confident guess. For the question type where being wrong hurts a blindfold player most, the free option is also the more accurate one. Phase C stopped being "add an AI" and became "connect the engine you already ship to the conversation, and word its answers well."
+- **"Chatty" is mostly a writing problem, not a model problem.** Varied phrasings per answer type + the existing verbosity setting + conversational framing of computed state covers most of the felt difference between robotic and friendly, at zero cost and zero download.
+- **A local model stays available but demoted to phrasing only** (WebLLM, 0.5–3B, in-browser, no key/quota/server) as an opt-in Phase C3 behind a toggle that explains the 0.5–2GB download — explicitly *not* allowed to recall board state, judge the position, or choose a move. Try C2 first; it may not earn its place.
+- **Dropped entirely:** cloud TTS (metered) and Phase E realtime speech-to-speech (metered per minute; a 30-min game would run $0.60–$4.50). Also rejected hosted "free tiers" — one shared quota tied to one key, exhausted by testers on a public link, and the key still needs protecting, so not free in the sense meant.
+- **The constraint deleted a whole component:** with no paid API to hide, the Supabase Edge Function proxy is unnecessary — no key, no rate limiting, no spend alerts. Simpler than the original plan.
+- **Kokoro (D1) survives untouched** — it was already the free recommendation, and it's the one place where free and best-quality are the same option.
+- **New guardrail #1: nothing metered, ever.** Plus an honest note that "free" still costs *download size* for users (Kokoro ~80MB, Moonshine ~150MB, WebLLM 0.5–2GB), so all three ship as opt-in progressive enhancement and the app must be fully playable before any byte of them downloads.
+
+Revised order: A1→A3→A2→A4→A5→B→C1+C2→D1→D2→C3. Worth noting **everything through C2 requires no downloads at all** — better recognition, always-on listening, exact board answers, and engine-backed judgement, with nothing bigger shipped than the Stockfish already in the repo.
+
+Working tree: `VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry. Artifact republished at the same URL.
