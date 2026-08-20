@@ -37,6 +37,12 @@ Requires `supabase-config.js` (committed — it only holds the publishable/anon 
 
 See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 
+## Versions
+
+**v1.0** (tag `v1.0`) is the current frozen release — everything described above, verified on Chrome/macOS and iOS Safari.
+
+**2.0** targets the voice layer: recognition accuracy, continuous listening, natural speech, and a conversational board assistant you can ask about the position. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the full plan.
+
 ## Next ideas
 
 Tracked in Linear (project "Mind Chess", team OUR) — currently empty; nothing open as of Day 2.6.
