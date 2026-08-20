@@ -1,6 +1,28 @@
 # Mind Chess 2.0 — Voice Playbook
 
-**Status:** plan, not yet built. v1.0 is tagged and frozen (`git tag v1.0`).
+> ## ✅ Phase A is built and shipped — 2026-08-20
+>
+> **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
+>
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r5`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63). **Next session: A5 — [OUR-64](https://linear.app/bega-workspace/issue/OUR-64).**
+>
+> **Done:** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate. **Remaining in Phase A: A5** (board questions) and A6 (self-host chess.js).
+>
+> ### What the build actually taught us
+>
+> **The plan's diagnosis was half wrong, and measuring beat theorising.** A1 was pitched as the biggest win and delivered nothing the user could feel — between moves you pause while the computer replies, so the cold-start gap was rarely hit. Its real value turned out to be *enabling A3*: speaking a question aloud is only safe because the mic is muted while talking. Everything that followed came from a `?debug=1` panel built after A1 failed, replaying real captured speech.
+>
+> **Three wrong-move bugs were hiding behind "it mishears".** Saying "knight to d4" played the *pawn*; so did "knight to f4"; and an open question swallowed an unrelated move. None were recognition failures — all three were scoring/flow defects that only showed up in logs of real games. In blindfold play this is the worst class of bug, because the player cannot see it happen.
+>
+> **The constrained matcher was dead code for piece moves.** Every single one tied with the bare pawn move to the same square (margin 0, rejected every time); they only ever worked because a separate exact parser rescued them. That's why anything the recognizer mangled failed twice over.
+>
+> **The generalisable rule:** fixes that *widen the candidate set and let the legal-move scorer decide* pay off repeatedly — phonetic distance, rescoring every alternative, digit-as-file expansion. Vocabulary entries fix exactly one transcription each; scoring changes fix a whole class. **Corollary, now enforced:** widening is only safe while the scorer can still discriminate — where two readings are equally legal, refuse rather than pick. A rejection costs one repeat; a wrong move costs the game.
+>
+> **Aggressive homophones need a length guard.** `nice`/`light`/`like` are what Chrome returns for a spoken "knight" in most real utterances — but the same words are filler in a sentence. Spoken moves are short; that's the cheapest reliable separator.
+>
+> **Half the input surface was missed at first.** A2 gave *moves* phonetic matching; commands stayed exact-regex, so "hide board" ("hi board", "Highboy") was rejected for a whole session. Worth remembering for A5, where question phrasing will vary at least as much.
+
+**Status:** Phase A shipped (see above). Phases B–D not yet built. v1.0 is tagged and frozen (`git tag v1.0`).
 **Goal:** make the voice layer good enough that you can play a whole blindfold game without touching the keyboard — and talk to the board while you do it.
 
 ---

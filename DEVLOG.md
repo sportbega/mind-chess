@@ -346,3 +346,115 @@ Live and verified end-to-end at **https://sportbega.github.io/mind-chess/v1/** �
 **Also spotted while verifying:** the spoken form of a move leaks into the on-screen transcript ("Pawn to ee 4", "Knight to see 6") because letters are spelled phonetically for the synthesizer. Speech text and display text should be generated separately in 2.0 — say "ee 4", write "e4". Logged in the playbook.
 
 Working tree: `v1/` (new, 4 files), `README.md`, `VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry.
+
+## 2026-08-20 — Day 3.0: A1 + A4 (continuous recognition behind a speaking gate)
+
+First 2.0 code. **Working on a `v2` branch, not `main`** — `main` deploys straight to Pages, and 2.0 shouldn't replace the live site until it's finished. `/` stays v1.0 until we merge; `/v1/` is frozen either way.
+
+**A1 and A4 turned out to be one change, not two.** The playbook ordered them A1→A3→A2→A4, but A1 (`continuous=true`) is only safe once A4 (hard-mute while speaking) exists: a per-utterance session used to end on its own before narration started, so the mic was closed during TTS by accident. A long-lived session stays open straight through our own voice — that's OUR-58 as a permanent condition rather than an occasional one. Did them together.
+
+- **A1:** `recognition.continuous=true`. The old restart-per-utterance pattern paid a cold-start cost every time (Chrome clips the opening audio of a fresh session) plus a dead 250ms gap that recorded nothing, which is why "knight to f3" so often arrived as "to f3" — losing exactly the word that identifies the piece.
+- **A4:** speech and listening are now mutually exclusive by construction, not by timing. `beginSpeaking()` aborts the session (`abort()`, not `stop()` — `stop()` delivers whatever it already captured, potentially the tail of our own sentence); `endSpeaking()` brings it back.
+
+**Four things that only became problems once the mic is always on**, all handled:
+1. `no-speech` fires after any quiet stretch in continuous mode. That's normal between moves, so it no longer reports an error — it just restarts silently. Otherwise the mic line would fill with false errors every few seconds.
+2. A session that dies immediately means something is genuinely wrong (revoked permission, no input device). Restarting at full speed would spin forever, so it backs off and then stops **visibly** after 5 tries rather than failing silently.
+3. **Chrome drops `utterance.onend`** often enough that relying on it alone would eventually strand the mic muted with no way back. Added a watchdog that polls the synthesis queue as a backstop, ignoring the first 600ms so it can't fire before speech starts.
+4. **Regression caught before commit:** with "Keep listening" *off*, the per-utterance session was what made the mic behave as push-to-talk. Under `continuous=true` it would have stayed open forever, so it's now stopped explicitly after one final result.
+
+**Verified in-browser** by stubbing the recognizer transport at `SpeechRecognition.prototype` (start/abort/stop) and making synthesis resolve instantly, which allows testing the state machine without a microphone: `start→abort→start` across a full move cycle with two narrations; `no-speech` leaving the note non-error and self-restarting; exactly 5 start attempts before the visible give-up; the watchdog recovering a deliberately dropped `onend` (mic muted mid-speech, live again ~1.8s later); and push-to-talk stopping without restart. Clean reload afterwards plays normally with no console errors (the one 404 is the absent favicon, pre-existing).
+
+**Not verifiable here:** the actual accuracy win. Whether the first word stops getting eaten needs a real voice through a real microphone — worth the user trying before A3 builds on top of it.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`.
+
+## 2026-08-20 — Day 3.1: measure first, then A2 + A3
+
+User tested A1 and reported "it is still the same in my opinion." **That was the right call and the useful outcome of the session** — A1 was built on an unmeasured hypothesis (cold-start clipping eating the first word), and in practice you pause between moves while the computer replies, so the session had almost always restarted long before you spoke again. Real but rarely hit. Stopped theorising and instrumented instead.
+
+**Added `?debug=1` voice diagnostics**: per utterance it records every alternative the recognizer returned with its confidence, what `speechKey` normalised the winner to, the plan type/score, and the top four legal-move candidates with scores and margin — in a copyable panel. Cost one small commit and turned the whole problem from opinion into data.
+
+**What synthetic testing showed immediately:** the constrained matcher was failing on *every* piece move. "night f3" scored the pawn move `f3` at 0.7 and `Nf3` at 0.7 — a dead tie, margin 0, rejected every single time. Piece moves only ever worked because `parseRequest` (a separate, exact, rule-based path) rescued them afterwards, which is exactly why anything the recognizer mangled fell through both. Two causes: letter-level edit distance charged a **full substitution** for night/knight (identical out loud), and the destination earned a +1.2 bonus while **the piece name earned nothing at all**, so naming a piece could never break a tie.
+
+**A2:** added a compact phonetic key (`kn→n`, `ck→k`, `ph→f`, trailing `e` dropped, interior vowels dropped, doubles collapsed) so same-sounding tokens cost ~0.1 instead of 1.0 — square tokens excluded, or `e4`/`e3` would collapse into each other. Piece naming now scores as evidence *for* that piece and *against* every other. Measured on identical inputs: every knight move went from margin 0 (rejected) to margin 1.7 (accepted); "horse f three" resolves; bare squares unchanged at 9.55.
+
+**Also fixed a bug present since v1.0:** `normalize()` rewrote "takes"→"x" (the capture marker) before `matchCommand` ran, so **"take back" — documented in the app's own help text — has never worked in any version.** Only "undo" did. Verified against the frozen `/v1/` copy before touching it, to be sure it was pre-existing rather than newly broken.
+
+**Then the user captured 12 real utterances**, which found something worse than mishearing — **a wrong-move bug**:
+
+- Saying "knight to d4" **played the pawn to d4.** `route()` broke out of the alternative loop at the first plan scoring ≥6, and the recognizer orders alternatives by *its* confidence, not ours. "Nike D4" came back first and parses as an unambiguous pawn move — exactly 6 — so the loop stopped and never reached "Knight to D4" sitting two places later at 10.4. Raised the early exit to 9 (only an exact phrase match is worth stopping for). Replaying the captured alternative list in the same 28-legal-move position now yields Nd4 at margin 9.7. **Worth noting the first replay attempt looked like a failure until I checked the position — from the opening, Nd4 is illegal and choosing the pawn was correct. Reproducing the actual position mattered.**
+- The real data also validated A2 in the wild: "night to B5"→Nb5, "night E5"→Ne5, "horse"-class synonyms, "Bishop at 4:00"→Bf4, "1 Rook G1"→Rg1 all resolved correctly.
+
+**A3 — ask instead of discard.** The one true rejection in the real set was "rook g1", heard as "Rock Jeep" / "Rook Jeet" / "Rock Ji": piece unmistakable, square destroyed, entire utterance thrown away. Now `askForSquare()` responds "Rook to where?" and accepts a bare square; `askConfirm()` offers "Knight f3?" for a lone leading candidate. Only yes/no resolves a confirmation — anything else is treated as a fresh utterance, so a misheard reply can never play a move nobody asked for. Verified the full round trip: the rejected alternatives now ask, and "G1" completes it as Rg1.
+
+**Speaking a candidate aloud is only safe because A4 mutes the mic while speaking** — without that gate this feature would reintroduce OUR-58 directly. A1's real value turned out to be enabling A3, not the accuracy win it was pitched as.
+
+Regression pass: full spoken game (e4, Nf3, Bc4, O-O), commands (show board, take back, whose turn), and both noise cases still correctly rejected without false-triggering the new questions.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`.
+
+## 2026-08-20 — Day 3.2: a 55-utterance real game, and what it exposed
+
+User captured a full game through `?debug=1` — 55 utterances. Most resolved correctly (bare squares, bishops, queens, rooks, castling, even a `b8=Q#` promotion), which confirmed A2's phonetic scoring holds up on real speech rather than only on simulated mishearings. The failures were the valuable part.
+
+**First, a process failure worth recording: A3 wasn't in the build the user tested.** `#6` ("night 283" — piece clear, square destroyed) should have asked "Knight to where?" and instead rejected. The code was correct; the browser was serving a cached `index.html`. **A stale build and a broken fix look identical in a log**, and I nearly re-debugged working code. Added a `BUILD` constant printed in the diagnostics header, to be bumped on every voice-layer change. This is the fourth time the Browser-pane/browser cache has cost time on this project (see the Day 2.7 note) — now it's structurally visible instead of something to remember.
+
+**Second wrong-move bug, same class as Day 3.1's but a different mechanism.** "knight to f4" played the **f4 pawn**. `route()` compares plan scores across two paths that were never on a common scale: `parseRequest` resolves any unambiguous pawn move at a flat **6**, while `constrainedMove` returns its raw fuzzy score — a *confident* phonetic match with margin 1.38 came back at only **2.4**. So the alternative "night to F4" (correct, Nf4) lost to "9th to F4" (pawn f4) every time. Fixed by mapping an accepted fuzzy match into the same band, ordered by margin (`6 + min(1.5, margin/2)`), while leaving exact phrase matches (≥8) above it so they still outrank everything. Replayed against the captured alternatives in a position where both are legal: Nf4 at 6.85 beats pawn f4 at 6.
+
+**Lesson generalised:** two independent scoring paths feeding one `max()` comparison is a latent bug unless their ranges are deliberately reconciled. Day 3.1's fix (early-exit at 6) and this one are the same underlying mistake surfacing twice.
+
+**Ask-back was gated on a threshold that served no purpose.** `askIfPlausible` only offered "piece to where?" when the top candidate scored under 1 — but that branch is *only* reached when nothing was accepted, so the candidate scores are irrelevant by definition. "queen drive6" ranked Qd4 at 1.02 and was discarded rather than asked about. Now asks whenever the piece is identified.
+
+**Commands had no fuzzy matching at all.** Moves got phonetic scoring in A2; `matchCommand` remained exact-regex. "hide board" came back as "hi board" / "High board" / "Highboy" / "cardboard" and was rejected outright. Widened with observed variants. Worth remembering that A2 only improved *half* the input surface.
+
+**Piece vocabulary extended from observed transcripts, not imagination:** cream/clean/creamed → queen, point/palm/phone/born → pawn, nike/knife → knight, brooke → rook. "cream to D7" had been parsed as a pawn move and called illegal.
+
+Verified each fix by replaying the user's verbatim alternative lists **in a position where the intended move is actually legal** — the first replay attempt of the Day 3.1 bug looked like a failure purely because Nd4 is illegal from the opening. Position matters when replaying voice logs; a bare transcript is not a reproducible test case.
+
+Regression: full sequential game (e4, Bc4, Nf3, O-O), commands (reveal board, take back), and noise/off-hand speech ("banana milkshake", "seems to be stuck like a side note", pure digits) still correctly rejected without false-triggering the new questions.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r3`.
+
+## 2026-08-20 — Day 3.3: the castling sequence (r4)
+
+First log captured on the right build (`v2-r3`, confirmed by the new build marker — which immediately proved its worth). The cross-scale fix held up live: `#7` "night to F3" → Nf3 at 6.85, `#16` "night to be five" → Nb5 at 6.69, both cases that previously lost to a bare pawn move. Bishops, castling-by-full-phrase, and bare squares all clean.
+
+**The bad part was `#9`–`#13`: the user said "kingside" three times and was rejected all three times.** Three separate defects stacked:
+
+1. **"castle kingside" is almost never transcribed as "kingside".** It came back as "Castle king size" / "King's side" / "King site" / "kingzide". The side never registered, so it fell through to the disambiguation prompt "kingside or queenside?" — a question that should never have been asked.
+2. **A misheard answer discarded the question entirely.** `route()` cleared `pendingAction` unconditionally when `resolvePending` failed. The first "kingside" was heard as "inside", which killed the question — so the next two, both transcribed correctly, had nothing waiting for them and were parsed as fresh (meaningless) utterances. **This is the worst kind of bug in a voice UI: the app appears to ignore the user repeating themselves, and repeating is exactly what a user does when unsure.**
+3. **Bare "kingside" wasn't a move.** It was only ever understood as a reply, so once the question was gone the word meant nothing.
+
+Fixed all three: normalise the king-size/king's-side/kingzide family (and queenside equivalents) in `preprocess`; hold a pending question open unless the new utterance clearly parses as something else (score ≥6); and accept a bare "kingside"/"queenside" as a castling request in its own right.
+
+**Also from this log:** when nothing parses, prefer an alternative that at least names a piece. "like to wear" and "night to wear" both scored 0, and the first won purely on list position, so the utterance was discarded instead of prompting "Knight to where?".
+
+**Piece vocabulary, again from measurement:** `nice`, `light`, `like`, `lights` → knight. In the captured logs these are what Chrome actually returns for a spoken "knight" — the correct spelling is the *minority* case.
+
+**Two regressions caught while verifying, both self-inflicted, both worth recording:**
+- An open "Knight to where?" **swallowed a complete unrelated move**: "bishop to c4" was read as the answer "c4" and answered "no knight can reach c4". Naming a different piece now means a new utterance, not a reply.
+- `like` → knight fired on ordinary speech: "seems to be stuck like a side note" asked "Knight to where?". Spoken moves are short, so utterances over five words no longer trigger the ask-back. **Adding aggressive homophones is only safe with a length guard** — the same word is a piece name in a three-word command and a filler word in a sentence.
+
+Verification note that mattered twice now: **replay a voice log only in a position where the intended move is legal.** "Bishop to C4" appeared to fail until I noticed the board was at move 1 with the bishop still boxed in; the same trap produced a false negative during Day 3.1.
+
+Deployed: `/v2/` on the live site now serves `v2-r4`, verified by fetching the deployed file and checking the build marker plus the presence of each fix.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r4`.
+
+## 2026-08-20 — Day 3.4: a full game by voice, ending in mate (r5)
+
+The `v2-r4` log is a complete game played entirely by speech, finishing **`Qh5#`**. Everything fixed in r3/r4 held up live: `#8` "Castle king size" → O-O (the castling family fix), `#2`/`#6` "nice to F3"/"nice to E5" → Nf3/Ne5 (`nice`→knight), `#31` "Palm to H6" → h6 (`palm`→pawn), `#20`/`#23` "Pawn to E6"/"Pawn to H4" → fxe6/gxh4. Two failures left, both interesting.
+
+**Digit-as-file: "86" rejected three times in a row.** The recognizer renders a spoken file letter as a digit constantly — "a6" and "h6" both arrive as `86`, which parses as nothing at all. The user repeated it three times, got nowhere, and rephrased as "Palm to H6" to get the move in.
+
+Fixed by *not guessing*: both readings are offered as extra alternatives and the existing legal-move scorer picks. **Important guard — if both readings are legal in the current position it expands nothing and lets the utterance be rejected.** From the opening, "84" is genuinely ambiguous between a4 and h4, and silently playing a coin-flip move is much worse than a repeat when the player cannot see the board. Verified both branches: "84" from the opening refuses; "86" with only h6 reachable plays h6.
+
+**Castling by shape, not by vocabulary.** "castle kingside" came back as "cats looking side" / "cats looking inside" / "cats looking site". No word list will ever cover that. Matched the *shape* instead: a token that sounds like "king" (phon `kng` — which "looking" ends with) adjacent to one that sounds like "side". Restricted to utterances of four words or fewer so ordinary speech can't castle by accident; confirmed "seems to be stuck like a side note" (which contains "side") still doesn't trigger it.
+
+**Pattern worth naming after five rounds of this:** the fixes that keep paying off are the ones that *widen the candidate set and let the legal-move scorer decide*, not the ones that add another word to a lookup table. Digit-file expansion, alternative rescoring, phonetic distance — all of them hand more options to the thing that already knows what's legal. Vocabulary entries fix exactly one transcription each; scoring changes fix a whole class.
+
+**Corollary that now has its own guard:** widening is only safe while the scorer can still discriminate. Where it can't — two equally legal readings — the right answer is to refuse rather than pick, because in blindfold play a wrong move is unrecoverable and a rejection costs one repeat.
+
+Deployed to `/v2/` as `v2-r5`, verified by fetching the deployed file and checking the build marker and both fixes are present.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r5`.
