@@ -394,22 +394,63 @@
     if(sub){ const s=document.createElement('div'); s.className='heard'; s.textContent=sub; p.appendChild(s); }
     transcript.appendChild(p); transcript.scrollTop=transcript.scrollHeight;
   }
+  // ===============================================================
+  // Speaking gate — the mic is hard-muted while we talk
+  // ===============================================================
+  // Recognition now runs as one long-lived session, so it would otherwise
+  // stay open straight through our own narration and feed it back in as
+  // fresh input. That is the OUR-58 feedback loop, except permanent rather
+  // than occasional. Instead of timing hacks, speech and listening are made
+  // mutually exclusive: beginSpeaking() aborts the session, endSpeaking()
+  // brings it back. Every path out of speech must reach endSpeaking(), or
+  // the mic stays muted forever — hence the watchdog below.
+  let speaking=false;            // TTS is producing audio right now
+  let speechWatchdog=null;       // Chrome intermittently never fires utterance.onend
+
+  function beginSpeaking(){
+    speaking=true;
+    // abort(), not stop(): stop() delivers whatever it already captured,
+    // which may be the tail of our previous sentence.
+    if(recognition&&listening){ try{recognition.abort();}catch(e){} }
+  }
+
+  function endSpeaking(){
+    if(!speaking) return;
+    speaking=false;
+    if(speechWatchdog){ clearInterval(speechWatchdog); speechWatchdog=null; }
+    if(wantLoop&&handsFree) setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },160);
+  }
+
   function say(text){
     if(!voiceOn || !('speechSynthesis' in window)) return;
     try{
       const myGeneration=++speechGeneration;
       speechSynthesis.cancel();
+      beginSpeaking();
       // Let Chrome finish closing the recognition audio session before
       // starting narration; without this small gap the first words can clip.
       setTimeout(()=>{
-        if(myGeneration!==speechGeneration || !voiceOn) return;
+        if(myGeneration!==speechGeneration) return;   // superseded; that call owns the gate
+        if(!voiceOn){ endSpeaking(); return; }
         const u=new SpeechSynthesisUtterance(text);
         u.rate=0.7;
         u.pitch=0.98;
         u.volume=1;
+        u.onend=()=>{ if(myGeneration===speechGeneration) endSpeaking(); };
+        u.onerror=()=>{ if(myGeneration===speechGeneration) endSpeaking(); };
         speechSynthesis.speak(u);
+        // Backstop: Chrome drops onend often enough that relying on it alone
+        // would eventually strand the mic muted. Poll the queue instead, but
+        // only after it has had time to actually start.
+        const startedAt=Date.now();
+        if(speechWatchdog) clearInterval(speechWatchdog);
+        speechWatchdog=setInterval(()=>{
+          if(myGeneration!==speechGeneration){ clearInterval(speechWatchdog); speechWatchdog=null; return; }
+          if(Date.now()-startedAt<600) return;
+          if(!speechSynthesis.speaking && !speechSynthesis.pending) endSpeaking();
+        },250);
       },120);
-    }catch(e){}
+    }catch(e){ endSpeaking(); }
   }
   function speak(text){ lastNarration=text; log('Board',text); say(text); }
   function warn(text){ log('System',text); say(text); }
@@ -1198,7 +1239,11 @@
     recognition.lang='en-US';
     recognition.interimResults=true;
     recognition.maxAlternatives=10;     // constrained matcher scores all returned candidates
-    recognition.continuous=false;
+    // One long-lived session instead of one per utterance. A fresh session
+    // costs a cold start: Chrome clips the opening audio, and the gap between
+    // sessions captures nothing at all — so "knight to f3" routinely arrived
+    // as "to f3", losing exactly the word that identifies the piece.
+    recognition.continuous=true;
 
     recognition.onstart=()=>note('Listening\u2026');
     recognition.onspeechstart=()=>note('Hearing you\u2026');
@@ -1209,6 +1254,10 @@
           const alts=[];
           for(let a=0;a<res.length;a++) alts.push(res[a].transcript);
           note('');
+          // With "Keep listening" off the mic is a push-to-talk button, and a
+          // continuous session would otherwise stay open indefinitely — the
+          // per-utterance session used to end it for us.
+          if(!handsFree){ wantLoop=false; try{recognition.stop();}catch(e){} }
           route(alts);
         }else{
           note('\u201C'+res[0].transcript.trim()+'\u201D');
@@ -1217,6 +1266,10 @@
     };
     recognition.onerror=e=>{
       setListening(false);
+      // In hands-free mode Chrome ends the session with `no-speech` after any
+      // quiet stretch. That is normal operation between moves, not a fault —
+      // reporting it would fill the mic line with noise every few seconds.
+      if(e.error==='no-speech'&&wantLoop&&handsFree){ note(''); return; }
       const map={
         'not-allowed': location.protocol==='file:'
           ? 'Microphone permission is temporary on file://. Open this page through http://localhost.'
@@ -1234,17 +1287,34 @@
     recognition.onend=()=>{
       setListening(false);
       if(micNote.textContent==='Listening\u2026'||micNote.textContent==='Hearing you\u2026') note('');
-      if(wantLoop&&handsFree){
-        setTimeout(()=>{ if(wantLoop&&handsFree) startListening(); },250);
-      }
+      // The session we just lost was aborted by beginSpeaking(). endSpeaking()
+      // owns the restart; reopening here would point the mic at our own voice.
+      if(speaking) return;
+      if(wantLoop&&handsFree) scheduleRestart();
     };
   }
 
+  // Chrome ends a continuous session on its own — after silence, or on a
+  // network hiccup — so staying "always on" means restarting it repeatedly.
+  // A session that dies immediately means something is actually wrong
+  // (revoked permission, no input device), and retrying at full speed would
+  // spin forever, so back off and then stop visibly rather than silently.
+  let sessionStartedAt=0, shortSessions=0;
+  function scheduleRestart(){
+    if(Date.now()-sessionStartedAt<1200) shortSessions++; else shortSessions=0;
+    if(shortSessions>=5){
+      shortSessions=0; wantLoop=false;
+      note('Listening stopped — tap the mic to start again.','err');
+      return;
+    }
+    setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },shortSessions>=3?800:200);
+  }
+
   async function startListening(){
-    if(!recognition||listening) return;
+    if(!recognition||listening||speaking) return;
     const ok=await primeMic();
     if(!ok) return;
-    try{ recognition.start(); setListening(true); }
+    try{ recognition.start(); sessionStartedAt=Date.now(); setListening(true); }
     catch(err){ /* already started — ignore */ }
   }
 
@@ -1675,7 +1745,13 @@
     saveState();
   });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
-  voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); saveState(); });
+  voiceToggle.addEventListener('change',()=>{
+    voiceOn=voiceToggle.checked;
+    // Cancelling mid-utterance means onend never fires, so release the
+    // speaking gate by hand or the mic stays muted for good.
+    if(!voiceOn&&'speechSynthesis' in window){ speechSynthesis.cancel(); endSpeaking(); }
+    saveState();
+  });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
     startNewGame();
