@@ -617,8 +617,8 @@
     root.dataset.board=boardThemeSelect.value;
     root.dataset.pieces=pieceThemeSelect.value;
     try{
-      localStorage.setItem('mind-chess-board-theme',boardThemeSelect.value);
-      localStorage.setItem('mind-chess-piece-theme',pieceThemeSelect.value);
+      localStorage.setItem(BOARD_THEME_KEY,boardThemeSelect.value);
+      localStorage.setItem(PIECE_THEME_KEY,pieceThemeSelect.value);
     }catch(e){}
   }
   boardThemeSelect.addEventListener('change',applyTheme);
@@ -1936,7 +1936,13 @@
   // game in progress. Giga Chess only persists preferences, not game
   // state, so this pattern is Mind Chess's own.
   // ===============================================================
-  const SAVE_KEY='mind-chess-save-v1';
+  // 2.0 is served from /v2/ while v1.0 stays live at / and /v1/ — same origin,
+  // therefore the same localStorage. Sharing these keys would mean playing one
+  // version corrupts the other's saved game and themes, so 2.0 namespaces all
+  // of them. Do not reuse a v1 key here.
+  const SAVE_KEY='mind-chess-v2-save';
+  const BOARD_THEME_KEY='mind-chess-v2-board-theme';
+  const PIECE_THEME_KEY='mind-chess-v2-piece-theme';
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
@@ -2052,8 +2058,8 @@
   if(location.protocol==='file:') originBanner.classList.add('show');
 
   try{
-    boardThemeSelect.value=localStorage.getItem('mind-chess-board-theme')||'wood';
-    pieceThemeSelect.value=localStorage.getItem('mind-chess-piece-theme')||'classic';
+    boardThemeSelect.value=localStorage.getItem(BOARD_THEME_KEY)||'wood';
+    pieceThemeSelect.value=localStorage.getItem(PIECE_THEME_KEY)||'classic';
   }catch(e){}
   applyTheme();
 
