@@ -366,7 +366,11 @@
     pawn:'p',pawns:'p',pond:'p',ponds:'p',porn:'p',
     point:'p',palm:'p',phone:'p',born:'p',
     knight:'n',knights:'n',night:'n',nights:'n',horse:'n',horses:'n','k-night':'n',
-    nike:'n',knife:'n',
+    // "nice" / "light" / "like" are what Chrome returns for a spoken "knight"
+    // far more often than "knight" itself — they appear in most knight
+    // utterances in the captured logs. A false positive only costs a "Knight
+    // to where?" prompt; a false negative loses the move entirely.
+    nike:'n',knife:'n',nice:'n',light:'n',lights:'n',like:'n',likes:'n',
     bishop:'b',bishops:'b','bishop\u2019s':'b',
     rook:'r',rooks:'r',rock:'r',rocks:'r',ruck:'r',brook:'r',brooke:'r',
     queen:'q',queens:'q',green:'q',cream:'q',clean:'q',creamed:'q',
@@ -838,6 +842,12 @@
   function preprocess(t){
     t=t.replace(/([a-h])[-\u2013 ]([1-8])\b/g,'$1$2');
     t=t.replace(/\bbefore\b/g,'b4').replace(/\bbefour\b/g,'b4');
+    // "castle kingside" comes back as "king size" / "King's side" / "King
+    // site" / "kingzide" far more often than as "kingside". Without this the
+    // side never registered, so castling fell through to "kingside or
+    // queenside?" — and then the answer didn't register either.
+    t=t.replace(/\bking'?s?[- ]?(side|size|site|sight|zide|sides)\b/g,'kingside');
+    t=t.replace(/\bqueen'?s?[- ]?(side|size|site|sight|zide|sides)\b/g,'queenside');
     t=t.replace(/\ba\s*for\b/g,'a4');
     // NATO phonetic file + digit OR spoken number word ("echo 4", "echo four")
     t=t.replace(NATO_RE,(_,w,numw,dig)=>NATO[w]+(dig||NUMWORD[numw]));
@@ -1021,7 +1031,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r3 (A1-A4, phonetic, ask-back, cross-scale)';
+  const BUILD='v2-r4 (castling + sticky questions)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -1062,6 +1072,16 @@
     const t=normalize(text);
     const cmd=matchCommand(t);
     if(cmd) return {score:6,type:'command',run:cmd};
+
+    // "kingside" on its own is only ever a castling request. Heard bare three
+    // times in a row and rejected every time, because it was only ever
+    // understood as the answer to a question the app had already forgotten.
+    if(/^(kingside|queenside)$/.test(t.trim())){
+      const san=t.trim()==='kingside'?'O-O':'O-O-O';
+      const m=game.moves({verbose:true}).find(x=>x.san===san);
+      return m?{score:6,type:'move',move:m}
+              :{score:1,type:'illegal',msg:'Castling isn’t legal right now.'};
+    }
 
     const san=matchSan(text);
     if(san) return {score:8,type:'move',move:san};
@@ -1222,6 +1242,12 @@
     return true;
   }
   function askIfPlausible(plan){
+    // Spoken moves are short. "nice"/"light"/"like" are listed as knight
+    // because that is overwhelmingly what they are in a three-word utterance,
+    // but in a full sentence of ordinary speech they are just words — and
+    // "seems to be stuck like a side note" was triggering "Knight to where?".
+    // Length is the cheapest reliable separator between the two.
+    if((plan.text||'').trim().split(/\s+/).length>5) return false;
     const top=plan.top&&plan.top.length?plan.top:null;
     // The piece came through clearly but the square did not. We only reach
     // here when nothing was accepted, so the candidate scores don't matter —
@@ -1258,6 +1284,13 @@
         if(/queenside|long/.test(t)){ pendingAction=null; updateStatus(); execPlan(planFor('castle queenside')); return true; }
       }
       if(pa.type==='square'){
+        // Don't swallow a complete move that happens to contain a square.
+        // With "Knight to where?" open, "bishop to c4" was being read as the
+        // answer "c4" and answered with "no knight can reach c4", losing a
+        // perfectly good move. Naming a different piece means this is a new
+        // utterance, not a reply.
+        const other=spokenPiece(speechKey(raw));
+        if(other&&other!==pa.piece) continue;
         const sq=(t.match(/\b([a-h][1-8])\b/)||[])[1];
         if(sq){
           const m=pa.cands.find(c=>c.to===sq);
@@ -1317,25 +1350,15 @@
   // ===============================================================
   // Routing — accepts a RANKED LIST of speech alternatives
   // ===============================================================
-  function route(alternatives){
-    const list=(Array.isArray(alternatives)?alternatives:[alternatives])
-      .map(s=>String(s||'').trim()).filter(Boolean);
-    if(!list.length) return;
-
-    if(pendingAction){
-      log('You',list[0],list.length>1?'also heard: '+list.slice(1,3).join(' / '):null);
-      if(resolvePending(list)) return;
-      pendingAction=null; updateStatus();   // treat as a fresh utterance instead
-    }
-
-    // Score every alternative; the one producing a legal move / command wins.
-    // The old cutoff of 6 stopped at the first merely-plausible reading, and
-    // the recognizer orders alternatives by its own confidence, not ours: for
-    // "knight to d4" it offered "Nike D4" first, which parses as an
-    // unambiguous pawn move and scored exactly 6 — so the loop stopped and
-    // never reached "Knight to D4" sitting two places later at 10.4, and the
-    // wrong piece moved. Only an exact phrase match (>=9) is worth stopping
-    // for; anything less has to be compared against the whole list.
+  // Score every alternative; the one producing a legal move / command wins.
+  // The old cutoff of 6 stopped at the first merely-plausible reading, and
+  // the recognizer orders alternatives by its own confidence, not ours: for
+  // "knight to d4" it offered "Nike D4" first, which parses as an
+  // unambiguous pawn move and scored exactly 6 — so the loop stopped and
+  // never reached "Knight to D4" sitting two places later at 10.4, and the
+  // wrong piece moved. Only an exact phrase match (>=9) is worth stopping
+  // for; anything less has to be compared against the whole list.
+  function scoreAlternatives(list){
     let best=null,bestText=list[0];
     const scorings={};
     for(const text of list){
@@ -1344,9 +1367,61 @@
       if(!best||plan.score>best.score){ best=plan; bestText=text; }
       if(best.score>=9) break;
     }
-    lastScoring=scorings[bestText]||null;   // report the winner, not the last one tried
+    // When nothing parsed at all, prefer an alternative that at least names a
+    // piece. "like to wear" and "night to wear" both score 0 and the first
+    // one wins by position — but only the second lets us ask "Knight to
+    // where?" instead of throwing the whole utterance away.
+    if(best&&best.type==='none'&&!best.said){
+      for(const text of list){
+        if(text.trim().split(/\s+/).length>5) continue;   // see askIfPlausible
+        const said=spokenPiece(speechKey(text));
+        if(said){ best.said=said; best.text=text; bestText=text; break; }
+      }
+    }
+    lastScoring=scorings[bestText]||lastScoring;   // report the winner, not the last tried
+    return {best,bestText};
+  }
+
+  function pendingPrompt(){
+    const pa=pendingAction;
+    if(!pa) return '';
+    if(pa.type==='castle') return 'kingside or queenside?';
+    if(pa.type==='square') return cap(PIECE_NAME[pa.piece])+' to where?';
+    if(pa.type==='confirm') return 'did you mean '+pa.san+'? Say yes or no.';
+    if(pa.type==='promotion') return 'promote to queen, rook, bishop, or knight?';
+    if(pa.type==='piece') return 'which one?';
+    return '';
+  }
+
+  function route(alternatives){
+    const list=(Array.isArray(alternatives)?alternatives:[alternatives])
+      .map(s=>String(s||'').trim()).filter(Boolean);
+    if(!list.length) return;
+
+    let scored=null, alreadyLogged=false;
+    if(pendingAction){
+      log('You',list[0],list.length>1?'also heard: '+list.slice(1,3).join(' / '):null);
+      alreadyLogged=true;
+      if(resolvePending(list)) return;
+      // A single misheard answer used to discard the question outright, so
+      // answering correctly on the next attempt did nothing — there was no
+      // longer anything waiting for it. Seen live: "kingside" spoken three
+      // times and rejected three times, because the first attempt came back
+      // as "inside". Hold the question open unless this utterance clearly is
+      // something else.
+      scored=scoreAlternatives(list);
+      if(!scored.best||scored.best.score<6){
+        warnSilent('Didn’t catch that — '+pendingPrompt());
+        say('Sorry?');       // deliberately contains no phrase worth echoing
+        return;
+      }
+      pendingAction=null; updateStatus();
+    }
+
+    if(!scored) scored=scoreAlternatives(list);
+    const best=scored.best, bestText=scored.bestText;
     const others=list.filter(x=>x!==bestText).slice(0,2);
-    log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
+    if(!alreadyLogged) log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
     if(DEBUG) recordDiagnostic(list,best,bestText);
 
     // Commands are always allowed, even after game over / while computer thinks.
