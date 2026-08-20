@@ -539,3 +539,62 @@ Deployed to `/v2/` as `v2-r6`.
 
 Working tree: `index.html`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`.
 Branch `v2`, build `v2-r6`.
+
+## 2026-08-20 — Day 3.6: A6, the rules stop needing a network (r7)
+
+Phase A is done. chess.js was the last remote dependency the game actually
+needed to function: Stockfish has been self-hosted since Day 2.3, but the
+*rules engine* — the thing without which the page shows an error screen instead
+of a board — was still a CDN fetch. For an app whose whole premise is playing
+chess in your head, on a plane, that was backwards.
+
+Vendored `chess-0.10.3.js` (47KB, `npm pack chess.js@0.10.3`, BSD-2 header
+intact) next to the Stockfish files. Kept unminified — the npm package doesn't
+ship a minified build, the project has no build step, and 47KB is noise next to
+a 7.3MB `.wasm`. The version is in the filename because staying on 0.10.3 is
+now a deliberate decision (closed in A5, see Day 3.5) rather than an accident.
+
+**Staying on 0.10.3, confirmed again.** The only thing 1.x offered was
+`attackers()`, and A5 hand-rolled that. A breaking API change for nothing.
+
+**Verified offline by making it fail, not by assuming it wouldn't.** The
+temptation was to point the `<script>` at a local file, watch the page work,
+and call it offline-capable — but the page still referenced Google Fonts,
+`supabase-js` and the chess.com move sounds, and "it works on my machine with
+full internet" proves nothing about any of them. So I repointed every remaining
+remote URL at a 404 in a throwaway copy of the page, which is precisely what a
+`<script>`, `<link>` or `Audio` sees when a CDN is unreachable, and played a
+game in it:
+
+- fonts fall back through their stacks (`system-ui`, `serif`, `monospace`)
+- `window.supabase` is `undefined`, and all four online entry points already
+  guarded on `!db` — nothing throws
+- move sounds fall back to the existing `woodFallback()`
+- moves, captures, castling, PGN history and all thirteen A5 answers work
+- the console shows only the deliberate 404s, no exceptions
+
+Two things that stay remote on purpose: Supabase, because online play is
+inherently networked, and Google Fonts, because it's cosmetic and degrades.
+"Offline" here means *vs. computer works with no network at all* — and that is
+now true.
+
+Two small corrections that fell out of it:
+
+- The "Chess engine didn't load" screen said chess.js "couldn't be fetched from
+  the CDN. Check your network" — advice that can now only send someone chasing
+  the wrong thing. It names the missing file and says the deploy is incomplete,
+  which is the only way to reach it.
+- "Online play needs supabase-config.js set up" was the same kind of stale
+  certainty: with offline now a supported state, the likelier cause is no
+  network. It says both.
+
+`sync-v2-preview.sh` gained the new file in its copy list. Forgetting that
+would have left `/v2/` loading a `chess-0.10.3.js` that was never copied —
+the fail screen would have fired on the live site while working perfectly
+locally.
+
+Deployed to `/v2/` as `v2-r7`.
+
+Working tree: `index.html`, `chess-0.10.3.js`, `README.md`,
+`VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry (and `sync-v2-preview.sh` on main).
+Branch `v2`, build `v2-r7`.

@@ -4,9 +4,9 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r6`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64). **Next session: A6, then Phase B.**
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r7`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65). **Next session: Phase B, or C1/C2.**
 >
-> **Done:** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers. **Remaining in Phase A: A6** (self-host chess.js) — small, and the last thing standing between 2.0 and working offline.
+> **Phase A is complete.** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers · A6 chess.js vendored, so a game against the computer needs no network at all.
 >
 > ### What the build actually taught us
 >
@@ -146,8 +146,11 @@ Explicit `IDLE → LISTENING → THINKING → SPEAKING → LISTENING`, with the 
 
 ✅ **Decided:** stayed on **chess.js 0.10.3**. `attackersOf()` reads the board directly (~30 lines) instead of upgrading to 1.x for one function. Two reasons beyond avoiding a breaking change: it never mutates `game`, and it is deliberately **pseudo-legal** — enumerating `moves()` would silently drop *pinned* attackers, and a pinned piece still attacks. Telling a blindfold player their queen is safe when it isn't is the worst failure this app has.
 
-**A6. Self-host chess.js.**
-Stockfish is self-hosted but chess.js still comes from a CDN. If 2.0 is meant to work offline, fix the inconsistency.
+**A6. Self-host chess.js.** ✅ **Done — Day 3.6, `v2-r7`.** Vendored as `chess-0.10.3.js` (47KB, from `npm pack chess.js@0.10.3`, BSD-2 header intact), added to `sync-v2-preview.sh`'s copy list, and the "couldn't be fetched from the CDN" screen reworded — it can now only mean an incomplete deploy.
+
+**Verified offline properly, by making it fail rather than by assuming.** Every remaining remote URL — Google Fonts, `supabase-js`, the move sounds — was repointed at a 404 in a throwaway copy of the page, which is exactly what a `<script>` sees when a CDN is unreachable. The app boots, plays, and answers questions with all three dead: fonts fall back through their stacks, `window.supabase` is simply `undefined` and every online entry point already guards on `!db`, and the move sounds fall back to `woodFallback()`. Only the deliberate 404s appear in the console — no exceptions.
+
+**Still remote, and correctly so:** Supabase (online play is inherently networked) and Google Fonts (cosmetic, with fallbacks). "Offline" here means *vs. computer works with no network at all*, which it now does.
 
 **Done when:** you can play a full game against the computer, hands-free, and the recogniser handles a normal speaking voice without you consciously over-enunciating.
 
