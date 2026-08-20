@@ -367,3 +367,28 @@ First 2.0 code. **Working on a `v2` branch, not `main`** — `main` deploys stra
 **Not verifiable here:** the actual accuracy win. Whether the first word stops getting eaten needs a real voice through a real microphone — worth the user trying before A3 builds on top of it.
 
 Working tree: `index.html`, this DEVLOG entry. Branch `v2`.
+
+## 2026-08-20 — Day 3.1: measure first, then A2 + A3
+
+User tested A1 and reported "it is still the same in my opinion." **That was the right call and the useful outcome of the session** — A1 was built on an unmeasured hypothesis (cold-start clipping eating the first word), and in practice you pause between moves while the computer replies, so the session had almost always restarted long before you spoke again. Real but rarely hit. Stopped theorising and instrumented instead.
+
+**Added `?debug=1` voice diagnostics**: per utterance it records every alternative the recognizer returned with its confidence, what `speechKey` normalised the winner to, the plan type/score, and the top four legal-move candidates with scores and margin — in a copyable panel. Cost one small commit and turned the whole problem from opinion into data.
+
+**What synthetic testing showed immediately:** the constrained matcher was failing on *every* piece move. "night f3" scored the pawn move `f3` at 0.7 and `Nf3` at 0.7 — a dead tie, margin 0, rejected every single time. Piece moves only ever worked because `parseRequest` (a separate, exact, rule-based path) rescued them afterwards, which is exactly why anything the recognizer mangled fell through both. Two causes: letter-level edit distance charged a **full substitution** for night/knight (identical out loud), and the destination earned a +1.2 bonus while **the piece name earned nothing at all**, so naming a piece could never break a tie.
+
+**A2:** added a compact phonetic key (`kn→n`, `ck→k`, `ph→f`, trailing `e` dropped, interior vowels dropped, doubles collapsed) so same-sounding tokens cost ~0.1 instead of 1.0 — square tokens excluded, or `e4`/`e3` would collapse into each other. Piece naming now scores as evidence *for* that piece and *against* every other. Measured on identical inputs: every knight move went from margin 0 (rejected) to margin 1.7 (accepted); "horse f three" resolves; bare squares unchanged at 9.55.
+
+**Also fixed a bug present since v1.0:** `normalize()` rewrote "takes"→"x" (the capture marker) before `matchCommand` ran, so **"take back" — documented in the app's own help text — has never worked in any version.** Only "undo" did. Verified against the frozen `/v1/` copy before touching it, to be sure it was pre-existing rather than newly broken.
+
+**Then the user captured 12 real utterances**, which found something worse than mishearing — **a wrong-move bug**:
+
+- Saying "knight to d4" **played the pawn to d4.** `route()` broke out of the alternative loop at the first plan scoring ≥6, and the recognizer orders alternatives by *its* confidence, not ours. "Nike D4" came back first and parses as an unambiguous pawn move — exactly 6 — so the loop stopped and never reached "Knight to D4" sitting two places later at 10.4. Raised the early exit to 9 (only an exact phrase match is worth stopping for). Replaying the captured alternative list in the same 28-legal-move position now yields Nd4 at margin 9.7. **Worth noting the first replay attempt looked like a failure until I checked the position — from the opening, Nd4 is illegal and choosing the pawn was correct. Reproducing the actual position mattered.**
+- The real data also validated A2 in the wild: "night to B5"→Nb5, "night E5"→Ne5, "horse"-class synonyms, "Bishop at 4:00"→Bf4, "1 Rook G1"→Rg1 all resolved correctly.
+
+**A3 — ask instead of discard.** The one true rejection in the real set was "rook g1", heard as "Rock Jeep" / "Rook Jeet" / "Rock Ji": piece unmistakable, square destroyed, entire utterance thrown away. Now `askForSquare()` responds "Rook to where?" and accepts a bare square; `askConfirm()` offers "Knight f3?" for a lone leading candidate. Only yes/no resolves a confirmation — anything else is treated as a fresh utterance, so a misheard reply can never play a move nobody asked for. Verified the full round trip: the rejected alternatives now ask, and "G1" completes it as Rg1.
+
+**Speaking a candidate aloud is only safe because A4 mutes the mic while speaking** — without that gate this feature would reintroduce OUR-58 directly. A1's real value turned out to be enabling A3, not the accuracy win it was pitched as.
+
+Regression pass: full spoken game (e4, Nf3, Bc4, O-O), commands (show board, take back, whose turn), and both noise cases still correctly rejected without false-triggering the new questions.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`.
