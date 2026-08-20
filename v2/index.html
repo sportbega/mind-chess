@@ -308,6 +308,11 @@
       <li><code>e8 promote to queen</code> — or just say <code>e8</code> and it will ask</li>
       <li><code>show board</code> / <code>hide board</code> — works any time, even mid-game</li>
       <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>how much time</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
+      <li><b>Ask about the position</b> — <code>where are my knights</code>, <code>where can my bishop go</code>,
+        <code>what's on e4</code>, <code>is d5 empty</code>, <code>what's attacking my queen</code>,
+        <code>is my knight defended</code>, <code>anything hanging</code>, <code>am I in check</code>,
+        <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
+        <code>how many pieces do I have</code>, <code>what can I take</code></li>
       <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
     </ul>
   </details>
@@ -1031,7 +1036,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r5 (digit-file + fuzzy castle)';
+  const BUILD='v2-r6 (board questions)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -1072,6 +1077,14 @@
     const t=normalize(text);
     const cmd=matchCommand(t);
     if(cmd) return {score:6,type:'command',run:cmd};
+
+    // Questions run ahead of every move parser on purpose: "what's on e4?"
+    // contains a perfectly legal move, and playing it instead of answering it
+    // is the kind of mistake a blindfold player cannot see happen. Given the
+    // raw text, not the normalized one — normalize() rewrites "takes" to "x"
+    // and deletes "move", which guts "what can I take" and "the last move".
+    const q=matchQuestion(text);
+    if(q) return {score:6,type:'command',run:q};
 
     // "kingside" on its own is only ever a castling request. Heard bare three
     // times in a row and rejected every time, because it was only ever
@@ -1142,6 +1155,370 @@
   }
 
   // ===============================================================
+  // Board questions (A5) — every answer computed, never guessed
+  // ===============================================================
+  // Blindfold play is uniquely hostile to a confident wrong answer: the
+  // player has nothing to check it against. So every answer below is read
+  // straight off chess.js — no engine, no model, no heuristics beyond
+  // counting material on a square.
+  const FILES='abcdefgh';
+  const colorName=c=>c==='w'?'White':'Black';
+  // humanColor tracks the seat in both modes; a spectator has no seat, so
+  // answer as White rather than calling someone else's pieces "yours".
+  function myColor(){ return (mode==='online'&&onlineState&&onlineState.spectating)?'w':humanColor; }
+  function foeColor(){ return myColor()==='w'?'b':'w'; }
+  function sqName(f,r){ return FILES[f]+(r+1); }
+
+  function sentence(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+  function joinAnd(list){
+    if(list.length<2) return list[0]||'';
+    return list.slice(0,-1).join(', ')+' and '+list[list.length-1];
+  }
+  function sqList(list){ return joinAnd(list.map(spokenSquare)); }
+  function owns(c){ return c===myColor()?'your':colorName(c)+'’s'; }
+  function pieceAt(s){ const p=game.get(s); return p?'the '+PIECE_NAME[p.type]+' on '+spokenSquare(s):spokenSquare(s); }
+  function shortMove(m){
+    if(m.flags.indexOf('k')!==-1) return 'castled kingside';
+    if(m.flags.indexOf('q')!==-1) return 'castled queenside';
+    return cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to)
+      +(m.promotion?', promoting to '+PIECE_NAME[m.promotion]:'');
+  }
+  function pieceSquares(color,type){
+    const b=game.board(), out=[];
+    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
+      const c=b[r][f];
+      if(c&&c.color===color&&(!type||c.type===type)) out.push(sqName(f,7-r));
+    }
+    return out;
+  }
+
+  // chess.js 0.10.3 has no attackers(). Reading the board directly beats the
+  // alternatives: a FEN round-trip would have to mutate `game` and restore
+  // it, and using moves() would silently drop pinned attackers — but a
+  // pinned piece still attacks, and telling a blindfold player their queen
+  // is safe when it isn't is the worst failure this app can have.
+  const N_DELTA=[[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]];
+  const K_DELTA=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const R_DELTA=[[1,0],[-1,0],[0,1],[0,-1]];
+  const B_DELTA=[[1,1],[1,-1],[-1,1],[-1,-1]];
+  function attackersOf(square,bySide){
+    const f0=FILES.indexOf(square[0]), r0=+square[1]-1, out=[];
+    if(f0<0||r0<0||r0>7) return out;
+    const at=(f,r)=>(f<0||f>7||r<0||r>7)?null:game.get(sqName(f,r));
+    const hit=(f,r,types)=>{ const p=at(f,r); if(p&&p.color===bySide&&types.indexOf(p.type)!==-1) out.push(sqName(f,r)); };
+    N_DELTA.forEach(d=>hit(f0+d[0],r0+d[1],['n']));
+    K_DELTA.forEach(d=>hit(f0+d[0],r0+d[1],['k']));
+    // A white pawn attacks upward, so one hitting this square sits below it.
+    const pr=bySide==='w'?r0-1:r0+1;
+    [-1,1].forEach(df=>hit(f0+df,pr,['p']));
+    [[R_DELTA,['r','q']],[B_DELTA,['b','q']]].forEach(pair=>{
+      pair[0].forEach(d=>{
+        let f=f0+d[0], r=r0+d[1];
+        while(f>=0&&f<8&&r>=0&&r<8){
+          const p=at(f,r);
+          if(p){ if(p.color===bySide&&pair[1].indexOf(p.type)!==-1) out.push(sqName(f,r)); break; }
+          f+=d[0]; r+=d[1];
+        }
+      });
+    });
+    return out;
+  }
+  function worth(s){ const t=game.get(s).type; return t==='k'?10:PIECE_VALUE[t]; }
+
+  // ---------------------------------------------------------------
+  // Understanding the question
+  // ---------------------------------------------------------------
+  // Question phrasing varies at least as much as move phrasing does. Moves
+  // got phonetic matching in A2 while commands stayed exact-regex, and that
+  // is exactly why "hide board" ("hi board", "Highboy") was rejected for a
+  // whole session — so this matcher compares by sound from the start.
+  function normalizeQuestion(raw){
+    let t=String(raw||'').toLowerCase().trim().replace(/[.,!?;:]/g,' ');
+    t=preprocess(t).replace(/[^a-z0-9’ ]+/g,' ').replace(/’/g,'');
+    return t.replace(/\s+/g,' ').trim();
+  }
+  function hasSound(words,list){
+    return list.some(w=>{
+      const k=phon(w);
+      return words.some(tk=>tk===w||phon(tk)===k||phon(tk.replace(/s$/,''))===k);
+    });
+  }
+  // "like"/"likes" are knight homophones aggressive enough to be worth it in
+  // a three-word move, but they are ordinary filler in a question ("what
+  // would you like", "what does it look like"), so they sit this one out.
+  const Q_PIECE={};
+  Object.keys(PIECE_WORDS).forEach(w=>{ if(w!=='like'&&w!=='likes') Q_PIECE[phon(w)]=PIECE_WORDS[w]; });
+  // Sound-alike matching is what makes questions robust, and it is also what
+  // makes them read pieces into ordinary words: phon() collapses "can" onto
+  // "queen" (both kn), "hers" onto "horse", and "not" onto "knight". Measured,
+  // not guessed — every word this matcher uses was run against the piece
+  // vocabulary and these three collided. A question word is never a piece.
+  const Q_STOP=new Set(('where wear were ware what whats which who whom is are was am be been can could '
+    +'should would may might will do does did done how many much any anything something nothing everything '
+    +'all some none tell list say show give me my mine i im our ours we us you your yours he she him her '
+    +'hers his their theirs them they it its this that these those the a an of on in at to for from with by '
+    +'and or but not no yes still left right now here there back again just last previous recent next then '
+    +'than about over under up down go goes going move moves moved play played plays take takes taking taken '
+    +'capture captures capturing win wins attack attacks attacking attacked threat threats threaten threatens '
+    +'threatening threatened hitting danger dangerous defend defends defended defending defender defenders '
+    +'protect protects protected protecting covered guard guards guarded guarding supported hanging hangs hang '
+    +'undefended unprotected unguarded loose prise castle castles castling cassel kingside queenside check '
+    +'cheque czech chek empty occupied occupies holds has have free vacant stands sits board state describe '
+    +'read material time clock remaining piece pieces count square squares side sides white black opponent '
+    +'opponents enemy computer locate find get got make made turn one two three four five six seven eight '
+    +'nine ten').split(' '));
+  function questionPiece(words){
+    for(let i=0;i<words.length;i++){
+      if(Q_STOP.has(words[i])) continue;
+      const p=Q_PIECE[phon(words[i])]||Q_PIECE[phon(words[i].replace(/s$/,''))];
+      if(p) return p;
+    }
+    return null;
+  }
+  function squaresIn(t){ return t.match(/\b[a-h][1-8]\b/g)||[]; }
+  const COUNT_WORD={one:1,won:1,two:2,three:3,tree:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+  function countIn(words){
+    for(let i=0;i<words.length;i++){
+      const w=words[i];
+      if(/^\d+$/.test(w)) return Math.min(12,+w);
+      if(COUNT_WORD[w]) return COUNT_WORD[w];
+    }
+    return null;
+  }
+  // Pronouns are matched literally, not by sound. They are one or two
+  // syllables of nothing, so phon() collapses them into each other — "the"
+  // and "they" both reduce to `th`, which read "what were THE last three
+  // moves" as "what did THEY play" and answered with one move instead of
+  // three. Sound-alike matching earns its keep on content words; on function
+  // words it only invents meaning that was never spoken.
+  const OWN_ME=['my','mine','me','i','im','our','ours','we','us'];
+  const OWN_THEM=['his','her','hers','their','theirs','them','they','he','she','him'];
+  const THEM_LONG=['opponent','opponents','enemy','computer'];
+  function hasWord(words,list){ return words.some(w=>list.indexOf(w)!==-1); }
+  // null when the question names no side at all — which "the last three
+  // moves" needs, to mean both sides rather than defaulting to one.
+  function askedOwner(words){
+    // "white" is matched literally for the same reason the pronouns are:
+    // phon() reduces it to `wht`, and so is "what" — which answered every
+    // single "what ...?" question about White regardless of who asked. It
+    // looked correct for a whole test round only because the seat under test
+    // happened to be White.
+    if(hasWord(words,['white','whites'])) return 'w';
+    if(hasWord(words,['black','blacks'])) return 'b';
+    if(hasWord(words,OWN_ME)) return myColor();
+    if(hasWord(words,OWN_THEM)||hasSound(words,THEM_LONG)) return foeColor();
+    return null;
+  }
+  function askedColor(words){ return askedOwner(words)||myColor(); }
+  // "what's attacking my queen" names a piece; "is e5 attacked" names a
+  // square. Both come back as a list of squares to examine.
+  function questionTargets(words,sqs){
+    if(sqs.length) return sqs.slice(0,3);
+    const p=questionPiece(words);
+    return p?pieceSquares(askedColor(words),p):[];
+  }
+
+  // Every rule needs an interrogative cue *and* its own keyword, which is
+  // what keeps an ordinary spoken move from ever falling into one — no move
+  // phrasing contains "where", "what", "can" or "how many".
+  const Q_CUE=['where','wear','were','what','whats','which','who','is','are','was',
+    'can','could','how','do','does','did','am','any','anything','tell','list'];
+
+  function matchQuestion(raw){
+    const t=normalizeQuestion(raw);
+    const words=t.split(' ').filter(Boolean);
+    // Spoken questions are short. The length guard is the same one that stops
+    // "seems to be stuck like a side note" from castling.
+    if(!words.length||words.length>9) return null;
+    if(!hasSound(words,Q_CUE)) return null;
+    const sqs=squaresIn(t);
+
+    // --- am I in check? ---
+    if(hasSound(words,['check','cheque','czech','chek'])&&hasSound(words,['am','is','are','was','in','i','we'])){
+      return ()=>{
+        if(game.in_checkmate()){ speak('Checkmate. '+colorName(game.turn())+' is mated.'); return; }
+        if(!game.in_check()){ speak('No — nobody is in check.'); return; }
+        const side=game.turn(), ksq=pieceSquares(side,'k')[0];
+        const by=ksq?attackersOf(ksq,side==='w'?'b':'w'):[];
+        speak('Yes — '+(side===myColor()?'you are':colorName(side)+' is')+' in check'
+          +(by.length?', from '+joinAnd(by.map(pieceAt)):'')+'.');
+      };
+    }
+
+    // --- can I still castle? (never swallow an actual castling move) ---
+    if(hasSound(words,['castle','castles','castling','cassel'])
+       &&hasSound(words,['can','could','still','may','able','allowed','am','do','is'])
+       &&!/\b(kingside|queenside)\b/.test(t)){
+      return ()=>{
+        const c=askedColor(words), rights=game.fen().split(' ')[2];
+        const who=c===myColor()?'You':colorName(c), verb=c===myColor()?' can':' can';
+        const sides=[];
+        if(rights.indexOf(c==='w'?'K':'k')!==-1) sides.push('kingside');
+        if(rights.indexOf(c==='w'?'Q':'q')!==-1) sides.push('queenside');
+        if(!sides.length){ speak(who+verb+' no longer castle.'); return; }
+        let msg=who+verb+' still castle '+joinAnd(sides)+'.';
+        if(game.turn()===c){
+          const now=game.moves().map(s=>s.replace(/[+#]/g,'')).filter(s=>s==='O-O'||s==='O-O-O');
+          if(!now.length) msg+=' Not this move, though.';
+          else if(now.length<sides.length) msg+=' Right now, only '+(now[0]==='O-O'?'kingside':'queenside')+'.';
+        }
+        speak(msg);
+      };
+    }
+
+    // --- where is X? / where can X go? ---
+    if(hasSound(words,['where','wear','were','ware','locate','find'])){
+      const piece=questionPiece(words);
+      if(piece){
+        const wantMoves=hasSound(words,['go','goes','going','move','moves','play']);
+        const c=askedColor(words);
+        return ()=>{
+          const at=pieceSquares(c,piece), name=PIECE_NAME[piece], mine=c===myColor();
+          if(!at.length){ speak((mine?'You have':colorName(c)+' has')+' no '+name+' left.'); return; }
+          if(!wantMoves){
+            speak(cap(owns(c))+' '+(at.length>1?name+'s are on ':name+' is on ')+sqList(at)+'.');
+            return;
+          }
+          if(game.turn()!==c){ speak('It’s '+(mine?colorName(foeColor()):colorName(myColor()))+' to move.'); return; }
+          const byFrom={};
+          game.moves({verbose:true}).forEach(m=>{
+            if(m.piece!==piece) return;
+            (byFrom[m.from]=byFrom[m.from]||[]).push(m.to);
+          });
+          const froms=Object.keys(byFrom);
+          if(!froms.length){ speak('No '+name+' moves right now.'); return; }
+          speak(froms.map(f=>'The '+name+' on '+spokenSquare(f)+' can go to '
+            +sqList(byFrom[f].filter((v,i,a)=>a.indexOf(v)===i))).join('. ')+'.');
+        };
+      }
+    }
+
+    // --- what's attacking X? / is X attacked? ---
+    if(hasSound(words,['attacking','attacked','attack','attacks','threatening','threatened',
+                       'threatens','threat','threats','hitting','danger','dangerous'])){
+      return ()=>{
+        const tg=questionTargets(words,sqs);
+        if(!tg.length){ askAboutWhat(); return; }
+        speak(tg.map(s=>{
+          const p=game.get(s), side=p?p.color:myColor();
+          const by=attackersOf(s,side==='w'?'b':'w');
+          const subject=p?cap(owns(p.color))+' '+PIECE_NAME[p.type]+' on '+spokenSquare(s):cap(spokenSquare(s));
+          return by.length?subject+' is attacked by '+joinAnd(by.map(pieceAt))
+                         :subject+' is not attacked';
+        }).join('. ')+'.');
+      };
+    }
+
+    // --- is X defended? ---
+    if(hasSound(words,['defended','defend','defends','defending','defender','defenders',
+                       'protected','protecting','protects','protect','covered','guarded','guarding','supported'])){
+      return ()=>{
+        const tg=questionTargets(words,sqs);
+        if(!tg.length){ askAboutWhat(); return; }
+        speak(tg.map(s=>{
+          const p=game.get(s), side=p?p.color:myColor();
+          const by=attackersOf(s,side).filter(a=>a!==s);
+          const subject=p?cap(owns(p.color))+' '+PIECE_NAME[p.type]+' on '+spokenSquare(s):cap(spokenSquare(s));
+          return by.length?subject+' is defended by '+joinAnd(by.map(pieceAt))
+                         :subject+' is undefended';
+        }).join('. ')+'.');
+      };
+    }
+
+    // --- anything hanging? ---
+    // Still just counting: a piece is loose if it's attacked and either
+    // undefended or attacked by something cheaper than itself. No search,
+    // no evaluation — that judgement belongs to the engine work in Phase C.
+    if(hasSound(words,['hanging','hangs','hang','undefended','unprotected','unguarded','loose','prise'])){
+      return ()=>{
+        const c=askedColor(words), foe=c==='w'?'b':'w';
+        const loose=pieceSquares(c).filter(s=>{
+          const p=game.get(s);
+          if(p.type==='k') return false;
+          const att=attackersOf(s,foe);
+          if(!att.length) return false;
+          if(!attackersOf(s,c).length) return true;
+          return Math.min.apply(null,att.map(worth))<PIECE_VALUE[p.type];
+        });
+        const who=c===myColor()?'yours':colorName(c)+'’s';
+        speak(loose.length?sentence(joinAnd(loose.map(pieceAt)))+(loose.length>1?' are':' is')+' loose.'
+                         :'Nothing of '+who+' is hanging.');
+      };
+    }
+
+    // --- what did I just play? / what were the last three moves? ---
+    const histCue=hasSound(words,['last','previous','recent','just'])
+      ||(hasSound(words,['did'])&&hasSound(words,['play','played','move','moved']));
+    if(histCue&&hasSound(words,['move','moves','moved','play','played','plays','did','was','were'])){
+      return ()=>{
+        const h=game.history({verbose:true});
+        if(!h.length){ speak('No moves yet.'); return; }
+        const owner=askedOwner(words);
+        if(owner){
+          let m=null;
+          for(let i=h.length-1;i>=0;i--) if(h[i].color===owner){ m=h[i]; break; }
+          speak(m?(owner===myColor()?'You played ':colorName(owner)+' played ')+shortMove(m)+'.'
+                 :'No moves by '+(owner===myColor()?'you':colorName(owner))+' yet.');
+          return;
+        }
+        const want=countIn(words)||(hasSound(words,['moves'])?3:1);
+        speak(h.slice(-Math.min(want,h.length))
+          .map(m=>colorName(m.color)+' '+shortMove(m).charAt(0).toLowerCase()+shortMove(m).slice(1))
+          .join(', then ')+'.');
+      };
+    }
+
+    // --- how many pieces do I have left? ---
+    if(hasSound(words,['how'])&&hasSound(words,['many','much'])){
+      const p=questionPiece(words);
+      return ()=>{
+        const c=askedColor(words), who=c===myColor()?'You have ':colorName(c)+' has ';
+        if(p){
+          const at=pieceSquares(c,p), n=at.length;
+          speak(who+(n?n+' '+PIECE_NAME[p]+(n===1?'':'s')+', on '+sqList(at):'no '+PIECE_NAME[p]+' left')+'.');
+          return;
+        }
+        const parts=['q','r','b','n','p'].map(tp=>{
+          const n=pieceSquares(c,tp).length;
+          return n?(n===1?'a '+PIECE_NAME[tp]:n+' '+PIECE_NAME[tp]+'s'):null;
+        }).filter(Boolean);
+        speak(who+pieceSquares(c).length+' pieces: the king'+(parts.length?', '+joinAnd(parts):'')+'.');
+      };
+    }
+
+    // --- what can I take? ---
+    if(hasSound(words,['can','any','anything','what','whats','which'])
+       &&hasSound(words,['take','takes','capture','captures','taking','capturing','win'])){
+      return ()=>{
+        if(game.turn()!==myColor()){ speak('It’s not your move.'); return; }
+        // Sorted by what's being won, because the list is cut at six: the
+        // free queen must never be the entry that got trimmed.
+        const caps=game.moves({verbose:true}).filter(m=>m.captured)
+          .sort((a,b)=>PIECE_VALUE[b.captured]-PIECE_VALUE[a.captured]);
+        if(!caps.length){ speak('No captures available.'); return; }
+        speak('You can take '+joinAnd(caps.slice(0,6).map(m=>
+          'the '+PIECE_NAME[m.captured]+' on '+spokenSquare(m.to)+' with the '+PIECE_NAME[m.piece]+' from '+spokenSquare(m.from)))
+          +(caps.length>6?', and more':'')+'.');
+      };
+    }
+
+    // --- what's on e4? / is d5 empty? (last: the loosest rule) ---
+    if(sqs.length&&hasSound(words,['on','empty','occupied','occupies','there','what','whats',
+                                   'anything','holds','has','free','vacant','stands','sits'])){
+      return ()=>{
+        speak(sentence(joinAnd(sqs.slice(0,3).map(s=>{
+          const p=game.get(s);
+          return p?spokenSquare(s)+' has '+owns(p.color)+' '+PIECE_NAME[p.type]
+                 :spokenSquare(s)+' is empty';
+        })))+'.');
+      };
+    }
+
+    return null;
+  }
+  function askAboutWhat(){ warn('Which piece or square?'); }
+
+  // ===============================================================
   // Commands — returned as closures so planFor() stays pure
   // ===============================================================
   function matchCommand(t){
@@ -1160,13 +1537,16 @@
     if(/take back|takeback|undo/.test(t)) return takeBack;
     return null;
   }
+  // Reading all 32 pieces out one at a time is unusable mid-game, which is
+  // exactly what this did. Group them by piece type and lead with the side
+  // the player is sitting on.
   function announceBoard(){
-    const b=game.board(), out={w:[],b:[]};
-    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
-      const c=b[r][f]; if(!c) continue;
-      out[c.color].push(PIECE_NAME[c.type]+' '+String.fromCharCode(97+f)+(8-r));
-    }
-    speak('White: '+out.w.join(', ')+'. Black: '+out.b.join(', ')+'.');
+    const roster=c=>joinAnd(['k','q','r','b','n','p'].map(tp=>{
+      const at=pieceSquares(c,tp);
+      return at.length?PIECE_NAME[tp]+(at.length>1?'s ':' ')+sqList(at):null;
+    }).filter(Boolean));
+    const me=myColor(), them=me==='w'?'b':'w';
+    speak(colorName(me)+': '+roster(me)+'. '+colorName(them)+': '+roster(them)+'.');
   }
   function announceMaterial(){
     const b=game.board(); let w=0,bl=0;
