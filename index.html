@@ -301,6 +301,7 @@
     <div class="spacer"></div>
     <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
     <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
+    <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
     <button class="btn" id="newGameBtn" type="button">New game</button>
   </div>
 
@@ -320,6 +321,9 @@
         <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
         <code>how many pieces do I have</code>, <code>what can I take</code></li>
       <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
+      <li><b>Interrupt it</b> — press <kbd>Esc</kbd> (or tap the mic) any time it's talking. <b>Talk over it</b>
+        does the same by voice, but it leaves the mic open while the app speaks, so it depends on your machine's
+        echo cancellation — try it, and turn it off if it cuts itself short.</li>
     </ul>
   </details>
 </div>
@@ -348,6 +352,7 @@
   let verbosity = 'terse';
   let voiceOn = true;
   let handsFree = true;
+  let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
   let lastMove = null;
   let lastComputerMove = null; // {from,to} the engine itself last played — used to discourage immediately undoing it
   let lastNarration = '';
@@ -402,7 +407,8 @@
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
-        handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
+        handsFreeToggle=$('handsFreeToggle'), bargeInToggle=$('bargeInToggle'),
+        newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
         copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn'), lobbyBtn=$('lobbyBtn'),
         stopSpectateBtn=$('stopSpectateBtn'), lobbyPanel=$('lobbyPanel'), lobbyList=$('lobbyList'),
@@ -430,19 +436,97 @@
   // the mic stays muted forever — hence the watchdog below.
   let speaking=false;            // TTS is producing audio right now
   let speechWatchdog=null;       // Chrome intermittently never fires utterance.onend
+  let speechQueue=[];            // chunks of the current narration still to speak
+  let speakingText='';           // the chunk being spoken right now, for echo detection
+  let chunkToken=0;              // dedupes onend against the watchdog below
+
+  // ---------------------------------------------------------------
+  // The mic state machine (A4, formalised in Phase B)
+  // ---------------------------------------------------------------
+  // IDLE → LISTENING → THINKING → SPEAKING → LISTENING.
+  //
+  // The booleans above still drive the recognition gate, unchanged. They are
+  // load-bearing and this harness has no microphone: rewriting a gate that
+  // only real speech can exercise, on the strength of reasoning alone, is how
+  // you break the one part that already works. `micState` is the formalisation
+  // layered on top — a single place that knows what the app is doing, which
+  // the narration queue, barge-in and the diagnostics timeline all read
+  // instead of each re-deriving it from three separate flags.
+  let micState='idle', lastMicActivity=Date.now();
+  const micLog=[];
+  function micEvent(kind,detail){
+    micLog.push({t:Date.now(),kind:kind,detail:detail||''});
+    if(micLog.length>500) micLog.shift();
+  }
+  function setMicState(next,why){
+    if(micState===next) return;
+    micEvent('state',micState+' → '+next+(why?'  ('+why+')':''));
+    micState=next;
+  }
+
+  // Chrome silently truncates a single utterance somewhere past ~15 seconds
+  // of speech, and A5's answers got long enough to hit it — "what's on the
+  // board" now reads out both rosters. Speaking in sentence-sized chunks costs
+  // nothing (the gate still closes once for the whole narration) and gives a
+  // clean cancellation point every couple of seconds instead of one at the end.
+  const SPEECH_CHUNK_MAX=140;
+  function splitForSpeech(text){
+    const out=[];
+    String(text).split(/(?<=[.!?])\s+/).forEach(sentence=>{
+      const s=sentence.trim();
+      if(!s) return;
+      if(s.length<=SPEECH_CHUNK_MAX){ out.push(s); return; }
+      // The over-long ones are the roster answers. Break them on commas,
+      // which is where they'd be read with a pause anyway.
+      let buf='';
+      s.split(/,\s*/).forEach(part=>{
+        const next=buf?buf+', '+part:part;
+        if(next.length>SPEECH_CHUNK_MAX&&buf){ out.push(buf); buf=part; }
+        else buf=next;
+      });
+      if(buf) out.push(buf);
+    });
+    return out.length?out:[String(text)];
+  }
 
   function beginSpeaking(){
     speaking=true;
+    setMicState('speaking','narration started');
     // abort(), not stop(): stop() delivers whatever it already captured,
     // which may be the tail of our previous sentence.
-    if(recognition&&listening){ try{recognition.abort();}catch(e){} }
+    //
+    // With "Talk over it" on we deliberately leave the session open, so the
+    // recognizer can hear you speak over us — which necessarily means it can
+    // hear *us* too. That is safe only because of the invariant in onresult:
+    // audio captured while we are speaking can cancel narration and nothing
+    // else. Hearing ourselves can cost a cut-off sentence. It can never cost
+    // a move, which is the failure a blindfold player could not survive.
+    if(recognition&&listening&&!bargeIn){ try{recognition.abort();}catch(e){} }
   }
 
-  function endSpeaking(){
+  function endSpeaking(fast){
     if(!speaking) return;
     speaking=false;
+    speakingText='';
+    speechQueue.length=0;
     if(speechWatchdog){ clearInterval(speechWatchdog); speechWatchdog=null; }
-    if(wantLoop&&handsFree) setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },160);
+    lastMicActivity=Date.now();
+    if(!(wantLoop&&handsFree)) setMicState('idle','narration ended, not looping');
+    else setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },fast?0:160);
+  }
+
+  // Barge-in. Every way of interrupting — Escape, the mic button, the text
+  // box, and (with the toggle on) your voice — comes through this one
+  // function, so there is a single path to reason about and a single place
+  // instrumented.
+  function cancelSpeech(why){
+    if(!speaking) return false;
+    speechGeneration++;                       // orphans every in-flight callback
+    speechQueue.length=0;
+    try{ speechSynthesis.cancel(); }catch(e){}
+    micEvent('barge-in',why+(speakingText?'  cut: "'+speakingText.slice(0,44)+'"':''));
+    endSpeaking(true);
+    return true;
   }
 
   function say(text){
@@ -450,32 +534,69 @@
     try{
       const myGeneration=++speechGeneration;
       speechSynthesis.cancel();
+      speechQueue=splitForSpeech(text);
       beginSpeaking();
       // Let Chrome finish closing the recognition audio session before
       // starting narration; without this small gap the first words can clip.
       setTimeout(()=>{
         if(myGeneration!==speechGeneration) return;   // superseded; that call owns the gate
         if(!voiceOn){ endSpeaking(); return; }
-        const u=new SpeechSynthesisUtterance(text);
-        u.rate=0.7;
-        u.pitch=0.98;
-        u.volume=1;
-        u.onend=()=>{ if(myGeneration===speechGeneration) endSpeaking(); };
-        u.onerror=()=>{ if(myGeneration===speechGeneration) endSpeaking(); };
-        speechSynthesis.speak(u);
-        // Backstop: Chrome drops onend often enough that relying on it alone
-        // would eventually strand the mic muted. Poll the queue instead, but
-        // only after it has had time to actually start.
-        const startedAt=Date.now();
-        if(speechWatchdog) clearInterval(speechWatchdog);
-        speechWatchdog=setInterval(()=>{
-          if(myGeneration!==speechGeneration){ clearInterval(speechWatchdog); speechWatchdog=null; return; }
-          if(Date.now()-startedAt<600) return;
-          if(!speechSynthesis.speaking && !speechSynthesis.pending) endSpeaking();
-        },250);
+        speakNextChunk(myGeneration);
       },120);
     }catch(e){ endSpeaking(); }
   }
+
+  function speakNextChunk(myGeneration){
+    if(myGeneration!==speechGeneration) return;
+    if(!speechQueue.length){ endSpeaking(); return; }
+    const chunk=speechQueue.shift();
+    const myChunk=++chunkToken;
+    speakingText=chunk;
+    const advance=()=>{
+      // onend and the watchdog below both race to advance the queue; whichever
+      // arrives first claims the chunk and the other becomes a no-op.
+      if(myGeneration!==speechGeneration||myChunk!==chunkToken) return;
+      speakNextChunk(myGeneration);
+    };
+    const u=new SpeechSynthesisUtterance(chunk);
+    u.rate=0.7;
+    u.pitch=0.98;
+    u.volume=1;
+    u.onend=advance;
+    u.onerror=advance;
+    speechSynthesis.speak(u);
+    // Backstop: Chrome drops onend often enough that relying on it alone
+    // would eventually strand the mic muted. Poll the queue instead, but
+    // only after it has had time to actually start.
+    const startedAt=Date.now();
+    if(speechWatchdog) clearInterval(speechWatchdog);
+    speechWatchdog=setInterval(()=>{
+      if(myGeneration!==speechGeneration||myChunk!==chunkToken){ clearInterval(speechWatchdog); speechWatchdog=null; return; }
+      if(Date.now()-startedAt<600) return;
+      if(!speechSynthesis.speaking && !speechSynthesis.pending){
+        clearInterval(speechWatchdog); speechWatchdog=null;
+        advance();
+      }
+    },250);
+  }
+
+  // Telling our own voice from yours without a second audio pipeline. The
+  // recognizer already owns the microphone and opening a competing capture
+  // stream has destabilised it before, so instead: everything heard while we
+  // are speaking is compared against the sentence we are speaking right now,
+  // and if it is mostly our own words coming back it is echo, not you.
+  // Compared phonetically, because what returns is what our voice *sounded*
+  // like through a speaker and a microphone, not what it was.
+  function considerBargeIn(transcript){
+    const heard=speechKey(transcript).split(' ').filter(Boolean);
+    if(heard.length<2) return;          // a syllable of echo is not an interruption
+    const mine={};
+    speechKey(speakingText).split(' ').filter(Boolean).forEach(w=>{ mine[phon(w)]=1; });
+    const overlap=heard.filter(w=>mine[phon(w)]).length/heard.length;
+    if(overlap>=0.5){ micEvent('echo','ignored "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)'); return; }
+    cancelSpeech('voice: "'+transcript.trim().slice(0,40)+'"');
+  }
+
   function speak(text){ lastNarration=text; log('Board',text); say(text); }
   function warn(text){ log('System',text); say(text); }
   // Unlike warn(), does not speak — for messages that just restate example
@@ -1045,7 +1166,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r7 (self-hosted chess.js)';
+  const BUILD='v2-r8 (always-on loop, barge-in)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -1858,6 +1979,7 @@
     const others=list.filter(x=>x!==bestText).slice(0,2);
     if(!alreadyLogged) log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
     if(DEBUG) recordDiagnostic(list,best,bestText);
+    setMicState('thinking','routing "'+bestText.slice(0,32)+'"');
 
     // Commands are always allowed, even after game over / while computer thinks.
     if(best.type!=='command'){
@@ -1871,6 +1993,11 @@
       }
     }
     execPlan(best);
+    // execPlan usually ends in say(), which takes the state to SPEAKING. When
+    // it doesn't — a silent warning, a command that only logs — nothing else
+    // would ever move us off THINKING, and the timeline would read as if the
+    // app had hung.
+    if(!speaking) setMicState(listening?'listening':(wantLoop&&handsFree?'restarting':'idle'),'nothing to narrate');
   }
 
   textForm.addEventListener('submit',e=>{
@@ -1884,7 +2011,12 @@
   // ===============================================================
   let recognition=null,listening=false,wantLoop=false;
 
-  function setListening(v){ listening=v; micWrap.classList.toggle('listening',v); }
+  function setListening(v){
+    listening=v; micWrap.classList.toggle('listening',v);
+    lastMicActivity=Date.now();
+    if(v) setMicState('listening','session open');
+    else if(!speaking) setMicState(wantLoop&&handsFree?'restarting':'idle','session closed');
+  }
 
   async function primeMic(){
     // SpeechRecognition owns the microphone. Do not open a second getUserMedia
@@ -1915,11 +2047,23 @@
     recognition.continuous=true;
 
     recognition.onstart=()=>note('Listening\u2026');
-    recognition.onspeechstart=()=>note('Hearing you\u2026');
+    recognition.onspeechstart=()=>{ lastMicActivity=Date.now(); note('Hearing you\u2026'); };
     recognition.onresult=e=>{
+      lastMicActivity=Date.now();
       for(let i=e.resultIndex;i<e.results.length;i++){
         const res=e.results[i];
+        // THE invariant that makes an open mic during narration safe: anything
+        // captured while we are speaking is barge-in evidence and nothing else.
+        // There is deliberately no path from here to route(), so no move can
+        // ever be played from audio recorded while the app was talking —
+        // including the app's own voice. Interim results count, because
+        // interrupting has to feel immediate.
+        if(speaking){ considerBargeIn(res[0]?res[0].transcript:''); continue; }
         if(res.isFinal){
+          // A session that produced a result was healthy, whatever happened
+          // before it; otherwise a few short sessions early in a long game
+          // would still be counted against it an hour later.
+          shortSessions=0;
           const alts=[];
           lastAltMeta=[];
           for(let a=0;a<res.length;a++){
@@ -1943,6 +2087,13 @@
       // quiet stretch. That is normal operation between moves, not a fault —
       // reporting it would fill the mic line with noise every few seconds.
       if(e.error==='no-speech'&&wantLoop&&handsFree){ note(''); return; }
+      micEvent('error',e.error);
+      // A network blip is not a broken microphone. Counting it toward the
+      // give-up threshold meant a few seconds of bad wifi could end listening
+      // for the rest of the game, which is exactly when you least want to
+      // discover the mic quietly stopped.
+      if(e.error==='network'){ lastErrorWasNetwork=true; shortSessions=0; }
+      else lastErrorWasNetwork=false;
       const map={
         'not-allowed': location.protocol==='file:'
           ? 'Microphone permission is temporary on file://. Open this page through http://localhost.'
@@ -1972,26 +2123,70 @@
   // A session that dies immediately means something is actually wrong
   // (revoked permission, no input device), and retrying at full speed would
   // spin forever, so back off and then stop visibly rather than silently.
-  let sessionStartedAt=0, shortSessions=0;
+  let sessionStartedAt=0, shortSessions=0, lastErrorWasNetwork=false;
   function scheduleRestart(){
     if(Date.now()-sessionStartedAt<1200) shortSessions++; else shortSessions=0;
     if(shortSessions>=5){
       shortSessions=0; wantLoop=false;
+      micEvent('gave-up','5 sessions died immediately');
       note('Listening stopped — tap the mic to start again.','err');
       return;
     }
-    setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },shortSessions>=3?800:200);
+    const delay=lastErrorWasNetwork?2500:(shortSessions>=3?800:200);
+    micEvent('restart','in '+delay+'ms'+(lastErrorWasNetwork?' (network backoff)':''));
+    setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },delay);
   }
+
+  // Staying on for a 30-minute game means every restart path has to survive
+  // being dropped — a lost onend, a swallowed timeout, a backgrounded tab.
+  // The failure mode is silent: the app just stops hearing you, and nothing
+  // says so. This is the only thing that would ever notice.
+  const STALE_SESSION_MS=90000;
+  setInterval(()=>{
+    if(!wantLoop||!handsFree||speaking) return;
+    const idle=Date.now()-lastMicActivity;
+    if(listening){
+      // The nastier failure: onend never arrives, so `listening` stays true,
+      // and both restart paths are gated on it being false. The app is deaf
+      // and every mechanism designed to notice is itself waiting on the event
+      // that got lost. A session that has claimed to be listening this long
+      // without hearing anything is not a patient one, it is a dead one.
+      if(idle<STALE_SESSION_MS) return;
+      micEvent('watchdog','session stale for '+Math.round(idle/1000)+'s — forcing a new one');
+      lastMicActivity=Date.now();
+      const wasListening=listening;
+      try{ recognition.abort(); }catch(e){}
+      // If abort delivered onend, the normal restart path already owns this.
+      // Only step in when it didn't — which is the case this whole branch
+      // exists for. Two restart paths racing is how you get a session that
+      // opens twice and a log nobody can read.
+      if(listening===wasListening){ setListening(false); scheduleRestart(); }
+      return;
+    }
+    if(idle<4000) return;
+    micEvent('watchdog','no session for '+Math.round(idle/1000)+'s — restarting');
+    startListening();
+  },5000);
 
   async function startListening(){
     if(!recognition||listening||speaking) return;
     const ok=await primeMic();
     if(!ok) return;
-    try{ recognition.start(); sessionStartedAt=Date.now(); setListening(true); }
+    try{
+      recognition.start(); sessionStartedAt=Date.now();
+      // One bad moment of wifi should not slow every restart for the rest of
+      // the game. Clearing this on a session that actually opened keeps the
+      // backoff attached to the problem instead of to the session count.
+      lastErrorWasNetwork=false;
+      setListening(true);
+    }
     catch(err){ /* already started — ignore */ }
   }
 
   micBtn.addEventListener('click',async()=>{
+    // While it's talking, the mic button is an interrupt — you reached for it
+    // to make it stop, not to toggle a session that is already muted.
+    if(speaking){ cancelSpeech('mic button'); return; }
     if(listening){ wantLoop=false; try{recognition.stop();}catch(e){} return; }
     wantLoop=handsFree;
     await startListening();
@@ -2001,7 +2196,23 @@
     handsFree=handsFreeToggle.checked;
     if(!handsFree){ wantLoop=false; }
     else if(listening){ wantLoop=true; }
+    saveState();
   });
+
+  bargeInToggle.addEventListener('change',()=>{
+    bargeIn=bargeInToggle.checked;
+    micEvent('setting','talk-over '+(bargeIn?'on':'off'));
+    saveState();
+  });
+
+  // Barge-in without a microphone: Escape always works, and works everywhere,
+  // including on the machines where acoustic echo cancellation is too weak
+  // for the voice route to be trustworthy (OUR-58 was reported on exactly
+  // such a setup).
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape') cancelSpeech('escape key');
+  });
+  textInput.addEventListener('input',()=>{ cancelSpeech('typing'); });
 
   // ===============================================================
   // Online multiplayer — ported from Giga Chess's Supabase realtime
@@ -2456,7 +2667,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,voiceOn,handsFree,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -2478,6 +2689,7 @@
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
+      bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
       clockPreset=saved.clockPreset||0; syncClockUI();
       whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
@@ -2535,13 +2747,37 @@
       +'  maxAlternatives='+(recognition?recognition.maxAlternatives:'n-a')
       +'\nengine: '+(SR?'present':'MISSING')+'  ·  '+navigator.userAgent+'\n');
     renderDebug();
+    // Mic events arrive without any utterance to hang them off, so the panel
+    // has to refresh on its own or a 30-minute idle stretch shows nothing.
+    setInterval(renderDebug,1000);
+  }
+  // Phase B's "done when" is a 30-minute game that never talks to itself and
+  // can always be interrupted — none of which any amount of clicking in this
+  // harness can demonstrate, because there is no microphone in it. So the
+  // deliverable is this: play one real game with ?debug=1 and the timeline
+  // below says whether it held. Same move that made A2–A5 tractable.
+  function micTimeline(){
+    if(!micLog.length) return '';
+    const t0=micLog[0].t;
+    const count=k=>micLog.filter(m=>m.kind===k).length;
+    const sessions=micLog.filter(m=>m.kind==='state'&&/→ listening/.test(m.detail)).length;
+    const head='\n--- mic timeline · state='+micState
+      +' · '+sessions+' sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
+      +' · '+count('restart')+' restarts · '+count('watchdog')+' watchdog saves · '+count('error')+' errors'
+      +' · span '+Math.round((micLog[micLog.length-1].t-t0)/1000)+'s ---';
+    return head+'\n'+micLog.slice(-80).map(m=>
+      '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');
   }
   function renderDebug(){
     if(!debugOut) return;
-    debugOut.value=debugLog.join('\n');
-    debugOut.scrollTop=debugOut.scrollHeight;
+    // Only follow the tail if the reader was already at it — this now
+    // refreshes on a timer, and yanking the scroll position out from under
+    // someone reading the middle of a log is its own small betrayal.
+    const atBottom=debugOut.scrollHeight-debugOut.scrollTop-debugOut.clientHeight<40;
+    debugOut.value=debugLog.join('\n')+micTimeline();
+    if(atBottom) debugOut.scrollTop=debugOut.scrollHeight;
     const n=debugLog.filter(l=>l.startsWith('#')).length;
-    debugCount.textContent=n?n+' utterance'+(n===1?'':'s'):'speak a move…';
+    debugCount.textContent=(n?n+' utterance'+(n===1?'':'s'):'speak a move…')+'  ·  '+micState;
   }
   function recordDiagnostic(list,best,bestText){
     const n=debugLog.filter(l=>l.startsWith('#')).length+1;

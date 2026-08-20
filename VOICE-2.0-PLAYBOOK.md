@@ -4,7 +4,7 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r7`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65). **Next session: Phase B, or C1/C2.**
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phase A and B are built. Next session: C1/C2 — but play one real game first, Phase B's acoustics are unverified.**
 >
 > **Phase A is complete.** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers · A6 chess.js vendored, so a game against the computer needs no network at all.
 >
@@ -156,8 +156,22 @@ Explicit `IDLE → LISTENING → THINKING → SPEAKING → LISTENING`, with the 
 
 ---
 
-### Phase B — The continuous loop, done safely
+### Phase B — The continuous loop, done safely  ✅ **Built — Day 3.7, `v2-r8`** (acoustics unverified — see below)
 *This is the OpenClaw-style always-on behaviour. It's mostly a discipline problem, not a technology problem.*
+
+> **How it was actually built, and the one item deliberately skipped.**
+>
+> **There is no VAD, on purpose.** Item 2 below calls for Silero via `@ricky0123/vad-web`. Against it: a multi-megabyte download in a project whose whole approach through C2 is *no downloads*; a second `getUserMedia` stream, which `primeMic()` has warned against since Day 1 as a way to destabilise Chrome's recognizer; and decisively — **the only job VAD has in Phase B is barge-in, and the recognizer is already a speech detector.** It is running, it owns the mic, it reports words. A second, worse speech detector answering a question the first one already answers is not a safety measure, it is another thing to go wrong.
+>
+> **The danger is removed structurally instead of acoustically.** With "Talk over it" on, the session runs straight through our own narration — OUR-58's setup exactly — and the first line of `onresult` is `if(speaking){ considerBargeIn(...); continue; }`. **There is deliberately no path from audio captured while speaking to `route()`.** It can cancel narration and nothing else. Hearing ourselves costs a cut-off sentence; it can never cost a move. That invariant holds even when the acoustics are terrible, which is the condition OUR-58 was reported under — worth more here than any echo-cancellation setting.
+>
+> **Echo is filtered phonetically**, against the sentence being spoken right now, reusing A2/A5's `phon()` — what comes back is what our voice *sounded like* through a speaker and a mic. Over 50% overlap is us; under, it's you.
+>
+> **Escape, the mic button and typing also interrupt**, and they work regardless of the machine's echo cancellation. That is the reliable route; voice is the nice one, and ships **off**.
+>
+> **A5 had shipped a truncation bug:** Chrome silently cuts an utterance past ~15s, and "what's on the board" measures **34 seconds**. Narration is now a chunk queue.
+>
+> **Not proven, and not to be claimed:** anything acoustic — whether real AEC keeps the echo filter above 50%, whether a 30-minute session holds, whether barge-in lands under 200ms with real audio. **Play one game with `?debug=1` and read the mic timeline before trusting any of it.**
 
 Always-on listening while the app is also *speaking* is exactly the setup that produced **OUR-58** (the app heard its own voice, failed to parse it, spoke a suggestion, and looped). Going always-on multiplies that risk, so the safety pieces are prerequisites, not polish:
 
@@ -168,6 +182,9 @@ Always-on listening while the app is also *speaking* is exactly the setup that p
 5. **Never speak a suggestion of what to say.** The `warnSilent()` rule from OUR-58 becomes a permanent design rule, not a bug fix.
 
 **Done when:** you can leave the mic on for a 30-minute game, the app never talks to itself, and you can interrupt it mid-sentence.
+*Built and verified in the harness; the 30-minute claim and the acoustics need one real game to confirm.*
+
+**The voice test harness** — `node tools/voice-harness.js [--fast]`, then open `/_vad-harness.html?debug=1`. Injects a scriptable `SpeechRecognition` (`__fakeSR.hear()`, `.fail()`, and an honest `_started` that drops audio when the mic is shut) plus a `speechSynthesis` that resolves at 55ms/word. Generated from the current `index.html`, never committed, so it cannot drift. **None of Phase B is testable by clicking — there is no microphone in the agent's browser** — and this found four real bugs on its first run: a sticky network backoff, two restart paths racing, a lost `onend` leaving the app deaf with every recovery gated on the missing event, and an unsound assertion of my own. ⚠️ The agent's browser clamps timers to ~1s regardless of tab focus; any sub-second timing result from it is a lie.
 
 ---
 

@@ -598,3 +598,115 @@ Deployed to `/v2/` as `v2-r7`.
 Working tree: `index.html`, `chess-0.10.3.js`, `README.md`,
 `VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry (and `sync-v2-preview.sh` on main).
 Branch `v2`, build `v2-r7`.
+
+## 2026-08-21 — Day 3.7: Phase B, the always-on loop (r8)
+
+Phase B is the always-on behaviour: leave the mic on for a whole game, never
+let the app talk to itself, and be able to cut it off mid-sentence. Four of the
+playbook's five items are done. The fifth — Silero VAD — I deliberately did not
+build, and the reasoning matters more than the code.
+
+**Why there is no VAD.** The playbook calls for `@ricky0123/vad-web` to segment
+speech. Three things argue against it here: it's a multi-megabyte model
+download in a project whose whole approach through C2 is "no downloads"; it
+needs its own `getUserMedia` stream, and `primeMic()` has carried a warning
+since Day 1 that a second capture session destabilises Chrome's recognizer; and
+most of all, **the only job VAD has in Phase B is barge-in — and the recognizer
+is already a speech detector.** It is running, it owns the microphone, and it
+tells us when it hears words. Adding a second, worse speech detector alongside
+it to answer a question the first one already answers is not a safety measure,
+it's a second thing to go wrong.
+
+**So the mic stays open during narration instead, and the danger is removed
+structurally rather than acoustically.** With "Talk over it" on, `beginSpeaking()`
+skips the `abort()` and the session runs straight through our own voice. That's
+the OUR-58 setup exactly — so the first line of `onresult` is now:
+
+```js
+if(speaking){ considerBargeIn(res[0].transcript); continue; }
+```
+
+There is deliberately **no path from audio captured while speaking to
+`route()`**. It can cancel narration. It can do nothing else. Hearing ourselves
+can cost a cut-off sentence; it can never cost a move, which is the one failure
+a blindfold player cannot survive. That invariant is what makes an open mic
+during speech acceptable at all, and it's worth more than any amount of echo
+cancellation, because it holds even when the acoustics are terrible — which is
+precisely the condition OUR-58 was reported under.
+
+**Telling our own voice from yours, without a second pipeline.** Everything
+heard while speaking is compared against the sentence being spoken right now,
+phonetically — because what comes back is what our voice *sounded like* through
+a speaker and a microphone, not what it was. A2/A5's `phon()` already does
+exactly this job. Above 50% overlap it's echo and is ignored; below, it's you,
+and narration stops. In the harness, "your nights are on be one and gee one"
+fed back against *"Your knights are on bee 1 and gee 1"* scored 100% ours and
+was correctly ignored, while "no no stop" cut the sentence off mid-word.
+
+**Interrupting without a microphone at all.** Escape, the mic button and typing
+in the text box all cancel narration instantly, and they work regardless of
+what the machine's echo cancellation is like. That's the reliable route;
+voice is the nice one. The toggle ships **off** for that reason.
+
+**A5 shipped a truncation bug and this session found it.** Chrome silently cuts
+a single utterance somewhere past ~15 seconds, and "what's on the board" now
+reads out both rosters — measured at **34 seconds** of continuous speech. It was
+being cut off and nothing said so. Narration is now a queue of sentence-sized
+chunks; verified end to end, the full roster now runs the whole 34 seconds and
+returns cleanly to idle.
+
+### The harness, and the four bugs it found
+
+None of this is testable by clicking: there is no microphone in the agent's
+browser. So `tools/voice-harness.js` injects `tools/fake-recognizer.js` into a
+throwaway copy of the page — a scriptable `SpeechRecognition` (`hear()`,
+`fail()`, and an honest `_started` that *drops* audio when the mic is shut) and
+a `speechSynthesis` that resolves at 55ms/word. Same discipline as
+`tools/phon-collisions.js`: generated from the current `index.html`, never
+committed as a copy, so it can't drift.
+
+It earned its keep immediately:
+
+1. **A network blip slowed every restart for the rest of the game.**
+   `lastErrorWasNetwork` was only ever cleared by a *different* error, so one
+   bad second of wifi left a 2.5s backoff on every session for an hour. Cleared
+   on any session that successfully opens — the backoff belongs to the problem,
+   not to the session count.
+2. **Two restart paths raced.** The stale-session recovery aborted the session
+   *and* scheduled its own restart, while the resulting `onend` scheduled
+   another. Now it only steps in when `onend` didn't arrive.
+3. **A lost `onend` left the app permanently deaf.** `listening` stays true, and
+   both `scheduleRestart()` and the watchdog are gated on it being false — every
+   mechanism designed to notice was waiting on the event that went missing.
+   This is the exact shape of a 30-minute-game failure: silent, and invisible
+   from inside. A session claiming to listen for 90 seconds without hearing
+   anything is now treated as dead, not patient.
+4. **My own test assertion was unsound.** `say()` calls
+   `speechSynthesis.cancel()` itself, so *every* narration looked like a
+   barge-in and the echo filter appeared broken when it was working perfectly.
+   Caught by checking the app's own timeline instead of my proxy for it.
+
+The debug panel now carries a mic timeline — every state transition, session,
+error, restart, watchdog save, barge-in and ignored echo, with a summary line.
+That's the deliverable for the part I can't test: one real game with `?debug=1`
+says whether this holds.
+
+### What is and isn't proven
+
+Proven in the harness and the real page: the no-route invariant (both with the
+toggle on and off), the echo filter, voice/Escape/mic-button barge-in, chunked
+narration completing a 34-second answer, network-error recovery, and
+lost-`onend` recovery.
+
+**Not proven, and not claimable:** anything acoustic. Whether real echo
+cancellation on this Mac keeps the filter above 50%, whether a real 30-minute
+session holds, and whether barge-in latency is under 200ms with real audio.
+Also unproven: the give-up-after-5-dead-sessions path — the agent's browser
+clamps timers to ~1s regardless of tab focus, so sessions can't be killed fast
+enough to trigger it. That path is unchanged Day 3.0 code and my edits can only
+make it fire *less*; the watchdog covers its purpose better anyway.
+
+Deployed to `/v2/` as `v2-r8`.
+
+Working tree: `index.html`, `tools/fake-recognizer.js`, `tools/voice-harness.js`,
+`.gitignore`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`. Branch `v2`, build `v2-r8`.
