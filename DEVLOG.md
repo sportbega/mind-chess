@@ -392,3 +392,25 @@ User tested A1 and reported "it is still the same in my opinion." **That was the
 Regression pass: full spoken game (e4, Nf3, Bc4, O-O), commands (show board, take back, whose turn), and both noise cases still correctly rejected without false-triggering the new questions.
 
 Working tree: `index.html`, this DEVLOG entry. Branch `v2`.
+
+## 2026-08-20 — Day 3.2: a 55-utterance real game, and what it exposed
+
+User captured a full game through `?debug=1` — 55 utterances. Most resolved correctly (bare squares, bishops, queens, rooks, castling, even a `b8=Q#` promotion), which confirmed A2's phonetic scoring holds up on real speech rather than only on simulated mishearings. The failures were the valuable part.
+
+**First, a process failure worth recording: A3 wasn't in the build the user tested.** `#6` ("night 283" — piece clear, square destroyed) should have asked "Knight to where?" and instead rejected. The code was correct; the browser was serving a cached `index.html`. **A stale build and a broken fix look identical in a log**, and I nearly re-debugged working code. Added a `BUILD` constant printed in the diagnostics header, to be bumped on every voice-layer change. This is the fourth time the Browser-pane/browser cache has cost time on this project (see the Day 2.7 note) — now it's structurally visible instead of something to remember.
+
+**Second wrong-move bug, same class as Day 3.1's but a different mechanism.** "knight to f4" played the **f4 pawn**. `route()` compares plan scores across two paths that were never on a common scale: `parseRequest` resolves any unambiguous pawn move at a flat **6**, while `constrainedMove` returns its raw fuzzy score — a *confident* phonetic match with margin 1.38 came back at only **2.4**. So the alternative "night to F4" (correct, Nf4) lost to "9th to F4" (pawn f4) every time. Fixed by mapping an accepted fuzzy match into the same band, ordered by margin (`6 + min(1.5, margin/2)`), while leaving exact phrase matches (≥8) above it so they still outrank everything. Replayed against the captured alternatives in a position where both are legal: Nf4 at 6.85 beats pawn f4 at 6.
+
+**Lesson generalised:** two independent scoring paths feeding one `max()` comparison is a latent bug unless their ranges are deliberately reconciled. Day 3.1's fix (early-exit at 6) and this one are the same underlying mistake surfacing twice.
+
+**Ask-back was gated on a threshold that served no purpose.** `askIfPlausible` only offered "piece to where?" when the top candidate scored under 1 — but that branch is *only* reached when nothing was accepted, so the candidate scores are irrelevant by definition. "queen drive6" ranked Qd4 at 1.02 and was discarded rather than asked about. Now asks whenever the piece is identified.
+
+**Commands had no fuzzy matching at all.** Moves got phonetic scoring in A2; `matchCommand` remained exact-regex. "hide board" came back as "hi board" / "High board" / "Highboy" / "cardboard" and was rejected outright. Widened with observed variants. Worth remembering that A2 only improved *half* the input surface.
+
+**Piece vocabulary extended from observed transcripts, not imagination:** cream/clean/creamed → queen, point/palm/phone/born → pawn, nike/knife → knight, brooke → rook. "cream to D7" had been parsed as a pawn move and called illegal.
+
+Verified each fix by replaying the user's verbatim alternative lists **in a position where the intended move is actually legal** — the first replay attempt of the Day 3.1 bug looked like a failure purely because Nd4 is illegal from the opening. Position matters when replaying voice logs; a bare transcript is not a reproducible test case.
+
+Regression: full sequential game (e4, Bc4, Nf3, O-O), commands (reveal board, take back), and noise/off-hand speech ("banana milkshake", "seems to be stuck like a side note", pure digits) still correctly rejected without false-triggering the new questions.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r3`.
