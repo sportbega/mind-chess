@@ -346,3 +346,24 @@ Live and verified end-to-end at **https://sportbega.github.io/mind-chess/v1/** �
 **Also spotted while verifying:** the spoken form of a move leaks into the on-screen transcript ("Pawn to ee 4", "Knight to see 6") because letters are spelled phonetically for the synthesizer. Speech text and display text should be generated separately in 2.0 — say "ee 4", write "e4". Logged in the playbook.
 
 Working tree: `v1/` (new, 4 files), `README.md`, `VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry.
+
+## 2026-08-20 — Day 3.0: A1 + A4 (continuous recognition behind a speaking gate)
+
+First 2.0 code. **Working on a `v2` branch, not `main`** — `main` deploys straight to Pages, and 2.0 shouldn't replace the live site until it's finished. `/` stays v1.0 until we merge; `/v1/` is frozen either way.
+
+**A1 and A4 turned out to be one change, not two.** The playbook ordered them A1→A3→A2→A4, but A1 (`continuous=true`) is only safe once A4 (hard-mute while speaking) exists: a per-utterance session used to end on its own before narration started, so the mic was closed during TTS by accident. A long-lived session stays open straight through our own voice — that's OUR-58 as a permanent condition rather than an occasional one. Did them together.
+
+- **A1:** `recognition.continuous=true`. The old restart-per-utterance pattern paid a cold-start cost every time (Chrome clips the opening audio of a fresh session) plus a dead 250ms gap that recorded nothing, which is why "knight to f3" so often arrived as "to f3" — losing exactly the word that identifies the piece.
+- **A4:** speech and listening are now mutually exclusive by construction, not by timing. `beginSpeaking()` aborts the session (`abort()`, not `stop()` — `stop()` delivers whatever it already captured, potentially the tail of our own sentence); `endSpeaking()` brings it back.
+
+**Four things that only became problems once the mic is always on**, all handled:
+1. `no-speech` fires after any quiet stretch in continuous mode. That's normal between moves, so it no longer reports an error — it just restarts silently. Otherwise the mic line would fill with false errors every few seconds.
+2. A session that dies immediately means something is genuinely wrong (revoked permission, no input device). Restarting at full speed would spin forever, so it backs off and then stops **visibly** after 5 tries rather than failing silently.
+3. **Chrome drops `utterance.onend`** often enough that relying on it alone would eventually strand the mic muted with no way back. Added a watchdog that polls the synthesis queue as a backstop, ignoring the first 600ms so it can't fire before speech starts.
+4. **Regression caught before commit:** with "Keep listening" *off*, the per-utterance session was what made the mic behave as push-to-talk. Under `continuous=true` it would have stayed open forever, so it's now stopped explicitly after one final result.
+
+**Verified in-browser** by stubbing the recognizer transport at `SpeechRecognition.prototype` (start/abort/stop) and making synthesis resolve instantly, which allows testing the state machine without a microphone: `start→abort→start` across a full move cycle with two narrations; `no-speech` leaving the note non-error and self-restarting; exactly 5 start attempts before the visible give-up; the watchdog recovering a deliberately dropped `onend` (mic muted mid-speech, live again ~1.8s later); and push-to-talk stopping without restart. Clean reload afterwards plays normally with no console errors (the one 404 is the absent favicon, pre-existing).
+
+**Not verifiable here:** the actual accuracy win. Whether the first word stops getting eaten needs a real voice through a real microphone — worth the user trying before A3 builds on top of it.
+
+Working tree: `index.html`, this DEVLOG entry. Branch `v2`.
