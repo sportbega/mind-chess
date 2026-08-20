@@ -39,9 +39,23 @@ See [DEVLOG.md](DEVLOG.md) for the session-by-session history and decisions.
 
 ## Versions
 
-**v1.0** (tag `v1.0`) is the current frozen release — everything described above, verified on Chrome/macOS and iOS Safari.
+Both versions stay online, permanently:
 
-**2.0** targets the voice layer: recognition accuracy, continuous listening, natural speech, and a conversational board assistant you can ask about the position. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the full plan.
+| | URL | What it is |
+|---|---|---|
+| **Current** | https://sportbega.github.io/mind-chess/ | The latest version. Right now that's v1.0; it becomes 2.0 when 2.0 ships. |
+| **v1.0 (frozen)** | https://sportbega.github.io/mind-chess/v1/ | A permanent, byte-identical copy of the `v1.0` tag. Never changes. |
+
+`v1/` is a frozen snapshot kept for reference and comparison — extracted directly from the `v1.0` git tag and verified byte-for-byte. Don't edit it. If it ever needs to change, re-extract it from the tag.
+
+**2.0** targets the voice layer: recognition accuracy, continuous listening, natural speech, and an engine-backed board assistant you can ask about the position — all at zero running cost. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the full plan.
+
+### ⚠️ Two things 2.0 must not break
+
+Both versions are served from the **same origin**, so they share browser storage and the same Supabase table:
+
+1. **2.0 must use a different `localStorage` key.** v1.0 saves to `mind-chess-save-v1`. If 2.0 writes a newer shape to that same key, opening 2.0 and then v1.0 corrupts v1.0's saved game — and vice versa. 2.0 gets its own key.
+2. **Keep the `mind_chess_games` schema backward-compatible**, or v1.0's online mode breaks. Add columns, don't repurpose or remove them.
 
 ## Next ideas
 
