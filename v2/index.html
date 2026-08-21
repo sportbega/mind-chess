@@ -530,7 +530,9 @@
     const all=speechSynthesis.getVoices();
     if(!all.length) return;
     voicesReady=all.filter(v=>/^en(-|_|$)/i.test(v.lang));
-    if(!voicesReady.length) voicesReady=all;
+    // No English voices at all is a strange machine, not a reason to offer
+    // every language installed. Fall back to the browser default instead.
+    if(!voicesReady.length){ voiceSelect.innerHTML='<option value="">Default</option>'; return; }
     // These are the ones actually worth having when they exist. The
     // network-backed Google voices are markedly better than the local ones.
     const want=['google us english','google uk english female','google uk english male',
@@ -648,7 +650,12 @@
     };
     const u=new SpeechSynthesisUtterance(chunk);
     const v=chosenVoice();
-    if(v){ u.voice=v; u.lang=v.lang; }
+    // Always state the language, even with no voice chosen. Left unset, the
+    // browser picks from every voice installed — 180 of them on this Mac, 18
+    // Chinese — and "whatever the system feels like" is how you end up being
+    // told your knight moved, in Mandarin.
+    u.lang=v?v.lang:'en-US';
+    if(v) u.voice=v;
     u.rate=speechRate;
     u.pitch=0.98;
     u.volume=1;
@@ -1299,7 +1306,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r10 (voice + speed picker)';
+  const BUILD='v2-r11 (pin narration language)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;

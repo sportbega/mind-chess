@@ -826,4 +826,24 @@ using it.
 This also shortens everything. The 34-second roster answer was 34 seconds
 partly because of `rate=0.7`.
 
-Deployed to `/v2/` as `v2-r10`. Branch `v2`.
+**Follow-up (r11): the narration language is now pinned.** Choosing "Default"
+left the utterance with no `voice` *and* no `lang`, so the browser picked freely
+from every voice installed — 180 on this machine, **18 of them Chinese**. It
+now always states `en-US`, and "no English voices at all" falls back to the
+browser default rather than offering every language on the system.
+
+Worth recording how this came up, because the reported symptom pointed
+somewhere else entirely: testing Kokoro, the user heard a voice speaking
+Chinese. It wasn't Kokoro. `kokoro-js` exposes 28 voices, all `en-us`/`en-gb`,
+and **rejects the Mandarin ids outright** (`zf_xiaoxiao` → *"not found"*), even
+though the package ships 54 voice files including 8 Mandarin. Its phonemes came
+back as clean English IPA. What the demo *did* do was list all 28 as raw ids in
+arbitrary order — and **12 of the 28 are graded D or F by Kokoro itself**, with
+`am_adam` at F+. A D-grade voice at `q8` mangles English badly enough to sound
+like another language. The demo now labels every voice with its grade and puts
+the D/F ones in a separate group.
+
+The `lang` fix is unrelated to what was actually heard, then — but it's a real
+hole found while chasing it, and worth closing regardless.
+
+Deployed to `/v2/` as `v2-r11`. Branch `v2`.
