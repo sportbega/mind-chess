@@ -847,3 +847,61 @@ The `lang` fix is unrelated to what was actually heard, then — but it's a real
 hole found while chasing it, and worth closing regardless.
 
 Deployed to `/v2/` as `v2-r11`. Branch `v2`.
+
+## 2026-08-21 — Day 3.10: D1, the natural voice (r12)
+
+The user's verdict on the comparison page was "completely next dimension", so
+Kokoro is in — **fp32 from Hugging Face's CDN**, because the measurements from
+Day 3.9 left no real alternative. The 92 MB `q8` build fits in the repo and
+generates at about 1× realtime: three seconds of silence before a move is
+announced. fp32 runs ~8× realtime but is 326 MB, which no per-file limit will
+ever accept. The choice was never "GitHub or Supabase" — it was **fast or
+self-hosted**, and for a voice you hear on every move, fast wins.
+
+**It is opt-in and the app never waits on it.** Speech: *System* (default) or
+*Natural — 326 MB once*. Nothing downloads until it's picked. Choosing it shows
+live progress in the mic line; the weights are browser-cached afterwards, so it
+works offline from then on, exactly like Stockfish.
+
+**Every failure falls back to the system voice**, which is guardrail #6 and the
+part I was most careful to verify rather than assume:
+
+- no WebGPU → refuses to load, says why, reverts the setting
+- load or generation fails → warns once, flips to System, speaks the line anyway
+- autoplay refused → hands that one line to `speechSynthesis`
+- **setting restored but weights not cached yet** → the game talks in the system
+  voice and quietly upgrades when the download lands. Never a mute app waiting
+  on 326 MB.
+
+Verified all four. The no-WebGPU path is now reproducible via
+`node tools/voice-harness.js --no-gpu` rather than a throwaway file — it hides
+`navigator.gpu`, which is the only way to test that fallback on a machine that
+has WebGPU.
+
+**Two latency problems, both fixed by spending the cost somewhere nobody hears
+it.** Generation runs ~400–700 ms a line, which would be dead air before every
+move. Rendering the *next* chunk while the current one plays hides all of it
+after the first: measured 598 ms for chunk one, then **11 ms** for chunk two.
+And the very first generation after load pays for GPU pipeline warmup — 1937 ms,
+landing squarely on the first move of the game — so loading now burns it on a
+throwaway clip immediately: `warmed in 678ms`, after which the first real move
+came back in 767 ms.
+
+**Barge-in needed real work.** Kokoro plays through an `<audio>` element, and
+`speechSynthesis.cancel()` is completely deaf to it — Escape would have silenced
+the system voice while the natural one kept talking straight through. Every
+teardown path now goes through one `stopAudio()`.
+
+**A measurement of mine was wrong again, in the same shape as last time.** I
+instrumented `window.Audio` to time "submit → speech" and got 7 ms, 62 ms, 74 ms
+— implausibly fast. The probe was catching the *move sound effect*
+(`audio/mp3`, 3.4 KB, 0.07 s), not the narration. Checking the blob's type is
+what caught it. The honest figures come from the app's own `tts` timeline, which
+is the third time this session that trusting the app's instrumentation over my
+own proxy for it was the thing that mattered.
+
+Also carried over from chasing the "Kokoro speaks Chinese" report: the voice
+menu now shows Kokoro's own grades and quarantines the twelve D/F voices, so
+`am_adam` (F+) isn't sitting unlabelled next to Heart (A).
+
+Deployed to `/v2/` as `v2-r12`. Branch `v2`.
