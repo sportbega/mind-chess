@@ -1146,3 +1146,71 @@ designed in on Day 2.4 and this is the first time it actually mattered.
   it was built for. No iPhone available to test on.
 - D1's chunk prefetch still covers most chunks and not all — 1076 / 46 / 972 /
   39 ms, unexplained by the code. Polish.
+
+## 2026-08-21 — Day 3.15: the prefetch wasn't broken (r19)
+
+The open item since D1 read: *"chunk prefetch covers most but not all chunks —
+measured 1076 / 46 / 972 / 39 ms, and the alternation isn't explained by
+reading the code."* It still wasn't explained by reading the code, so this time
+it got instrumented instead: every render start, every render completion with
+its depth, and every hit or miss.
+
+**The alternation is not a prefetch failure. It is two narrations.**
+
+`1076, 46, 972, 39` is miss, hit, miss, hit — two separate `say()` calls of two
+chunks each. Every `say()` builds a fresh queue, so **the first chunk of a
+narration has nothing before it to render during, and is always a full
+generation**. Measured directly: a one-chunk move narration ("Pawn to e4.")
+costs **1311 ms**, every time, with no prefetch possible even in principle.
+The roster answer measured `2405 (miss) / 74 (hit) / 41 (hit)` — the same
+shape, one narration long enough to show it.
+
+Nothing was wrong. The thing that looked like a bug was the cost of the first
+sentence, which you cannot render before you know what it says.
+
+### What *was* worth fixing
+
+The prefetch that existed worked — 1528 ms and 3585 ms of generation against
+6.2 s and 7.6 s of playback, both hits — but it rendered exactly **one** chunk
+ahead, and only started when the previous chunk began *playing*. That leaves
+the pipeline zero slack: chunk N+1 arrives on time only if it generates faster
+than chunk N plays. Measured, the model then sat **idle for 4–5 s** with the
+chunk after next not yet begun. A short chunk followed by an expensive one is
+exactly where that runs out.
+
+Now it renders while there is work and buffer room (depth 3), chained so the
+model is busy precisely when it would otherwise be idle, and never started
+while the chunk actually being waited on is still rendering — which would
+delay the one that matters most. Same narration, before → after:
+
+| chunk | before | after |
+|---|---|---|
+| 0 | 2405 ms | 2074 ms — miss either way, inherent |
+| 1 | 74 ms | **43 ms** |
+| 2 | 41 ms | **7 ms** |
+
+Chunk 2's render starts 3.3 s earlier, taking its slack from 4.1 s to 9.3 s.
+
+Two smaller things fell out:
+
+- **`say()` now starts rendering before its 120 ms gate, not after.** That gate
+  exists so the capture session can close before playback clips — a reason to
+  delay the *audio*, not a reason to leave the model idle.
+- **A real leak.** `stopAudio()` set `kokoroAhead=null` without revoking, so
+  every barge-in dropped an object URL on the floor. With a buffer that is now
+  up to three, `dropAhead()` revokes them properly.
+
+### The honest remainder
+
+The first chunk of every narration still costs **~1.3–2.0 s**, and roughly
+1.1 s of that is fixed overhead rather than length — "Pawn to e4." (11
+characters) took 1311 ms against the roster's 2405 ms for a full line. D1
+already shortens the first chunk for this reason and it only goes so far.
+Removing it would mean rendering a sentence before it exists — predicting the
+engine's reply while your own move is still being spoken. That is a real
+option and a much bigger change than this was.
+
+**Closing this as understood rather than as fixed**, because most of what was
+being measured turned out not to be a defect.
+
+Deployed to `/` and `/v2/` as `v2-r19`.
