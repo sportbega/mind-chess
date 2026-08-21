@@ -1705,3 +1705,73 @@ reserve hit: "Knight takes e4."
 kokoro chunk in 7ms
 rendered ahead(2) in 962ms
 ```
+
+## 2026-08-21 — Day 4.5: puzzles, sized for a head (r25)
+
+The last unstarted item on OUR-71, and the design turned on one question that
+had nothing to do with chess.
+
+**The Lichess database was the obvious source and the wrong one.** It is CC0,
+free, downloadable — every constraint this project usually cares about is
+satisfied. It is also *positions from real games*, which means twenty-odd
+pieces. That is fine when you can see the board and close to useless when you
+cannot: a blindfold player has to hold the position, so the binding constraint
+is not licensing or file size, it is how much board fits in a head. Ask "what
+is actually binding here?" and the answer stops being "where do we get
+puzzles" and becomes "what shape of puzzle is playable blind".
+
+So they are generated instead: four to seven pieces, mate in one or mate in
+two. `tools/make-puzzles.js`, 200 puzzles, 23 KB.
+
+**And generating them removed the engine entirely.** Mate in one and mate in
+two are decidable by brute force over chess.js — no Stockfish, no download, and
+the answer is *proved* rather than trusted to a search depth:
+
+- mate in 1: exactly one legal move gives checkmate
+- mate in 2: no mate in 1 exists, and exactly one move m1 is such that *every*
+  black reply allows a mate in 1
+
+**"Exactly one" is the load-bearing part.** If two moves mate, then rejecting
+the player's answer because it isn't the one we stored is the app being wrong,
+not the player. Uniqueness is what earns the right to say "no, not that one" —
+and to a blindfold player, who cannot look down and check, that right has to be
+earned. Because every defence is enumerated at build time, the solution ships
+as a small tree rather than a line, so the app answers any defence correctly
+with no engine at runtime.
+
+**The first generated set opened with an illegal position.** Puzzle 1 was a
+"mate in one" whose black king was already in check while White was to move — a
+position no game can reach. `chess.js`'s `load()` accepts it, and `in_check()`
+only ever asks about the side *to* move, so the illegal half is invisible
+unless you flip the side to move and ask again. It was only caught by printing
+the first few puzzles and reading them. Roughly a third of the set went away
+when the check was added, which is the right trade.
+
+Three bugs found by playing it rather than reviewing it:
+
+- **The app rejected its own defender move.** `puzzleAccepts()` validated every
+  move through `applyMove()`, including the scripted reply — so after the
+  correct key the puzzle stalled with the board left on the defender's turn,
+  and the player's next move was illegal too. It now judges only moves made on
+  the player's own turn.
+- **A tip fired in a puzzle**: "both queens are off the board now", about a
+  position that never had queens. Tips are bookkeeping for a game you have been
+  tracking move by move; a puzzle was read out whole ten seconds ago. Off in
+  puzzle mode.
+- **The roster was spoken but not written.** `startPuzzle()` used `say()`, so
+  the position existed only as sound — anyone playing by text, or re-reading,
+  got a puzzle they could not see at all. `speak()` puts it in the transcript
+  where it belongs.
+
+**Guardrail 4 caught me in my own new code.** The "wrong move" reply was
+`warn('Still not it. Say "solution" if you want to see it.')` — spoken, and
+containing a phrase to say back, which is exactly the OUR-58 loop the guardrail
+exists to prevent. The verdict is spoken; the way out is written, via
+`warnSilent()`. That split is what the function is for, and it applies to a
+nudge as much as to a prompt.
+
+`node tools/make-puzzles.js --audit` re-derives every claim from the FENs alone
+— legality, uniqueness of the key, and that each stored answer really mates —
+independently of the generator that wrote them. All 200 clean. And a first
+visit still fetches neither the engine nor the puzzle file: verified by asking
+the browser what it actually requested.

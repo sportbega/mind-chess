@@ -251,6 +251,7 @@
         <option value="computer" selected>Vs. computer</option>
         <option value="two-player">Pass &amp; play</option>
         <option value="online">Play online</option>
+        <option value="puzzle">Puzzles</option>
       </select>
     </div>
     <div class="field">
@@ -390,6 +391,10 @@
       <li><b>Ask the engine</b> (<b>Coach</b>, on by default — say <code>coach off</code> to silence it) — <code>how am I doing</code>,
         <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
         number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
+      <li><b>Puzzles</b> — set <b>Opponent</b> to <i>Puzzles</i>. Mate in one or two, four to seven pieces so the
+        position fits in your head, read out loud when it starts. Say <code>next puzzle</code>,
+        <code>solution</code>, or <code>say the position again</code>. Every puzzle has exactly one key move,
+        so a rejection means it really wasn't the move. No engine and no network needed.</li>
       <li><b>Tips</b> (on by default — say <code>tips off</code>) — occasional spoken facts you'd have seen with a
         board in front of you: both queens coming off, a piece type disappearing, a repeated position, the
         fifty-move count. Never advice, and never a move — that's what the coach is for.</li>
@@ -1408,6 +1413,10 @@
   // Applying moves
   // ===============================================================
   function applyMove(spec){
+    // Checked before the board is touched: a wrong answer must leave the
+    // position exactly as it was, or the player is retrying a different puzzle
+    // than the one they were given.
+    if(mode==='puzzle'&&!puzzleAccepts(spec)) return;
     const applied=game.move({from:spec.from,to:spec.to,promotion:spec.promotion});
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
@@ -1423,6 +1432,8 @@
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
       const g=generation;
       setTimeout(()=>{ if(g===generation && !gameOver) triggerComputerMove(); },650);
+    }else if(mode==='puzzle'){
+      puzzleAdvance();
     }
   }
   // The fallback engine — alpha-beta minimax over material + pawn
@@ -1952,7 +1963,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r24 (tips: what you would have seen)';
+  const BUILD='v2-r25 (puzzles sized for a head)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2288,6 +2299,163 @@
   }
 
   // ===============================================================
+  // Puzzles — mate in one and mate in two, sized for a head
+  // ===============================================================
+  // The Lichess database is CC0 and would have been the obvious source. It is
+  // also positions from real games, which means twenty-odd pieces — fine when
+  // you can see the board and close to useless when you cannot. A blindfold
+  // player has to *hold* the position, so the binding constraint is not
+  // licensing or file size, it is how much board fits in a head. Ours are
+  // generated instead (tools/make-puzzles.js), four to seven pieces, and every
+  // one has a *unique* key move — which is what earns the app the right to say
+  // "no, not that one" when the player answers.
+  //
+  // Because every defence was enumerated when the file was built, the solution
+  // is a small tree rather than a line: whatever the defender plays, the app
+  // knows the mate without consulting an engine. Puzzles need no Stockfish and
+  // no network.
+  const PUZZLES_URL='puzzles.json';
+  const PUZZLE_KEY='mind-chess-v2-puzzles';
+  let puzzles=null, puzzlesLoading=null;
+  let puzzle=null, puzzleStage=0, puzzleWrong=0, puzzleDone={};
+
+  function loadPuzzles(){
+    if(puzzles) return Promise.resolve(puzzles);
+    if(puzzlesLoading) return puzzlesLoading;
+    puzzlesLoading=fetch(PUZZLES_URL).then(r=>{
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r.json();
+    }).then(list=>{ puzzles=list; return list; });
+    puzzlesLoading.catch(()=>{ puzzlesLoading=null; });
+    return puzzlesLoading;
+  }
+
+  function loadPuzzleProgress(){
+    try{ puzzleDone=JSON.parse(localStorage.getItem(PUZZLE_KEY)||'{}')||{}; }catch(e){ puzzleDone={}; }
+  }
+  function savePuzzleProgress(){
+    try{ localStorage.setItem(PUZZLE_KEY,JSON.stringify(puzzleDone)); }catch(e){}
+  }
+
+  // The first unsolved one, so progress is linear and a returning player picks
+  // up where they stopped rather than being dropped somewhere arbitrary.
+  function nextPuzzle(){
+    if(!puzzles||!puzzles.length) return null;
+    return puzzles.find(p=>!puzzleDone[p.id])||puzzles[0];
+  }
+
+  function puzzleMoveUci(spec){
+    return spec.from+spec.to+(spec.promotion||'');
+  }
+  function puzzleExpected(){
+    if(!puzzle) return null;
+    if(puzzleStage===0) return puzzle.key;
+    return puzzle.pendingAnswer||null;
+  }
+
+  function describePuzzle(){
+    const side=game.turn()==='w'?'White':'Black';
+    return 'Puzzle '+puzzle.id+'. '+side+' to play and mate in '
+      +(puzzle.mateIn===1?'one':'two')+'.';
+  }
+
+  function startPuzzle(p){
+    if(!p){ warn('No puzzles available.'); return; }
+    generation++;
+    dropReserve(); resetTips();
+    puzzle=p; puzzleStage=0; puzzleWrong=0; puzzle.pendingAnswer=null;
+    game.load(p.fen);
+    humanColor=game.turn();
+    lastMove=null; pendingAction=null; gameOver=false; lastComputerMove=null;
+    stopClock();
+    setBoardHidden(true);
+    transcript.innerHTML='';
+    renderAll();
+    saveState();
+    // The position has to be *said*, not just set: this is the one mode where
+    // the player has never seen the board at all, so the roster *is* the
+    // puzzle. speak() rather than say(), so it lands in the transcript too —
+    // with say() the roster was spoken and then gone, leaving anyone playing
+    // by text, or re-reading, with a puzzle they could not see at all.
+    speak(describePuzzle()+' '+puzzleRoster());
+  }
+
+  function puzzleRoster(){
+    const roster=c=>joinAnd(['k','q','r','b','n','p'].map(tp=>{
+      const at=pieceSquares(c,tp);
+      return at.length?PIECE_NAME[tp]+(at.length>1?'s ':' ')+sqList(at):null;
+    }).filter(Boolean));
+    return 'White: '+roster('w')+'. Black: '+roster('b')+'.';
+  }
+
+  // Called before the move is applied, so a wrong answer never touches the
+  // board — the position must still be the puzzle when the player tries again.
+  function puzzleAccepts(spec){
+    // Only the *player's* moves are answers to be judged. The defender's reply
+    // is played by the app through this same applyMove(), and validating it
+    // against the mating move it is supposed to provoke made the puzzle reject
+    // its own move and stall on the player's turn — with the board left on the
+    // defender's move, so the next thing the player said was illegal too.
+    if(game.turn()!==humanColor) return true;
+    const want=puzzleExpected();
+    if(!want) return true;
+    if(puzzleMoveUci(spec)===want) return true;
+    puzzleWrong++;
+    // Guardrail 4: the spoken half must never contain a phrase to say back,
+    // or the mic hears the app's own suggestion and OUR-58 comes round again.
+    // The way out is written, not spoken — warnSilent() exists for exactly
+    // this split and it applies to a nudge as much as to a prompt.
+    warn(pick(['Not that one.','No — try another move.','That’s not the one.']));
+    if(puzzleWrong>=3) warnSilent('Stuck? Say “solution” to be shown it, or “next puzzle” to move on.');
+    return false;
+  }
+
+  // After a correct move: either it was mate, or the defender replies and the
+  // player is on move again. The reply waits for the narration exactly as the
+  // computer's does — same reason, same mechanism.
+  function puzzleAdvance(){
+    if(game.in_checkmate()){
+      puzzleDone[puzzle.id]=true; savePuzzleProgress();
+      gameOver=true;
+      const solved=Object.keys(puzzleDone).length;
+      warnSilent('Solved '+solved+' of '+puzzles.length+'. Say “next puzzle” for another.');
+      say(pick(['That’s mate. Solved.','Mate. That’s the one.','That’s it — mate.']));
+      return;
+    }
+    if(puzzleStage!==0) return;                 // shouldn't happen: stage 1 must mate
+    const replies=puzzle.replies||{};
+    const legal=game.moves({verbose:true}).map(puzzleMoveUci);
+    const choice=legal.find(u=>replies[u]);
+    if(!choice){
+      // The file promised a mate for every defence and one is missing. Say so
+      // rather than leaving the player pushing at a puzzle that cannot be
+      // solved — and it is a build error, not a player error.
+      warn('This puzzle looks wrong — I have no answer stored for that defence.');
+      warnSilent('Say “next puzzle” to move on. This is a fault in the puzzle file, not in your move.');
+      return;
+    }
+    puzzle.pendingAnswer=replies[choice];
+    puzzleStage=1;
+    const g=generation, move={from:choice.slice(0,2),to:choice.slice(2,4),promotion:choice[4]};
+    const text=predictNarration(move);
+    if(text) requestReserve(splitForSpeech(voiceizeSquares(text))[0]);
+    whenSpeechIdle(()=>{
+      if(g!==generation||gameOver) return;
+      applyMove(move);
+    },REPLY_WAIT_MAX_MS);
+  }
+
+  function puzzleSolution(){
+    if(!puzzle){ warn('No puzzle loaded.'); return; }
+    const want=puzzleExpected();
+    if(!want){ warn('Nothing left to show.'); return; }
+    const probe=new Chess();
+    probe.load(game.fen());
+    const m=probe.move({from:want.slice(0,2),to:want.slice(2,4),promotion:want[4]});
+    speak(m?('The move is '+describeMove(m,'terse')):('The move is '+want+'.'));
+  }
+
+  // ===============================================================
   // Tips — the bookkeeping a sighted player gets for free
   // ===============================================================
   // Deliberately not a small coach. The coach answers "how am I doing" with
@@ -2418,7 +2586,12 @@
   // Order matters: the rarest and most consequential first, because only one
   // is ever spoken.
   function tipFor(){
-    if(tips!=='on') return '';
+    // Not in puzzles. Every tip here is bookkeeping for a game you have been
+    // tracking move by move; a puzzle position was read out whole ten seconds
+    // ago, so there is nothing to have lost track of. Left on, the very first
+    // puzzle announced "both queens are off the board now" about a position
+    // that never had queens in it.
+    if(tips!=='on'||mode==='puzzle') return '';
     // No global cooldown, because it isn't what keeps these rare — every tip
     // above fires on a state change and then never repeats, and the landmarks
     // can each happen only once in a game. A cooldown on top of that would
@@ -2872,6 +3045,13 @@
     if(/how (much )?time|time left|clock|time remaining/.test(t)) return announceClock;
     if(/whose turn|who.{0,3}s turn|who moves/.test(t)) return ()=>speak((game.turn()==='w'?'White':'Black')+' to move.');
     if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
+    if(mode==='puzzle'){
+      if(/next puzzle|another puzzle|next one|skip/.test(t))
+        return ()=>{ if(puzzle&&gameOver) puzzleDone[puzzle.id]=true; savePuzzleProgress(); startPuzzle(nextPuzzle()); };
+      if(/solution|give up|show me|what.{0,3}s the move|tell me/.test(t)) return puzzleSolution;
+      if(/repeat the position|say the position|the position again/.test(t))
+        return ()=>speak(describePuzzle()+' '+puzzleRoster());
+    }
     if(/new game|restart|reset/.test(t)) return startNewGame;
     if(/take back|takeback|undo/.test(t)) return takeBack;
     // "coach on" is a command, not a question. It was in matchQuestion at
@@ -4224,9 +4404,24 @@
     const prevMode=mode;
     mode=modeSelect.value;
     if(prevMode==='online'&&mode!=='online') leaveOnline();
-    if(mode==='online') showOnlinePanel();
-    else{ hideOnlinePanel(); startNewGame(); warmEngine(); }
+    if(mode==='online'){ showOnlinePanel(); return; }
+    hideOnlinePanel();
+    if(mode==='puzzle'){ enterPuzzles(); return; }
+    startNewGame(); warmEngine();
   });
+
+  function enterPuzzles(){
+    loadPuzzleProgress();
+    note('Loading puzzles…');
+    loadPuzzles().then(()=>{
+      note('');
+      startPuzzle(nextPuzzle());
+    }).catch(err=>{
+      note('');
+      warn('Couldn’t load the puzzles — '+((err&&err.message)||'fetch failed')+'.');
+      mode='computer'; modeSelect.value='computer'; startNewGame();
+    });
+  }
   levelSelect.addEventListener('change',()=>{
     levelKey = levelSelect.value;
     searchDepth = levelKey==='master'?3:(+levelKey||2);   // the fallback engine's depth
@@ -4387,6 +4582,7 @@
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
+    if(mode==='puzzle'){ startPuzzle(nextPuzzle()); return; }
     startNewGame();
   });
 
@@ -4418,7 +4614,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -4474,6 +4670,10 @@
       }
       if(saved.pgn) game.load_pgn(saved.pgn);
       mode=(saved.mode==='online')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
+      // A puzzle isn't a game, so restoring its PGN would restore a half-solved
+      // position with no puzzle attached to it. Re-enter the mode properly and
+      // let it serve the next unsolved one.
+      if(mode==='puzzle'){ enterPuzzles(); return true; }
       humanColor=saved.humanColor||'w';
       lastMove=game.history({verbose:true}).slice(-1)[0]||null;
       gameOver=game.game_over();
