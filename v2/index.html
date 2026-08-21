@@ -789,7 +789,7 @@
       const myGeneration=++speechGeneration;
       stopAudio();
       speechSynthesis.cancel();
-      speechQueue=splitForSpeech(text);
+      speechQueue=splitForSpeech(voiceizeSquares(text));
       beginSpeaking();
       // Let Chrome finish closing the recognition audio session before
       // starting narration; without this small gap the first words can clip.
@@ -1036,8 +1036,26 @@
   // Narration
   // ===============================================================
   const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  // Squares are written the way chess writes them — "f6" — and respelled for
+  // the synthesizer only at the moment of speaking. They used to be respelled
+  // at the point of *generation*, which leaked "Knight to eff 6" into the
+  // on-screen transcript and, once Kokoro arrived, into its ears too.
+  function spokenSquare(s){ return s; }
+
+  // The respelling that a plain speechSynthesis voice needs. Kokoro does not:
+  // measured, "f6" phonemizes to ˈɛf sˈɪks ("eff six") which is exactly right,
+  // while "eff 6" becomes ˌiːˌɛfˈɛf ("ee-eff-eff") — it reads the respelling as
+  // spelled-out letters. "ay 4" is wrong there too: ˈaɪ, "eye four". Every file
+  // a–h was checked; plain algebraic is correct for all eight.
   const spokenFile={a:'ay',b:'bee',c:'see',d:'dee',e:'ee',f:'eff',g:'gee',h:'aitch'};
-  function spokenSquare(s){ return spokenFile[s[0]]+' '+s[1]; }
+  function voiceizeSquares(text){
+    // Keyed on what will actually speak, not on what is selected. During the
+    // window where Natural is chosen but the weights are still downloading,
+    // speakNextChunk falls back to speechSynthesis — and that voice still
+    // wants the respelling.
+    if(ttsEngine==='kokoro'&&kokoro) return text;
+    return text.replace(/\b([a-h])([1-8])\b/g,(m,f,r)=>spokenFile[f]+' '+r);
+  }
   function describeMove(m,v){
     const color=m.color==='w'?'White':'Black', piece=PIECE_NAME[m.piece];
     let base;
@@ -1478,7 +1496,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r13 (D1: short first bite)';
+  const BUILD='v2-r14 (say f6, not eff 6)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;

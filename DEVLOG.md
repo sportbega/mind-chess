@@ -918,3 +918,45 @@ halved and the worst case is a third of what it was; the remaining ~1 s on some
 middle chunks is worth a look next session rather than a claim that it's solved.
 
 Deployed to `/v2/` as `v2-r13`. Branch `v2`.
+
+## 2026-08-21 — Day 3.11: say "f6", not "eff 6" (r14)
+
+User report: the voice says *"knight to eff (6)"* where it should say *"f6"* —
+and they'd half-noticed it before without being sure. It's real, and measuring
+it turned up a second one nobody had reported.
+
+Squares were being respelled phonetically at the point of **generation**, so
+`spokenSquare('f6')` returned `"eff 6"` and that string went to the synthesizer
+*and* into the on-screen transcript. That respelling exists for
+`speechSynthesis`. Kokoro doesn't want it, and reads it as spelled-out letters:
+
+| text | phonemes | reads as |
+|---|---|---|
+| `"eff 6"` | `ˌiːˌɛfˈɛf sˈɪks` | **"ee-eff-eff six"** ← the report |
+| `"f6"` | `ˈɛf sˈɪks` | "eff six" ✓ |
+| `"ay 4"` | `ˈaɪ fˈoːɹ` | **"eye four"** ← nobody reported this one |
+| `"a4"` | `ˌeɪ fˈoːɹ` | "ay four" ✓ |
+
+All eight files were checked: **plain algebraic is correct for every one of
+them** in Kokoro, and the respelling breaks two.
+
+So squares are now written the way chess writes them and respelled only at the
+moment of speaking, and only for the engine that needs it. Which also closes
+the wart the playbook has carried since v1.0 — *"the spoken form of a move leaks
+into the on-screen transcript"*. The log now reads `Pawn to e5.` and
+`Your knights are on b1 and g1.` while `speechSynthesis` still receives
+`Pawn to ee 4.` and `bee 1 and gee 1`, unchanged.
+
+**One bug found while verifying, in the gap between the two engines.**
+`voiceizeSquares` first keyed off `ttsEngine`, the *setting* — but during the
+window where Natural is selected and the weights are still downloading,
+`speakNextChunk` falls back to `speechSynthesis`, which still wants the
+respelling. It now keys off `ttsEngine==='kokoro' && kokoro`, the same
+condition that decides who actually speaks. Two engines and two spellings need
+one source of truth about which is in play.
+
+The system voice keeps its existing behaviour, deliberately: it has been in use
+for many sessions, and I can't hear it to judge. If it turns out to spell
+letters out too, the fix is to drop the `spokenFile` branch entirely.
+
+Deployed to `/v2/` as `v2-r14`. Branch `v2`.
