@@ -793,3 +793,37 @@ Deployed to `/v2/` as `v2-r9`.
 
 Working tree: `index.html`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`.
 Branch `v2`, build `v2-r9`.
+
+## 2026-08-21 — Day 3.9: the voice was never chosen (r10)
+
+Before deciding whether Kokoro is worth ~150 MB, worth checking whether the
+voice is actually bad or just badly configured. It was badly configured.
+
+`speechSynthesis` was called with no `voice` at all — whatever the browser
+handed back — and `rate=0.7` to compensate. That rate was never a preference;
+it was a workaround for a voice nobody picked. This machine offers **41 English
+voices** and the app was using none of them deliberately.
+
+So: a Voice picker and a Speed control. On first run it now chooses a real
+voice rather than the default (Google's network voices first where they exist,
+then Samantha / Alex / Daniel / Karen), and the default rate moves 0.7 → 0.9.
+Changing either speaks a sample immediately — picking a voice you can't hear is
+guesswork.
+
+**The list needed grouping, not filtering.** macOS ships a pile of novelty
+voices, and alphabetically "Bad News", "Bahh", "Bells", "Boing" and "Bubbles"
+all sort above anything usable — a poor thing to hand someone choosing a voice
+they'll listen to for a whole game. Two optgroups: Recommended, then All
+voices. Leaving the novelty ones in costs nothing, and someone will genuinely
+want their losses narrated by Bad News.
+
+Verified from clean state: first run selects Samantha, the choice reaches the
+utterance, speed applies live, and both persist. The saved-choice path is
+respected over the auto-pick — which is how I found the auto-pick untested, as
+an earlier test had left "Bad News" in localStorage and the app dutifully kept
+using it.
+
+This also shortens everything. The 34-second roster answer was 34 seconds
+partly because of `rate=0.7`.
+
+Deployed to `/v2/` as `v2-r10`. Branch `v2`.
