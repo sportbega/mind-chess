@@ -262,6 +262,13 @@
       </select>
     </div>
     <div class="field">
+      <label for="sttSelect">Hearing</label>
+      <select id="sttSelect">
+        <option value="system" selected>Browser</option>
+        <option value="local">On-device — 247 MB once</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="voiceSelect">Voice</label>
       <select id="voiceSelect"><option value="">Default</option></select>
     </div>
@@ -396,6 +403,22 @@
   // and the app is fully playable before a single byte of it arrives.
   let ttsEngine = 'system';        // 'system' | 'kokoro'
   let kokoroVoice = 'af_heart';    // Kokoro's own top-graded voice (A)
+  // D2. Which recogniser is listening. 'system' is Web Speech (Chrome/Edge,
+  // needs the network, unavailable on iOS at all); 'local' is Moonshine in
+  // the page. Defaults to system where system exists, because it costs no
+  // download — but on iOS it is local or nothing, so the picker decides
+  // itself on first load rather than offering a choice that isn't one.
+  let sttEngine = 'system';        // 'system' | 'local'
+  // base, not tiny, and that was measured rather than assumed. On identical
+  // Kokoro-spoken chess phrases, tiny returned *nothing at all* for "knight to
+  // f3" and "e7 e5" — every dtype, warmed or cold, with or without the
+  // language option. base got all six, at 330-578ms against tiny's ~180ms.
+  // An empty result is the safe failure (you repeat yourself; no wrong move is
+  // ever played) but it is still a broken feature, and 400ms is not a wait.
+  let sttModel  = 'onnx-community/moonshine-base-ONNX';
+  let sttDtype  = 'fp32';
+  let sttDevice = 'wasm';          // upgraded to webgpu when it is really there
+  let sttRemote = true;            // weights from the HF CDN unless self-hosted
   let voiceOn = true;
   let handsFree = true;
   let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
@@ -450,6 +473,7 @@
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
+        sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
@@ -1496,7 +1520,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r14 (say f6, not eff 6)';
+  const BUILD='v2-r15 (local ears)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -2598,6 +2622,330 @@
   });
 
   // ===============================================================
+  // D2. Local speech recognition — and the only route to voice on iPhone.
+  //
+  // Every iOS browser is WebKit, and WebKit has no SpeechRecognition at all,
+  // so "use Chrome" is not a fix there. A model running in the page is the
+  // only way an iPhone ever hears a move.
+  //
+  // The shape of this is the whole design decision: LocalRecognition presents
+  // the *same* interface the app already drives — lang/continuous/
+  // interimResults/maxAlternatives, start/stop/abort, onstart/onspeechstart/
+  // onresult/onerror/onend. Everything downstream is untouched: Phase A's
+  // constrained matcher, Phase B's "nothing heard while speaking can reach
+  // route()" invariant, the restart backoff, the stale-session watchdog and
+  // the ?debug=1 timeline all keep working without knowing which recogniser
+  // is underneath. A parallel pipeline would have had to re-earn all of it.
+  //
+  // What Web Speech gave us for free and we now owe ourselves:
+  //   - endpointing (when did the utterance end?)  -> the VAD below
+  //   - alternatives (maxAlternatives=10)          -> we get exactly one
+  // The second is a real loss. Phase A's scorer discriminates between
+  // candidates, and with one candidate it has nothing to choose between —
+  // which is precisely why A1-A3's fuzzy matching stays essential. A better
+  // STT is not a substitute for the constrained matcher; it feeds it.
+  // ===============================================================
+  const STT_SR=16000;             // what Moonshine and Whisper both expect
+  const VAD_FRAME=512;            // 32ms at 16kHz
+  const VAD_OPEN_MS=120;          // speech this long opens an utterance
+  const VAD_CLOSE_MS=700;         // silence this long ends one
+  const VAD_PREROLL_MS=350;       // audio kept from *before* the trigger
+  const VAD_MAX_MS=15000;         // hard cap on a single utterance
+  const VAD_MIN_MS=200;           // shorter than this is a cough, not a move
+
+  // Frames arrive from an AudioWorklet rather than a ScriptProcessorNode.
+  // Blob URL because a worklet module must be same-origin, and this keeps it
+  // in one file with everything else.
+  const WORKLET_SRC=`
+    class Tap extends AudioWorkletProcessor {
+      process(inputs){
+        const ch=inputs[0] && inputs[0][0];
+        if(ch) this.port.postMessage(new Float32Array(ch));
+        return true;
+      }
+    }
+    registerProcessor('tap', Tap);
+  `;
+
+  // The AudioContext and its worklet module are reused across sessions; the
+  // microphone stream is not. In hands-free play a session restarts every few
+  // seconds, and rebuilding the context each time pays for addModule() over
+  // and over. The *stream* still gets stopped every time, so the browser's
+  // recording indicator goes out whenever we are not listening — guardrail 5
+  // is about the microphone, not about the audio graph that sits behind it.
+  let sttCtx=null, sttWorkletReady=false;
+  async function sttAudioContext(){
+    if(!sttCtx||sttCtx.state==='closed'){
+      sttCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:STT_SR});
+      sttWorkletReady=false;
+    }
+    if(sttCtx.state==='suspended') await sttCtx.resume();
+    if(!sttWorkletReady){
+      const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'text/javascript'}));
+      await sttCtx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      sttWorkletReady=true;
+    }
+    return sttCtx;
+  }
+
+  let sttWorker=null, sttWorkerReady=false, sttLoadPromise=null;
+  let sttSeq=0, sttPending={};
+
+  function sttPost(msg,transfer){ if(sttWorker) sttWorker.postMessage(msg,transfer||[]); }
+
+  function loadStt(){
+    if(sttLoadPromise) return sttLoadPromise;
+    sttLoadPromise=new Promise((resolve,reject)=>{
+      let w;
+      // Same-origin worker, constructed from a local file — the Stockfish
+      // pattern. A cross-origin Worker URL fails outright in some browsers.
+      try{ w=new Worker('stt-worker.js',{type:'module'}); }
+      catch(err){ reject(err); return; }
+      sttWorker=w;
+      w.onerror=err=>{ micEvent('stt','worker error: '+(err&&err.message)); reject(err); };
+      w.onmessage=e=>{
+        const m=e.data;
+        if(m.type==='ready'){
+          sttWorkerReady=true; note('');
+          micEvent('stt','model ready in '+m.ms+'ms ('+m.device+')');
+          resolve(true);
+        } else if(m.type==='progress'){
+          const pct=Math.round(m.loaded/m.total*100);
+          note('Downloading recogniser… '+pct+'%');
+        } else if(m.type==='result'){
+          const p=sttPending[m.id]; delete sttPending[m.id];
+          micEvent('stt',m.ms+'ms for '+m.audioMs+'ms audio — "'+m.text.slice(0,40)+'"');
+          if(p) p(m.text);
+        } else if(m.type==='error'){
+          micEvent('stt','error: '+m.message);
+          if(m.id!==undefined){ const p=sttPending[m.id]; delete sttPending[m.id]; if(p) p(''); }
+          else reject(new Error(m.message));
+        }
+      };
+      // WebGPU where it exists, WASM everywhere else. Guardrail 6: every
+      // enhancement degrades rather than failing. iOS Safari only got WebGPU
+      // recently, so the fallback is the common path on the device this
+      // whole phase exists for.
+      hasWebGPU().then(gpu=>{
+        sttDevice=gpu?'webgpu':'wasm';
+        // fp32 either way, and not for the reason you would guess. q8 does not
+        // merely run slowly here, it refuses to load at all in Transformers.js
+        // 4.2.0 ("MatMulNBits missing scale") — for Whisper as well as
+        // Moonshine, so it is the runtime, not the model. Of the dtypes that
+        // do load, fp32 measured ~194ms median against q4's ~406ms: twice the
+        // download and half the latency. That is the same inversion D1 found
+        // in Kokoro, and it is now the second time quantisation has been
+        // slower here rather than faster. Measure it; never assume it.
+        sttDtype='fp32';
+        micEvent('stt','loading '+sttModel+' ('+sttDevice+'/'+sttDtype+')');
+        note('Downloading recogniser\u2026');
+        sttPost({type:'load',model:sttModel,device:sttDevice,dtype:sttDtype,remote:sttRemote});
+      });
+    });
+    sttLoadPromise.catch(()=>{ sttLoadPromise=null; sttWorker=null; });
+    return sttLoadPromise;
+  }
+
+  function transcribe(pcm){
+    return new Promise(resolve=>{
+      const id=++sttSeq;
+      sttPending[id]=resolve;
+      const buf=pcm.buffer;
+      sttPost({type:'transcribe',id:id,pcm:buf,rate:STT_SR},[buf]);
+    });
+  }
+
+  function LocalRecognition(){
+    this.lang='en-US';
+    this.continuous=false;
+    this.interimResults=false;
+    this.maxAlternatives=1;
+    this.onstart=this.onspeechstart=this.onresult=this.onerror=this.onend=null;
+    this._started=false;
+    this._stream=null; this._ctx=null; this._node=null; this._src=null;
+    // The same generation trick the speech queue uses. Transcription is async,
+    // so a result can land after the session it belongs to was torn down.
+    // Without this, audio the user aborted still reaches route() and plays a
+    // move they cancelled — the one failure this project refuses to allow.
+    this._gen=0;
+    this._flush=null;
+    this._reset();
+  }
+
+  LocalRecognition.prototype._reset=function(){
+    this._speech=[];        // frames of the utterance being collected
+    this._pre=[];           // rolling pre-roll, kept even while silent
+    this._preLen=0;
+    this._voiced=0; this._quiet=0;
+    this._open=false;
+    this._floor=0.0025;     // adaptive noise floor, seeded low
+  };
+
+  LocalRecognition.prototype._emit=function(text,isFinal){
+    if(!this.onresult) return;
+    const res={length:1,isFinal:isFinal,0:{transcript:text,confidence:0.9}};
+    const results={length:1,0:res};
+    this.onresult({resultIndex:0,results:results});
+  };
+
+  // Deliberately NOT an async function. Web Speech's start() throws
+  // synchronously when a session is already open, and startListening()
+  // catches exactly that in a plain try/catch. An async function turns the
+  // same throw into a rejected promise that sails straight past the catch
+  // and lands as an unhandled rejection — the adapter has to match the
+  // contract it is impersonating, not just the method names.
+  LocalRecognition.prototype.start=function(){
+    if(this._started) throw new Error('already started');
+    this._started=true;
+    this._reset();
+    this._open_().catch(()=>{});
+  };
+
+  LocalRecognition.prototype._open_=async function(){
+    try{
+      // Asking for 16kHz directly lets the browser resample for us, which is
+      // both faster and less code than doing it here. iOS suspends a context
+      // created outside a gesture; the mic button is that gesture, but a
+      // resume() is still needed after any interruption.
+      this._ctx=await sttAudioContext();
+      this._stream=await navigator.mediaDevices.getUserMedia({audio:{
+        channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true
+      }});
+      if(!this._started){ this._teardown(); return; }   // stopped while awaiting
+      this._src=this._ctx.createMediaStreamSource(this._stream);
+      this._node=new AudioWorkletNode(this._ctx,'tap');
+      this._node.port.onmessage=e=>this._frame(e.data);
+      this._src.connect(this._node);
+      // A worklet with no downstream connection is not guaranteed to be
+      // pulled. Route it to a muted gain so it always runs, without the mic
+      // being played back into the room.
+      const mute=this._ctx.createGain(); mute.gain.value=0;
+      this._node.connect(mute); mute.connect(this._ctx.destination);
+      if(this.onstart) this.onstart();
+    }catch(err){
+      this._started=false;
+      this._teardown();
+      const name=err&&err.name;
+      const code=(name==='NotAllowedError'||name==='SecurityError')?'not-allowed'
+                :(name==='NotFoundError')?'audio-capture':'audio-capture';
+      if(this.onerror) this.onerror({error:code});
+      if(this.onend) this.onend();
+    }
+  };
+
+  // One 32ms frame. Everything about endpointing happens here.
+  LocalRecognition.prototype._frame=function(buf){
+    if(!this._started) return;
+    let sum=0;
+    for(let i=0;i<buf.length;i++) sum+=buf[i]*buf[i];
+    const rms=Math.sqrt(sum/buf.length);
+
+    // An absolute threshold works in a quiet room and nowhere else. Track the
+    // floor from the quiet frames only, so a fan or a room tone raises the bar
+    // instead of being transcribed. Rising fast and falling slow means a burst
+    // of noise stops being "speech" quickly, while genuine quiet takes a
+    // while to convince us the room got quieter than it is.
+    const speech=rms>Math.max(this._floor*3.5,0.006);
+    if(!speech) this._floor=this._floor*0.995+rms*0.005;
+
+    const frameMs=buf.length/STT_SR*1000;
+
+    if(!this._open){
+      // Pre-roll. Web Speech's per-utterance sessions clipped the opening
+      // audio and "knight to f3" arrived as "to f3" — the word that
+      // identifies the piece, gone. Owning the mic means we can simply keep
+      // the audio from before the trigger and never have that failure.
+      this._pre.push(buf); this._preLen+=frameMs;
+      while(this._preLen>VAD_PREROLL_MS&&this._pre.length>1){
+        this._preLen-=this._pre[0].length/STT_SR*1000; this._pre.shift();
+      }
+      if(speech){
+        this._voiced+=frameMs;
+        if(this._voiced>=VAD_OPEN_MS){
+          this._open=true; this._quiet=0;
+          this._speech=this._pre.slice(); this._pre=[]; this._preLen=0;
+          if(this.onspeechstart) this.onspeechstart();
+          if(this.interimResults) this._emit('…',false);
+        }
+      } else this._voiced=0;
+      return;
+    }
+
+    this._speech.push(buf);
+    if(speech) this._quiet=0; else this._quiet+=frameMs;
+    const lenMs=this._speech.length*frameMs;
+    if(this._quiet>=VAD_CLOSE_MS||lenMs>=VAD_MAX_MS) this._endUtterance();
+  };
+
+  LocalRecognition.prototype._endUtterance=function(){
+    const frames=this._speech;
+    this._speech=[]; this._open=false; this._voiced=0; this._quiet=0;
+    this._pre=[]; this._preLen=0;
+    let total=0; frames.forEach(f=>total+=f.length);
+    if(total/STT_SR*1000<VAD_MIN_MS) return;
+
+    const pcm=new Float32Array(total);
+    let o=0; frames.forEach(f=>{ pcm.set(f,o); o+=f.length; });
+
+    const self=this;
+    const myGen=this._gen;
+    this._flush=transcribe(pcm).then(text=>{
+      if(myGen!==self._gen){
+        micEvent('stt','dropped a result from an ended session');
+        return;
+      }
+      if(!text) return;
+      // Filler the model emits for near-silence. Routing these would fire the
+      // matcher on nothing and, worse, count as a barge-in mid-narration.
+      if(/^[\s.,!?]*$/.test(text)) return;
+      if(/^\(?\s*(blank_audio|silence|inaudible|music)\s*\)?$/i.test(text.replace(/[\[\]()]/g,''))) return;
+      self._emit(text,true);
+      // Push-to-talk: one utterance, then the session closes, mirroring what
+      // a non-continuous Web Speech session does.
+      if(!self.continuous) self.stop();
+    });
+  };
+
+  LocalRecognition.prototype._teardown=function(){
+    try{ if(this._node){ this._node.port.onmessage=null; this._node.disconnect(); } }catch(e){}
+    try{ if(this._src) this._src.disconnect(); }catch(e){}
+    // Stopping the tracks is what actually releases the microphone and puts
+    // out the browser's recording indicator. The shared context stays.
+    try{ if(this._stream) this._stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+    this._node=this._src=this._stream=null;
+    this._ctx=null;
+  };
+
+  LocalRecognition.prototype.stop=function(){
+    if(!this._started) return;
+    // Flush whatever was mid-sentence rather than discarding it: stop() means
+    // "that's my move", abort() means "forget it".
+    if(this._open) this._endUtterance();
+    this._started=false;
+    this._teardown();
+    // Web Speech delivers its final result and *then* onend. Firing onend
+    // first would have the app schedule a restart and only afterwards hear
+    // the move that closed the session, so wait for the flush just started.
+    // onend still always fires: a failed transcription resolves too.
+    const self=this, fin=()=>{ if(self.onend) self.onend(); };
+    if(this._flush) this._flush.then(fin,fin); else fin();
+  };
+
+  LocalRecognition.prototype.abort=function(){
+    if(!this._started) return;
+    // Everything in flight belongs to a session that no longer exists.
+    // Bumping the generation is what makes that true, rather than hoping the
+    // result happens to arrive before the next start().
+    this._gen++;
+    this._flush=null;
+    this._started=false;
+    this._reset();
+    this._teardown();
+    if(this.onend) this.onend();
+  };
+
+  // ===============================================================
   // Speech input
   // ===============================================================
   let recognition=null,listening=false,wantLoop=false;
@@ -2615,22 +2963,52 @@
     return true;
   }
 
+  // Can this browser capture audio for the local recogniser at all? A page on
+  // file:// or plain http:// has no getUserMedia, and offering a download that
+  // cannot possibly work is worse than saying so up front.
+  function localSttPossible(){
+    return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.AudioWorkletNode);
+  }
+
   function setupRecognition(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){
+
+    // Every iOS browser (Safari, Chrome, Edge) runs on WebKit, which has no
+    // SpeechRecognition — "switch browsers" is not a fix there like it is on
+    // desktop. Until D2 that was the end of the conversation. Now it isn't:
+    // with no system recogniser, local is not a preference, it is the only
+    // way this device ever hears a move, so select it rather than offering
+    // a choice that has one option.
+    if(!SR&&sttEngine!=='local'&&localSttPossible()) sttEngine='local';
+
+    if(sttEngine==='local'&&localSttPossible()){
+      recognition=new LocalRecognition();
+      // The weights are big enough that waiting for a first move to trigger
+      // the download would look like a hang. Start it now; the app is fully
+      // playable meanwhile and the mic button reports progress.
+      loadStt().catch(err=>{
+        micEvent('stt','load failed: '+(err&&err.message));
+        note('On-device hearing failed to load. Switch Hearing to Browser, or use the text box.','err');
+      });
+    } else if(SR){
+      recognition=new SR();
+    } else {
       micBtn.disabled=true;
-      // Every iOS browser (Safari, Chrome, Edge) runs on WebKit, which has no
-      // SpeechRecognition — "switch browsers" is not a fix there like it is on desktop.
       const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
       note(isIOS
-        ? 'iOS doesn’t support voice input in any browser (Apple limitation). Use the text box below.'
-        : 'Speech recognition needs Chrome or Edge. Use the text box.','err');
+        ? 'Voice needs a secure (https) page on iOS. Open the https link, or use the text box below.'
+        : 'Speech recognition needs Chrome or Edge, or switch Hearing to On-device. Use the text box.','err');
       return;
     }
-    recognition=new SR();
     recognition.lang='en-US';
     recognition.interimResults=true;
-    recognition.maxAlternatives=10;     // constrained matcher scores all returned candidates
+    // The constrained matcher scores every candidate it is given, so ask Web
+    // Speech for as many as it will produce. The local recogniser decodes one
+    // sequence and has no second opinion to offer; say so rather than
+    // claiming ten, because "how many candidates did the scorer get" is the
+    // first question to ask when a move is misheard, and the diagnostics
+    // header is where it gets answered.
+    recognition.maxAlternatives=(recognition instanceof LocalRecognition)?1:10;
     // One long-lived session instead of one per utterance. A fresh session
     // costs a cold start: Chrome clips the opening audio, and the gap between
     // sessions captures nothing at all — so "knight to f3" routinely arrived
@@ -3242,6 +3620,39 @@
       warn('Natural voice unavailable — '+((err&&err.message)||'it failed to load')+'. Staying on the system voice.');
     }finally{ engineSelect.disabled=false; }
   });
+  // Swapping recogniser mid-game means the old one still owns the microphone.
+  // Tear it down before building the new one, or two capture sessions overlap
+  // and Chrome gets unstable — the exact reason primeMic() refuses to open a
+  // second getUserMedia stream.
+  sttSelect.addEventListener('change',async()=>{
+    const want=sttSelect.value;
+    const wasLooping=wantLoop;
+    if(recognition){ wantLoop=false; try{ recognition.abort(); }catch(e){} }
+    recognition=null; setListening(false);
+
+    if(want==='local'&&!localSttPossible()){
+      sttSelect.value='system'; sttEngine='system';
+      warn('On-device hearing needs microphone access on a secure page. Staying on the browser recogniser.');
+      setupRecognition(); return;
+    }
+    sttEngine=want; saveState();
+    setupRecognition();
+    if(want==='local'){
+      sttSelect.disabled=true;
+      try{ await loadStt(); note('On-device hearing ready.'); }
+      catch(err){
+        // Same contract as the voice: every enhancement degrades. No model,
+        // no network, no WebGPU — fall back to what already worked.
+        const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+        sttEngine=SR?'system':'local'; sttSelect.value=sttEngine;
+        recognition=null; setupRecognition();
+        warn('On-device hearing unavailable — '+((err&&err.message)||'it failed to load')
+             +(SR?'. Staying on the browser recogniser.':'. Use the text box.'));
+      }finally{ sttSelect.disabled=false; }
+    }
+    if(wasLooping&&handsFree){ wantLoop=true; startListening(); }
+  });
+
   // Changing a voice you can't hear is guesswork, so say something in it.
   function sampleVoice(){
     if(!voiceOn) return;
@@ -3285,7 +3696,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -3318,6 +3729,9 @@
         loadKokoro().then(()=>{ ttsEngine='kokoro'; refreshVoices(); })
                     .catch(()=>{ engineSelect.value='system'; note(''); });
       }
+      // Unlike the voice, the recogniser is chosen before setupRecognition()
+      // runs, so it only has to be remembered here — not acted on.
+      if(saved.sttEngine==='local'){ sttEngine='local'; sttSelect.value='local'; }
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
@@ -3443,8 +3857,6 @@
   refreshVoices();
   if('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged',refreshVoices);
 
-  setupRecognition();
-  setupDebug();
   const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
   const spectateMatch=location.hash.match(/^#spectate=([0-9a-fA-F-]{36})$/);
   if(inviteMatch){
@@ -3455,6 +3867,14 @@
   }else if(!loadState()){
     startNewGame();
   }
+  // After loadState, not before: which recogniser to build is a saved setting,
+  // and building the wrong one first would open the microphone twice.
+  setupRecognition();
+  // And setupDebug after *that*: its header reports the recogniser's
+  // continuous/maxAlternatives settings, which read "n-a" if the panel is
+  // built first. Nothing is lost by waiting — mic events accumulate in
+  // micLog from the start and the panel renders them when it appears.
+  setupDebug();
 })();
 </script>
 </body>

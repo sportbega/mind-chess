@@ -83,6 +83,12 @@
     get speaking(){ return queue>0; },
     get pending(){ return false; },
     getVoices(){ return []; },
+    // Day 3.9 gave the app a voice picker, which listens for 'voiceschanged'.
+    // This stand-in predates that and had no addEventListener, so loading the
+    // harness threw before setupRecognition() ever ran — the whole page dead,
+    // and quietly, because nothing re-ran the harness between Day 3.9 and
+    // Day 3.12. A fake has to keep up with the interface it is faking.
+    addEventListener(){}, removeEventListener(){},
     cancel(){ queue=0; if(timer){clearTimeout(timer);timer=null;} window.__spoken.push({cancelled:true,t:Date.now()}); },
     speak(u){
       queue++;
