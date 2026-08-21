@@ -319,7 +319,9 @@ v1.0 is frozen and permanently online at **`/v1/`** (byte-identical to the `v1.0
 1. **Namespace every `localStorage` key.** v1.0 writes `mind-chess-save-v1`, `mind-chess-board-theme`, and `mind-chess-piece-theme` — and `/v1/` shares an origin with `/`, so they're the *same* storage. 2.0 must prefix all of its keys (e.g. `mind-chess-v2-*`). Reusing any of the three means playing 2.0 corrupts v1.0's saved game and themes, and vice versa. This is the same shared-origin trap that cost a session during Day 2.4 testing.
 2. **Keep the `mind_chess_games` schema backward-compatible.** Both versions talk to the same Supabase table. Add columns; never repurpose or remove one, or v1.0's online mode breaks.
 
-**Small wart worth fixing in 2.0, spotted while verifying v1:** the *spoken* form of a move leaks into the on-screen transcript — the log reads "Pawn to ee 4" and "Knight to see 6" because letters are spelled phonetically for the synthesizer. Speech text and display text should be generated separately: say "ee 4", write "e4".
+~~**Small wart worth fixing in 2.0, spotted while verifying v1:** the *spoken* form of a move leaks into the on-screen transcript.~~ ✅ **Fixed Day 3.11 (`v2-r14`)** — and it turned out to be more than a wart. Squares are now written plainly and respelled only at the moment of speaking, for the engine that needs it.
+
+**Kokoro wants plain algebraic; the respelling actively breaks it.** Measured: `"eff 6"` → `ˌiːˌɛfˈɛf` (*"ee-eff-eff"*), `"f6"` → `ˈɛf` ✓; `"ay 4"` → `ˈaɪ` (*"eye four"*), `"a4"` → `ˌeɪ` ✓. All eight files check out plain. **Anything that respells text for one synthesizer must key off which engine is actually speaking** — not off the setting, since the setting can say Natural while the weights are still downloading and `speechSynthesis` is covering.
 
 ---
 
