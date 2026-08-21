@@ -825,6 +825,32 @@
     }catch(e){ endSpeaking(); }
   }
 
+  // Android Chrome and iOS Safari ignore speechSynthesis.speak() unless the
+  // *first* call of the page's life happens inside a user-gesture task. Every
+  // narration here is fired from a setTimeout after an async recognition
+  // result, so none of them are — the app is silent on a phone and perfectly
+  // audible on a desktop, which is why this survived to Day 3.13.
+  //
+  // The fix is to spend the page's first gesture on a silent utterance, which
+  // unlocks the queue for everything after it. It deliberately does not go
+  // through say(): it must not touch speechGeneration or open the mic gate,
+  // it is not narration, and nothing should be able to barge in on it.
+  let speechUnlocked=false;
+  function unlockSpeech(){
+    if(speechUnlocked||!('speechSynthesis' in window)) return;
+    speechUnlocked=true;
+    try{
+      const u=new SpeechSynthesisUtterance(' ');
+      u.volume=0; u.rate=speechRate; u.lang='en-US';
+      speechSynthesis.speak(u);
+      micEvent('tts','speech unlocked by first gesture');
+    }catch(e){ /* nothing to do; the platform simply stays locked */ }
+  }
+  // Capture phase, so a handler that stops propagation cannot cost us the
+  // one gesture we need. pointerdown covers mouse and touch in one event.
+  ['pointerdown','touchstart','keydown'].forEach(ev=>
+    document.addEventListener(ev,unlockSpeech,{capture:true,once:true}));
+
   function speakNextChunk(myGeneration){
     if(myGeneration!==speechGeneration) return;
     if(!speechQueue.length){ endSpeaking(); return; }
@@ -1520,7 +1546,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r16 (local ears, debug panel fits a phone)';
+  const BUILD='v2-r17 (speech unlocked on a phone)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
