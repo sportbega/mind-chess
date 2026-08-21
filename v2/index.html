@@ -148,6 +148,14 @@
   .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);padding-bottom:6px}
   .spacer{flex:1}
 
+  .report-panel{display:none;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .report-panel.show{display:flex}
+  .report-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .report-head p{flex:1;min-width:200px}
+  .report-panel textarea{width:100%;max-width:100%;box-sizing:border-box;height:260px;resize:vertical;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px;font:12px/1.55 'IBM Plex Mono',ui-monospace,Menlo,monospace}
+  .report-foot{font-size:12px;color:var(--text-dim);line-height:1.6;margin:0}
+  .report-foot a{color:var(--accent-2)}
+
   details.help{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px}
   details.help summary{cursor:pointer;font-size:13px;color:var(--accent-2);font-weight:500}
   details.help ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
@@ -285,8 +293,8 @@
     <div class="field">
       <label for="coachSelect">Coach</label>
       <select id="coachSelect">
-        <option value="off" selected>Off</option>
-        <option value="hints">Hints</option>
+        <option value="off">Off</option>
+        <option value="hints" selected>Hints</option>
         <option value="full">Full</option>
       </select>
     </div>
@@ -338,7 +346,22 @@
     <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
     <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
     <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
+    <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
+    <button class="btn" id="reportBtn" type="button" title="Copy a diagnostic report you can paste into a bug report.">Report a problem</button>
     <button class="btn" id="newGameBtn" type="button">New game</button>
+  </div>
+
+  <div class="report-panel" id="reportPanel">
+    <div class="report-head">
+      <p class="online-status" style="margin:0"><b>Diagnostic report</b> — paste this to whoever gave you the link.</p>
+      <button class="btn" id="reportCopyBtn" type="button">Copy</button>
+      <button class="btn" id="reportCloseBtn" type="button">Close</button>
+    </div>
+    <textarea id="reportOut" spellcheck="false" aria-label="Diagnostic report — add a description of what went wrong"></textarea>
+    <p class="report-foot">Nothing here leaves your browser until you paste it somewhere. It contains the moves of
+      this game, your settings, and what the microphone thought it heard — no account details.
+      If you have a GitHub account you can open an issue at
+      <a href="https://github.com/sportbega/mind-chess/issues" target="_blank" rel="noopener">github.com/sportbega/mind-chess/issues</a>.</p>
   </div>
 
   <details class="help">
@@ -357,7 +380,7 @@
         <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
         <code>how many pieces do I have</code>, <code>what can I take</code></li>
       <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
-      <li><b>Ask the engine</b> (needs <b>Coach</b> on — say <code>coach on</code>) — <code>how am I doing</code>,
+      <li><b>Ask the engine</b> (<b>Coach</b>, on by default — say <code>coach off</code> to silence it) — <code>how am I doing</code>,
         <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
         number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
       <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
@@ -389,10 +412,10 @@
   let boardHidden = true;
   let mode = 'computer';
   let humanColor = 'w';
-  let searchDepth = 2;
-  let masterLevel = false;    // Level select = "Master": use Stockfish instead of the custom engine
+  let levelKey = '2';         // key into LEVELS: '1' | '2' | '3' | 'master'
+  let searchDepth = 2;        // only the fallback engine's depth now, see LEVELS
   let verbosity = 'terse';
-  let coach = 'off';       // off | hints | full — engine-backed answers (C1)
+  let coach = 'hints';     // off | hints | full — engine-backed answers (C1)
   // rate 0.7 was never a preference — it was a workaround for whatever voice
   // the browser happened to default to being hard to follow. Now that the
   // voice is choosable, the workaround's premise is weaker, so the default
@@ -475,6 +498,8 @@
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'),
+        testVoiceBtn=$('testVoiceBtn'), reportBtn=$('reportBtn'), reportPanel=$('reportPanel'),
+        reportOut=$('reportOut'), reportCopyBtn=$('reportCopyBtn'), reportCloseBtn=$('reportCloseBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
@@ -511,6 +536,11 @@
   let speechQueue=[];            // chunks of the current narration still to speak
   let speakingText='';           // the chunk being spoken right now, for echo detection
   let chunkToken=0;              // dedupes onend against the watchdog below
+  // When narration audio last actually *began*. Not when we asked for it —
+  // the whole Day 3.13 failure mode is speak() returning cleanly and no sound
+  // ever arriving, so the only honest signal is the one the audio itself
+  // raises. Both engines set it; "Test voice" is the only reader.
+  let lastAudioStartAt=0;
 
   // ---------------------------------------------------------------
   // The mic state machine (A4, formalised in Phase B)
@@ -734,15 +764,33 @@
   const AHEAD_MAX=3;          // bounds memory, and wasted work on barge-in
   let kokoroPriming=false;
 
+  // The reserve: one clip rendered for a narration that hasn't started yet.
+  //
+  // Everything above renders ahead *within* one narration, which is why the
+  // first chunk of every narration still costs its full generation — there is
+  // nothing before it to render during. The computer's reply is the exception,
+  // and it's the wait the player hears most often: its move is chosen before
+  // it is spoken, so the sentence is knowable while the player's own move is
+  // still being read out.
+  //
+  // It needs its own slot because say() begins with stopAudio() → dropAhead(),
+  // which throws the ahead buffer away at exactly the boundary this has to
+  // survive. So the reserve lives outside that, and say() *promotes* it into
+  // the buffer only if it turns out to be the sentence actually about to be
+  // spoken. Wrong guess costs a discarded clip; it can never play the wrong
+  // sentence, because the promotion is an exact text match.
+  let kokoroReserve=null;      // {text, url:Promise<objectURL>} already rendering
+  let kokoroReserveWant=null;  // text we'd like rendered once the model goes idle
+
   function primeAhead(){
     // Guard on who will actually speak, not just on whether Kokoro loaded —
     // the user can switch back to the system voice with the weights resident,
     // and rendering clips nobody will play is pure waste.
-    if(ttsEngine!=='kokoro'||!kokoro||kokoroPriming||kokoroAhead.length>=AHEAD_MAX) return;
+    if(ttsEngine!=='kokoro'||!kokoro||kokoroPriming) return;
     // kokoroAhead[i] always corresponds to speechQueue[i], so the first chunk
     // not yet buffered is the one at the buffer's length.
-    const next=speechQueue[kokoroAhead.length];
-    if(next===undefined) return;
+    const next=kokoroAhead.length<AHEAD_MAX?speechQueue[kokoroAhead.length]:undefined;
+    if(next===undefined){ primeReserve(); return; }
     kokoroPriming=true;
     const t0=Date.now(), depth=kokoroAhead.length+1;
     const entry={text:next};
@@ -755,6 +803,66 @@
     // the model is busy exactly when it would otherwise be idle.
     entry.url.then(()=>{ kokoroPriming=false; primeAhead(); },
                    ()=>{ kokoroPriming=false; });
+  }
+
+  // Only ever reached with the current narration fully buffered — the reserve
+  // is strictly lower priority than the sentence being spoken right now, and
+  // shares the same one-at-a-time chain, because two generations at once only
+  // contend for the same model.
+  function primeReserve(){
+    if(!kokoroReserveWant||kokoroReserve||kokoroPriming) return;
+    const text=kokoroReserveWant; kokoroReserveWant=null;
+    kokoroPriming=true;
+    const t0=Date.now();
+    const entry={text:text};
+    entry.url=kokoroClipFor(text).then(u=>{
+      micEvent('tts','reserved the reply in '+(Date.now()-t0)+'ms');
+      return u;
+    });
+    kokoroReserve=entry;
+    entry.url.then(()=>{ kokoroPriming=false; primeAhead(); },
+                   ()=>{ kokoroPriming=false;
+                         // Only clear the slot if it is still this render's —
+                         // by now it may have been promoted and replaced.
+                         if(kokoroReserve===entry) kokoroReserve=null; });
+  }
+
+  function requestReserve(text){
+    if(ttsEngine!=='kokoro'||!kokoro||!text) return;
+    if(kokoroReserve&&kokoroReserve.text===text) return;
+    if(kokoroReserveWant===text) return;
+    dropReserve();
+    kokoroReserveWant=text;
+    primeAhead();          // starts now if the model is already idle
+  }
+
+  function dropReserve(){
+    if(kokoroReserve) kokoroReserve.url.then(u=>URL.revokeObjectURL(u),()=>{});
+    kokoroReserve=null; kokoroReserveWant=null;
+  }
+
+  // Called by say() once it knows what it is about to speak. An exact match on
+  // the first chunk is the whole safety argument: a stale reserve is dropped,
+  // never spoken.
+  function promoteReserve(){
+    if(kokoroReserve){
+      if(kokoroReserve.text===speechQueue[0]){
+        kokoroAhead.push({text:kokoroReserve.text,url:kokoroReserve.url});
+        micEvent('tts','reserve hit: "'+kokoroReserve.text.slice(0,40)+'"');
+        kokoroReserve=null; kokoroReserveWant=null;
+      }else{
+        micEvent('tts','reserve missed (had "'+kokoroReserve.text.slice(0,28)
+          +'", need "'+String(speechQueue[0]||'').slice(0,28)+'")');
+        dropReserve();
+      }
+      return;
+    }
+    // Requested but not rendered yet. Only spend the request if *this* is the
+    // narration it was for — anything else speaking in between (a rejection,
+    // a warning, an answer to a question) does not mean the computer's reply
+    // stopped coming. Clearing it here cost the reserve every time the player
+    // said something the app had to answer first, which is not rare.
+    if(kokoroReserveWant&&kokoroReserveWant===speechQueue[0]) kokoroReserveWant=null;
   }
 
   // A buffered clip that is never played still holds an object URL.
@@ -787,6 +895,7 @@
       };
       el.onended=finish; el.onerror=finish;
       el.play().then(()=>{
+        lastAudioStartAt=Date.now();
         micEvent('tts','kokoro chunk in '+(Date.now()-started)+'ms');
       }).catch(()=>{
         // Autoplay refused — nothing to do but hand this line to the system
@@ -831,8 +940,35 @@
     currentAudio=null;
   }
 
+  // Something that wants to happen *after* the app has finished a sentence.
+  //
+  // Every waiter carries its own deadline, because a game that stops because
+  // narration never ended is far worse than one sentence overlapping another.
+  // If the deadline wins, the action happens anyway and says so in the
+  // timeline — a silent stall is the failure mode with no diagnosis.
+  let speechIdleWaiters=[];
+  function whenSpeechIdle(fn,maxWaitMs){
+    if(!speaking||!voiceOn){ fn(); return; }
+    const entry={done:false};
+    entry.fire=(why)=>{
+      if(entry.done) return;
+      entry.done=true;
+      clearTimeout(entry.timer);
+      speechIdleWaiters=speechIdleWaiters.filter(e=>e!==entry);
+      if(why) micEvent('tts',why);
+      fn();
+    };
+    entry.timer=setTimeout(()=>entry.fire('narration never ended after '+maxWaitMs+'ms — moving anyway'),maxWaitMs);
+    speechIdleWaiters.push(entry);
+  }
+  function releaseSpeechIdle(){
+    const waiting=speechIdleWaiters;
+    speechIdleWaiters=[];
+    waiting.forEach(e=>e.fire());
+  }
+
   function endSpeaking(fast){
-    if(!speaking) return;
+    if(!speaking){ releaseSpeechIdle(); return; }
     speaking=false;
     speakingText='';
     speechQueue.length=0;
@@ -841,6 +977,7 @@
     lastMicActivity=Date.now();
     if(!(wantLoop&&handsFree)) setMicState('idle','narration ended, not looping');
     else setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },fast?0:160);
+    releaseSpeechIdle();
   }
 
   // Barge-in. Every way of interrupting — Escape, the mic button, the text
@@ -865,6 +1002,10 @@
       stopAudio();
       speechSynthesis.cancel();
       speechQueue=splitForSpeech(voiceizeSquares(text));
+      // stopAudio() above just cleared the ahead buffer. If a clip was
+      // reserved for this exact sentence, put it back — that is the whole
+      // point of the reserve living outside dropAhead()'s reach.
+      promoteReserve();
       // Start rendering before the gate below, not after it. The 120ms is
       // there to let the capture session close so playback doesn't clip —
       // that is a reason to delay the *audio*, not a reason to leave the
@@ -936,6 +1077,7 @@
     u.rate=speechRate;
     u.pitch=0.98;
     u.volume=1;
+    u.onstart=()=>{ lastAudioStartAt=Date.now(); };
     u.onend=advance;
     u.onerror=advance;
     speechSynthesis.speak(u);
@@ -1241,9 +1383,20 @@
       setTimeout(()=>{ if(g===generation && !gameOver) triggerComputerMove(); },650);
     }
   }
-  // Alpha-beta minimax over material + pawn advancement, ported from
-  // Giga Chess's search()/value() so both chess projects play at
-  // comparable strength. Depth comes from the Level select.
+  // The fallback engine — alpha-beta minimax over material + pawn
+  // advancement, ported from Giga Chess's search()/value().
+  //
+  // It used to *be* the ladder: Casual/Club/Sharp were depths 1/2/3 of this,
+  // and only Master was real chess. That made "harder" mean a different
+  // opponent rather than a stronger one — the levels didn't just differ in
+  // strength, they differed in what kind of mistakes they made. Day 4.0 moved
+  // every rung onto Stockfish's own Skill Level (see LEVELS below).
+  //
+  // This stays, and is not dead code: it is what plays when the 7.3 MB WASM
+  // engine cannot load at all. Something has to answer when a browser has no
+  // usable WebAssembly, and "no opponent" is a worse answer than "a weak one".
+  // BENCH-BASELINE-START — tools/level-ladder.js lifts everything between
+  // these markers to score the new ladder against the engine it replaced.
   function evaluate(g){
     const board=g.board();
     let score=0;
@@ -1275,6 +1428,7 @@
     }
     return best;
   }
+  // BENCH-BASELINE-END
   function computerMove(){
     const moves=game.moves({verbose:true});
     if(!moves.length) return;
@@ -1297,13 +1451,54 @@
   }
 
   // ===============================================================
-  // Master level — real Stockfish (18 Lite, single-threaded WASM),
+  // The opponent — real Stockfish (18 Lite, single-threaded WASM),
   // self-hosted alongside index.html since Worker scripts can't be
-  // constructed cross-origin from a CDN in every browser. Lazy-loaded:
-  // the ~7MB engine only downloads once "Master" is actually selected,
-  // so Casual/Club/Sharp pay nothing for it.
+  // constructed cross-origin from a CDN in every browser.
+  //
+  // It used to load only for "Master", so the other three levels cost
+  // nothing. Now every level is this engine, and the 7.3 MB is the price of
+  // the ladder being honest — paid once, cached, and still offline after.
+  // warmEngine() starts it as soon as the opponent is the computer so the
+  // download isn't sitting in front of the player's first move.
   // ===============================================================
-  const MASTER_MOVETIME_MS = 1200;
+  // ---------------------------------------------------------------
+  // The ladder — one engine at four settings
+  // ---------------------------------------------------------------
+  // Stockfish's own Skill Level (0–20) weakens it by making it *choose*
+  // worse among the moves it has already seen, which is the honest way to be
+  // beatable: the same opponent, playing less well. UCI_Elo would give a
+  // number to print, but its floor here is 1320 and a blindfold beginner
+  // needs a rung well below that — Skill Level goes lower than UCI_Elo can.
+  //
+  // Skill Level alone isn't enough: it still searches deeply and then picks
+  // slightly wrong, which is a strange opponent — one that never hangs a
+  // piece but occasionally throws one. Shallow *and* unskilled is what plays
+  // like someone new to this, so the rungs cap depth as well.
+  //
+  // **Depth is the lever; movetime is only a ceiling.** Measured in the
+  // bench, every rung below Master reaches its depth in ~10 ms, so the time
+  // limit never binds — which is the point. A time-defined level is a
+  // different opponent on a fast laptop than on a slow phone, and a player
+  // who moves from one to the other has no way to know why the game got
+  // harder. Depth plays the same everywhere. The ceiling exists only so a
+  // pathological position on slow hardware can't stall the game; if it ever
+  // does bind, the level weakens rather than freezing, which is the right way
+  // round. Master is deliberately the exception — "as good as it can be in
+  // 1.2 seconds" is what that rung means, and it has no depth cap.
+  //
+  // The numbers came out of tools/level-ladder.js, not out of taste: over
+  // four games a side each rung beat the one below it (3–0–1, 3–0–1, 3–0–1).
+  // LEVELS-START — read by tools/level-ladder.js
+  const LEVELS = {
+    '1':      { name:'Casual', skill:0,  depth:1, movetime:2500 },
+    '2':      { name:'Club',   skill:3,  depth:4, movetime:2500 },
+    '3':      { name:'Sharp',  skill:9,  depth:8, movetime:2500 },
+    'master': { name:'Master', skill:20,          movetime:1200 }
+  };
+  // LEVELS-END
+  const DEFAULT_LEVEL='2';
+  function currentLevel(){ return LEVELS[levelKey]||LEVELS[DEFAULT_LEVEL]; }
+
   let sfInitPromise = null;
   function stockfishInit(){
     if(sfInitPromise) return sfInitPromise;
@@ -1338,7 +1533,26 @@
     return p;
   }
 
-  function stockfishBestMove(fen, movetimeMs){
+  // UCI options are worker state, not call arguments: once "Skill Level 0" is
+  // set it stays set for whoever posts next. One worker is now shared by four
+  // playing strengths *and* the coach, so every caller states the whole
+  // configuration it needs rather than assuming what it inherited. sfQueue
+  // serialises the callers, which is what makes that safe — without it two
+  // overlapping jobs would interleave their setoption lines.
+  function applyStrength(worker, spec){
+    worker.postMessage('setoption name UCI_LimitStrength value false');
+    worker.postMessage('setoption name Skill Level value '+(spec&&typeof spec.skill==='number'?spec.skill:20));
+  }
+  function goCommand(spec){
+    // Depth and movetime together, when both are given: Stockfish honours
+    // whichever binds first, so the cap is "no deeper than this, and no
+    // longer than this" rather than one or the other.
+    let go='go';
+    if(spec&&spec.depth) go+=' depth '+spec.depth;
+    if(spec&&spec.movetime) go+=' movetime '+spec.movetime;
+    return go==='go'?'go movetime 1000':go;
+  }
+  function stockfishBestMove(fen, spec){
     return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
       worker.onmessage = function(e){
         const line = e.data;
@@ -1347,8 +1561,9 @@
           resolve(line.split(' ')[1]);
         }
       };
+      applyStrength(worker, spec);
       worker.postMessage('position fen '+fen);
-      worker.postMessage('go movetime '+movetimeMs);
+      worker.postMessage(goCommand(spec));
     })));
   }
 
@@ -1359,6 +1574,11 @@
   function stockfishAnalyse(fen, movetimeMs){
     return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
       let best=null;
+      // Full strength, always. The coach is the one caller whose answer must
+      // not depend on the Level select — being told "you're fine" by an
+      // engine deliberately set to blunder is worse than no coach at all, and
+      // a blindfold player has no way to notice.
+      applyStrength(worker, null);
       worker.onmessage = function(e){
         const line = e.data;
         if(typeof line!=='string') return;
@@ -1382,17 +1602,63 @@
   function uciToMoveSpec(uci){
     return {from:uci.slice(0,2), to:uci.slice(2,4), promotion:uci.length>4?uci[4]:undefined};
   }
+  // What will the app say when this move is played? Make the move on the real
+  // board, ask the same function applyMove() will ask, then undo — so the
+  // prediction cannot drift from the real sentence by construction. It is
+  // synchronous, so nothing observes the position while it is one ply ahead.
+  //
+  // recallNudge() is deliberately left out: it is the one part with a side
+  // effect (it stamps lastNudgeAt), and calling it here would consume the
+  // nudge the player is about to be given. It appends a whole extra sentence,
+  // so it changes the chunks *after* the first, and the first is all we
+  // reserve.
+  function predictNarration(spec){
+    const applied=game.move({from:spec.from,to:spec.to,promotion:spec.promotion});
+    if(!applied) return null;
+    try{ return describeMove(applied,verbosity)+endSuffix(); }
+    finally{ game.undo(); }
+  }
+
+  // How long to hold the computer's move waiting for the player's own move to
+  // finish being read out.
+  //
+  // The two failure modes are not symmetric. Too long only matters when the
+  // speech engine has actually wedged — rare, and the timeline says so when
+  // it happens. Too short is worse: the deadline fires during a perfectly
+  // normal sentence and the reply cancels it, which is precisely the bug this
+  // whole path exists to fix. Verbose narration of a check, plus a recall
+  // nudge, is comfortably over six seconds. So err long.
+  const REPLY_WAIT_MAX_MS=12000;
+
   function triggerComputerMove(){
-    if(!masterLevel){ computerMove(); return; }
-    const g=generation;
-    stockfishBestMove(game.fen(), MASTER_MOVETIME_MS).then(uci=>{
+    const g=generation, spec=currentLevel();
+    stockfishBestMove(game.fen(), spec).then(uci=>{
       if(g!==generation||gameOver) return;
-      if(!uci||uci==='(none)'){ warn('Master engine returned no move.'); return; }
-      applyMove(uciToMoveSpec(uci));
+      if(!uci||uci==='(none)'){ warn('The engine returned no move.'); return; }
+      const move=uciToMoveSpec(uci);
+      // Measured before this existed: the player says "e4", the app starts
+      // reading "Pawn to e4." at +122ms, and the computer's reply cancels it
+      // at +670ms — every move, on every level below Master, because say()
+      // begins by cancelling whatever is speaking. You heard "Pawn to e—".
+      //
+      // So wait for the sentence to finish. The wait is not a cost: it is
+      // exactly the window in which the reply's own audio can be rendered, so
+      // the sentence that used to interrupt now arrives already spoken.
+      const text=predictNarration(move);
+      if(text) requestReserve(splitForSpeech(voiceizeSquares(text))[0]);
+      whenSpeechIdle(()=>{
+        if(g!==generation||gameOver) return;
+        applyMove(move);
+      },REPLY_WAIT_MAX_MS);
     }).catch(err=>{
       if(g!==generation||gameOver) return;
-      warn('Master engine unavailable, playing this move as Sharp instead. ('+(err&&err.message?err.message:'load error')+')');
-      computerMove();
+      // Every rung is Stockfish now, so a load failure is no longer just
+      // "Master is unavailable" — it would be no opponent at all. The old
+      // custom engine is kept for exactly this, and says so out loud rather
+      // than quietly playing a different game than the one you selected.
+      warnSilent('The chess engine couldn’t load ('+((err&&err.message)||'load error')
+        +'), so this game is using the simple built-in opponent instead. Strength won’t match the level you picked.');
+      whenSpeechIdle(()=>{ if(g===generation&&!gameOver) computerMove(); },REPLY_WAIT_MAX_MS);
     });
   }
 
@@ -1603,9 +1869,16 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r19 (render ahead, not one ahead)';
+  const BUILD='v2-r21 (one ladder, and a reply that waits its turn)';
+  // ?debug=1 controls whether the panel is *shown*, not whether anything is
+  // recorded. It used to gate the recording too, which meant the diagnostics
+  // only existed if you had already decided, before the session started, that
+  // you were going to hit a bug. A bug report is always retrospective — so
+  // record always, cap the log, and reveal it on demand.
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
+  const DIAG_MAX=200;                   // entries kept, not counting the header
+  let diagSeq=0;                        // survives trimming; a filter over debugLog wouldn't
   let debugOut=null, debugCount=null, lastAltMeta=null;
   let lastScoring=null;                 // diagnostics only, see ?debug=1
   function constrainedMove(text){
@@ -1940,9 +2213,16 @@
   // the one question where being wrong hurts a blindfold player most, the
   // free option is also the correct one.
   //
-  // Which is exactly why it defaults to OFF. This app exists to make you hold
-  // the board in your head, and an engine murmuring "watch f7" removes the
-  // thing you came to practise. Say "coach on" when you want it.
+  // It ships at "hints" rather than off, which sounds like a reversal of the
+  // Day 3.8 reasoning and isn't. Every coach answer runs through askEngine(),
+  // which is only ever reached from a question the player asked out loud —
+  // nothing here volunteers anything, so the default cannot murmur "watch f7"
+  // at you unprompted. What "off" actually bought was refusing to answer when
+  // asked, and the cost of that in a beta is that nobody discovers the
+  // feature exists: "how am I doing" replies "the coach is off" and the whole
+  // C1/C2 path goes untested. "hints" still gives no number and no move —
+  // that is what "full" is for, and full stays opt-in, because *those* are
+  // the answers that would do the thinking for you.
   const COACH_MS=600;          // judgement, not playing strength
   let coachGeneration=0;
 
@@ -2695,7 +2975,7 @@
     const best=scored.best, bestText=scored.bestText;
     const others=list.filter(x=>x!==bestText).slice(0,2);
     if(!alreadyLogged) log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
-    if(DEBUG) recordDiagnostic(list,best,bestText);
+    recordDiagnostic(list,best,bestText);
     setMicState('thinking','routing "'+bestText.slice(0,32)+'"');
 
     // Commands are always allowed, even after game over / while computer thinks.
@@ -3698,27 +3978,39 @@
     mode=modeSelect.value;
     if(prevMode==='online'&&mode!=='online') leaveOnline();
     if(mode==='online') showOnlinePanel();
-    else{ hideOnlinePanel(); startNewGame(); }
+    else{ hideOnlinePanel(); startNewGame(); warmEngine(); }
   });
   levelSelect.addEventListener('change',()=>{
-    masterLevel = levelSelect.value==='master';
-    if(masterLevel){
-      if(!sfInitPromise) log('System','Master uses a real chess engine (Stockfish) — first move may take a few seconds while it loads.');
-      stockfishInit().catch(()=>{});
-    }else{
-      searchDepth=+levelSelect.value;
-    }
+    levelKey = levelSelect.value;
+    searchDepth = levelKey==='master'?3:(+levelKey||2);   // the fallback engine's depth
+    warmEngine();
     saveState();
   });
+  // Every level is Stockfish now, so the 7.3 MB engine is no longer something
+  // only "Master" pays for — which means waiting until the first move to
+  // start fetching it would put that download in front of the first thing the
+  // player does. Start it as soon as we know the opponent is the computer.
+  // Announced only once, and only if it hasn't already arrived, so a returning
+  // player with it cached sees nothing at all.
+  function warmEngine(){
+    if(mode!=='computer'||sfInitPromise) return;
+    log('System','Loading the chess engine (7.3 MB, once — then it’s cached and works offline).');
+    stockfishInit().catch(()=>{});
+  }
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
-  rateSelect.addEventListener('change',()=>{ speechRate=parseFloat(rateSelect.value)||0.9; saveState(); sampleVoice(); });
+  // A reserved clip was rendered at the old voice and the old speed. Keeping
+  // it would make the computer's next move arrive in a voice the player just
+  // changed away from.
+  rateSelect.addEventListener('change',()=>{ speechRate=parseFloat(rateSelect.value)||0.9; dropReserve(); saveState(); sampleVoice(); });
   voiceSelect.addEventListener('change',()=>{
     if(ttsEngine==='kokoro') kokoroVoice=voiceSelect.value; else voiceURI=voiceSelect.value;
+    dropReserve();
     saveState(); sampleVoice();
   });
 
   engineSelect.addEventListener('change',async()=>{
+    dropReserve();          // rendered by the engine being switched away from
     if(engineSelect.value==='system'){
       ttsEngine='system'; refreshVoices(); saveState(); sampleVoice(); return;
     }
@@ -3767,10 +4059,69 @@
   });
 
   // Changing a voice you can't hear is guesswork, so say something in it.
+  // Written in plain algebraic, not pre-spelled. Day 3.11 moved the "eff 3"
+  // respelling into voiceizeSquares() precisely so it keys off which engine
+  // is speaking — Kokoro reads a hardcoded "eff 3" as "ee-eff-eff three".
+  // This sample had kept its 2.0 spellings and was the last place still
+  // saying it the old way.
+  const VOICE_SAMPLES=['Knight to f3.','Bishop takes c4.','Pawn to e4. Your move.'];
   function sampleVoice(){
     if(!voiceOn) return;
-    say(pick(['Knight to eff 3.','Bishop takes see 4.','Pawn to ee 4. Your move.']));
+    say(pick(VOICE_SAMPLES));
   }
+
+  // ---------------------------------------------------------------
+  // Test voice — turn a silent failure into a visible one
+  // ---------------------------------------------------------------
+  // On Day 3.13 every phone had been mute since the app existed, and it
+  // survived twelve sessions because silence looks exactly like "nothing is
+  // happening right now". A tester has no way to tell an app that isn't
+  // talking from an app that is talking to a muted speaker, and neither did
+  // we. This button asks for a sample and then reports whether any audio
+  // actually *started* — lastAudioStartAt is raised by the audio itself, not
+  // by the call that requested it, which is the whole point. It also happens
+  // to be a user gesture, so on a phone it is the one press that can prove
+  // the unlock path works.
+  let voiceTestTimer=null;
+  function testVoice(){
+    if(voiceTestTimer){ clearInterval(voiceTestTimer); voiceTestTimer=null; }
+    if(!('speechSynthesis' in window)){
+      note('This browser has no speech synthesis at all.','err');
+      warnSilent('No speech engine: this browser doesn’t support speechSynthesis, so the app cannot talk.');
+      return;
+    }
+    if(!voiceOn){
+      voiceOn=true; voiceToggle.checked=true; saveState();
+      warnSilent('“Speak aloud” was off — turned it back on for the test.');
+    }
+    const t0=Date.now();
+    // Kokoro may still be fetching 326 MB, and the first chunk of any
+    // narration costs a second or two even warm, so this waits generously
+    // rather than calling a slow start a failure.
+    const LIMIT=ttsEngine==='kokoro'?45000:6000;
+    note('Testing the voice…');
+    sampleVoice();
+    voiceTestTimer=setInterval(()=>{
+      if(lastAudioStartAt>t0){
+        clearInterval(voiceTestTimer); voiceTestTimer=null;
+        // "started" rather than "working": the engine raising onstart is all
+        // we can actually observe. A muted phone produces exactly this, and
+        // claiming success there would send a tester off looking in the wrong
+        // place — the one failure this button exists to prevent.
+        note('Voice started — you should have heard a move.','ok');
+        micEvent('tts','voice test: audio started in '+(lastAudioStartAt-t0)+'ms');
+        return;
+      }
+      if(Date.now()-t0<LIMIT) return;
+      clearInterval(voiceTestTimer); voiceTestTimer=null;
+      note('No sound came out.','err');
+      micEvent('tts','voice test: NO AUDIO after '+LIMIT+'ms  engine='+ttsEngine+' unlocked='+speechUnlocked);
+      warnSilent('No sound reached the speaker within '+Math.round(LIMIT/1000)+'s. '
+        +'Check the device isn’t on silent and the tab isn’t muted; if it still says this, '
+        +'press “Report a problem” and send what it copies.');
+    },250);
+  }
+  testVoiceBtn.addEventListener('click',testVoice);
   voiceToggle.addEventListener('change',()=>{
     voiceOn=voiceToggle.checked;
     // Cancelling mid-utterance means onend never fires, so release the
@@ -3785,6 +4136,7 @@
 
   function startNewGame(){
     generation++;
+    dropReserve();
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
     lastComputerMove=null;
     resetClock();
@@ -3809,7 +4161,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -3826,10 +4178,17 @@
     let saved;
     try{ saved=JSON.parse(raw); }catch(e){ return false; }
     try{
-      searchDepth=saved.searchDepth||2; masterLevel=!!saved.masterLevel;
-      levelSelect.value=masterLevel?'master':String(searchDepth);
+      // A 2.0 save has no levelKey — it stored searchDepth plus a masterLevel
+      // flag. Read the old shape when the new one isn't there, so nobody's
+      // chosen level silently resets to Club.
+      levelKey=saved.levelKey||(saved.masterLevel?'master':String(saved.searchDepth||2));
+      if(!LEVELS[levelKey]) levelKey=DEFAULT_LEVEL;
+      levelSelect.value=levelKey;
+      searchDepth=levelKey==='master'?3:(+levelKey||2);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
-      coach=saved.coach||'off'; coachSelect.value=coach;
+      // A save written by 2.0 stores 'off' explicitly, so an existing player
+      // keeps the setting they had; only a fresh install gets the new default.
+      coach=saved.coach||'hints'; coachSelect.value=coach;
       speechRate=saved.speechRate||0.9; rateSelect.value=String(speechRate);
       voiceURI=saved.voiceURI||''; refreshVoices();
       kokoroVoice=saved.kokoroVoice||'af_heart';
@@ -3878,6 +4237,18 @@
   // A1 didn't move the needle, so stop theorising about where accuracy is
   // lost and record it: what the recognizer actually returned, what the
   // normaliser reduced it to, and how the legal-move scorer ranked it.
+  // Recorded whether or not the panel is ever shown, and before any of it:
+  // this is debugLog[0] and the trimmer below is written to never drop it,
+  // because a timeline with no build marker is the one thing Day 3.2 proved
+  // you cannot triage.
+  function initDiagnostics(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    debugLog.push('=== Mind Chess voice diagnostics ==='
+      +'\nbuild: '+BUILD+'  ·  continuous='+(recognition?recognition.continuous:'n-a')
+      +'  maxAlternatives='+(recognition?recognition.maxAlternatives:'n-a')
+      +'\nengine: '+(SR?'present':'MISSING')+'  ·  '+navigator.userAgent+'\n');
+  }
+
   function setupDebug(){
     if(!DEBUG) return;
     // body is a flex ROW, and this panel is appended as a direct child of it,
@@ -3901,7 +4272,7 @@
     document.body.appendChild(p);
     debugOut=p.querySelector('#dbgOut');
     debugCount=p.querySelector('#dbgCount');
-    p.querySelector('#dbgClear').addEventListener('click',()=>{ debugLog.length=0; renderDebug(); });
+    p.querySelector('#dbgClear').addEventListener('click',()=>{ debugLog.length=1; diagSeq=0; renderDebug(); });
     p.querySelector('#dbgCopy').addEventListener('click',()=>{
       debugOut.select();
       let ok=false;
@@ -3909,11 +4280,6 @@
       if(!ok&&navigator.clipboard) navigator.clipboard.writeText(debugOut.value).catch(()=>{});
       const b=p.querySelector('#dbgCopy'); b.textContent='Copied'; setTimeout(()=>b.textContent='Copy all',1200);
     });
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    debugLog.push('=== Mind Chess voice diagnostics ==='
-      +'\nbuild: '+BUILD+'  ·  continuous='+(recognition?recognition.continuous:'n-a')
-      +'  maxAlternatives='+(recognition?recognition.maxAlternatives:'n-a')
-      +'\nengine: '+(SR?'present':'MISSING')+'  ·  '+navigator.userAgent+'\n');
     renderDebug();
     // Mic events arrive without any utterance to hang them off, so the panel
     // has to refresh on its own or a 30-minute idle stretch shows nothing.
@@ -3944,11 +4310,10 @@
     const atBottom=debugOut.scrollHeight-debugOut.scrollTop-debugOut.clientHeight<40;
     debugOut.value=debugLog.join('\n')+micTimeline();
     if(atBottom) debugOut.scrollTop=debugOut.scrollHeight;
-    const n=debugLog.filter(l=>l.startsWith('#')).length;
-    debugCount.textContent=(n?n+' utterance'+(n===1?'':'s'):'speak a move…')+'  ·  '+micState;
+    debugCount.textContent=(diagSeq?diagSeq+' utterance'+(diagSeq===1?'':'s'):'speak a move…')+'  ·  '+micState;
   }
   function recordDiagnostic(list,best,bestText){
-    const n=debugLog.filter(l=>l.startsWith('#')).length+1;
+    const n=++diagSeq;
     const src=lastAltMeta&&lastAltMeta.length?'voice':'typed';
     const lines=['#'+n+'  ['+src+']  chose: "'+bestText+'"'];
     if(src==='voice'){
@@ -3965,9 +4330,95 @@
     }
     lines.push('   turn: '+(game.turn()==='w'?'white':'black')+'  legal: '+game.moves().length+'\n');
     debugLog.push(lines.join('\n'));
+    // Trim from index 1, never 0: the header is the build marker.
+    while(debugLog.length>DIAG_MAX+1) debugLog.splice(1,1);
     lastScoring=null; lastAltMeta=null;
     renderDebug();
   }
+
+  // ===============================================================
+  // Report a problem — the beta's only feedback path
+  // ===============================================================
+  // 2.0 went out as a public beta with no way for anyone who hit a bug to
+  // tell us anything actionable. ?debug=1 already produced everything needed;
+  // the problem was that it had to be switched on *before* the bug, by
+  // someone who knew it existed. So the recording is now unconditional and
+  // this button is what reveals it — plus the things a voice timeline alone
+  // doesn't say: which settings were in play, and what position it happened
+  // in. A report you can reproduce from beats a report you can only read.
+  function reportSettings(){
+    return ['mode='+mode,'level='+levelSelect.value,'speech='+ttsEngine,
+            'hearing='+sttEngine,'voice='+(ttsEngine==='kokoro'?kokoroVoice:(voiceURI||'default')),
+            'rate='+speechRate,'coach='+coach,'narration='+verbosity,
+            'speak='+voiceOn,'keep-listening='+handsFree,'talk-over='+bargeIn,
+            'unlocked='+speechUnlocked,'seat='+(humanColor==='w'?'white':'black'),
+            'board='+(boardHidden?'hidden':'shown')].join('  ·  ');
+  }
+  function reportTranscript(n){
+    const lines=[].slice.call(transcript.querySelectorAll('p.line')).slice(-n);
+    if(!lines.length) return '(nothing said yet)';
+    return lines.map(p=>{
+      // The speaker tag is a sibling span with no whitespace around it, so a
+      // plain textContent yields "Youe4" and "BoardPawn to e4." — read the
+      // tag off separately rather than trying to unpick it afterwards.
+      const who=p.querySelector('.who'), sub=p.querySelector('.heard');
+      const tag=who?who.textContent.trim():'';
+      let body=p.textContent;
+      if(who) body=body.slice(tag.length);
+      if(sub) body=body.slice(0,body.length-sub.textContent.length);
+      let out='  '+(tag?tag.padEnd(7):'')+body.replace(/\s+/g,' ').trim();
+      if(sub) out+='\n           heard: '+sub.textContent.replace(/\s+/g,' ').trim();
+      return out;
+    }).join('\n');
+  }
+  function buildReport(){
+    return ['=== Mind Chess problem report ===',
+            'build: '+BUILD,
+            'when:  '+new Date().toISOString(),
+            'url:   '+location.origin+location.pathname,
+            'agent: '+navigator.userAgent,
+            '',
+            '--- settings ---','  '+reportSettings(),
+            '',
+            '--- position ---',
+            '  fen: '+game.fen(),
+            '  pgn: '+(game.pgn()||'(no moves)'),
+            '',
+            '--- last said ---',reportTranscript(12),
+            '',
+            // Say so when the log has rolled. The numbering is continuous, so
+            // a reader can tell #32 isn't the first thing that happened — but
+            // only if they think to check, and a bug report is read in a hurry.
+            '--- what was heard '+(diagSeq>DIAG_MAX?'(last '+DIAG_MAX+' of '+diagSeq+')':'('+diagSeq+')')+' ---',
+            debugLog.join('\n')+micTimeline(),
+            '',
+            '--- describe what went wrong (please type here) ---',
+            ''].join('\n');
+  }
+  function openReport(){
+    reportOut.value=buildReport();
+    reportPanel.classList.add('show');
+    reportPanel.scrollIntoView({block:'nearest'});
+    // Land the caret in the box the reader is being asked to type in, rather
+    // than making them scroll a 200-line log to find it. The box is editable
+    // on purpose — a timeline with no sentence saying what looked wrong is a
+    // log, not a report.
+    reportOut.focus();
+    reportOut.setSelectionRange(reportOut.value.length,reportOut.value.length);
+  }
+  reportBtn.addEventListener('click',openReport);
+  reportCloseBtn.addEventListener('click',()=>reportPanel.classList.remove('show'));
+  reportCopyBtn.addEventListener('click',()=>{
+    // Same two-step as the debug panel: execCommand works without a
+    // permission prompt and without a secure context, navigator.clipboard
+    // covers the browsers that have dropped it.
+    reportOut.select();
+    let ok=false;
+    try{ ok=document.execCommand('copy'); }catch(e){}
+    if(!ok&&navigator.clipboard) navigator.clipboard.writeText(reportOut.value).catch(()=>{});
+    reportCopyBtn.textContent='Copied';
+    setTimeout(()=>reportCopyBtn.textContent='Copy',1400);
+  });
 
   if(location.protocol==='file:') originBanner.classList.add('show');
 
@@ -3997,6 +4448,8 @@
   // continuous/maxAlternatives settings, which read "n-a" if the panel is
   // built first. Nothing is lost by waiting — mic events accumulate in
   // micLog from the start and the panel renders them when it appears.
+  warmEngine();
+  initDiagnostics();
   setupDebug();
 })();
 </script>
