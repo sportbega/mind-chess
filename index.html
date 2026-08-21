@@ -669,7 +669,7 @@
   // fp32 on WebGPU runs ~8x realtime, q8 ~1x on either backend.
   const KOKORO_MODEL='onnx-community/Kokoro-82M-v1.0-ONNX';
   const KOKORO_ESM='https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
-  let kokoro=null, kokoroLoading=null, kokoroAhead=null, currentAudio=null;
+  let kokoro=null, kokoroLoading=null, kokoroAhead=[], currentAudio=null;
 
   async function hasWebGPU(){
     try{ return !!(navigator.gpu && await navigator.gpu.requestAdapter()); }
@@ -713,23 +713,71 @@
       .then(a=>URL.createObjectURL(a.toBlob()));
   }
 
-  // Generation costs ~0.7s a line, which would be dead air before every move.
-  // Rendering the next chunk while the current one plays hides all of it
-  // except the very first.
-  function primeNextChunk(){
-    if(!kokoro||!speechQueue.length){ kokoroAhead=null; return; }
-    const next=speechQueue[0];
-    if(kokoroAhead&&kokoroAhead.text===next) return;
-    kokoroAhead={text:next,url:kokoroClipFor(next)};
+  // Generation costs ~0.7-3.6s a line, which would be dead air before every
+  // move. Rendering ahead while the current chunk plays hides all of it except
+  // the very first.
+  //
+  // It used to render exactly ONE chunk ahead, and only start when the current
+  // chunk began playing. That gives the pipeline zero slack: chunk N+1 is on
+  // time only if it generates faster than chunk N plays. Measured on the
+  // roster answer — generation 1528ms and 3585ms against 6.2s and 7.6s of
+  // playback — it held, but left the GPU **idle for 4-5s** each time with the
+  // chunk after next not yet started. A short chunk followed by an expensive
+  // one is exactly where that runs out, which is what the alternating
+  // 1076 / 46 / 972 / 39 ms reading was.
+  //
+  // So: keep generating while there is work and buffer room, instead of
+  // stopping at one. Strictly sequential — two generations at once would only
+  // contend for the same model — and never started while the chunk we are
+  // actually waiting on is still rendering, which would delay the one that
+  // matters most.
+  const AHEAD_MAX=3;          // bounds memory, and wasted work on barge-in
+  let kokoroPriming=false;
+
+  function primeAhead(){
+    // Guard on who will actually speak, not just on whether Kokoro loaded —
+    // the user can switch back to the system voice with the weights resident,
+    // and rendering clips nobody will play is pure waste.
+    if(ttsEngine!=='kokoro'||!kokoro||kokoroPriming||kokoroAhead.length>=AHEAD_MAX) return;
+    // kokoroAhead[i] always corresponds to speechQueue[i], so the first chunk
+    // not yet buffered is the one at the buffer's length.
+    const next=speechQueue[kokoroAhead.length];
+    if(next===undefined) return;
+    kokoroPriming=true;
+    const t0=Date.now(), depth=kokoroAhead.length+1;
+    const entry={text:next};
+    entry.url=kokoroClipFor(next).then(u=>{
+      micEvent('tts','rendered ahead('+depth+') in '+(Date.now()-t0)+'ms');
+      return u;
+    });
+    kokoroAhead.push(entry);
+    // Chain rather than loop: the next one starts when this one is done, so
+    // the model is busy exactly when it would otherwise be idle.
+    entry.url.then(()=>{ kokoroPriming=false; primeAhead(); },
+                   ()=>{ kokoroPriming=false; });
+  }
+
+  // A buffered clip that is never played still holds an object URL.
+  function dropAhead(){
+    kokoroAhead.forEach(e=>e.url.then(u=>URL.revokeObjectURL(u),()=>{}));
+    kokoroAhead=[];
+  }
+
+  function takeAhead(chunk){
+    if(kokoroAhead.length&&kokoroAhead[0].text===chunk) return kokoroAhead.shift().url;
+    // Out of step with the queue — throw the buffer away rather than play
+    // something that was rendered for a different sentence.
+    if(kokoroAhead.length) micEvent('tts','ahead buffer stale, dropped');
+    dropAhead();
+    return kokoroClipFor(chunk);
   }
 
   function speakChunkKokoro(chunk,myGeneration,myChunk,advance){
     const started=Date.now();
-    const pending=(kokoroAhead&&kokoroAhead.text===chunk)?kokoroAhead.url:kokoroClipFor(chunk);
-    kokoroAhead=null;
+    const pending=takeAhead(chunk);
     pending.then(url=>{
       if(myGeneration!==speechGeneration||myChunk!==chunkToken){ URL.revokeObjectURL(url); return; }
-      primeNextChunk();
+      primeAhead();
       const el=new Audio(url);
       currentAudio=el;
       const finish=()=>{
@@ -774,7 +822,10 @@
   // deaf to it. Every teardown path has to go through here or barge-in would
   // stop the system voice and let the natural one keep talking.
   function stopAudio(){
-    kokoroAhead=null;
+    // Revoke, don't just forget: a rendered-ahead clip that is never played
+    // still holds an object URL, and barge-in throws away up to three.
+    dropAhead();
+    kokoroPriming=false;
     if(!currentAudio) return;
     try{ currentAudio.pause(); currentAudio.src=''; }catch(e){}
     currentAudio=null;
@@ -814,6 +865,12 @@
       stopAudio();
       speechSynthesis.cancel();
       speechQueue=splitForSpeech(voiceizeSquares(text));
+      // Start rendering before the gate below, not after it. The 120ms is
+      // there to let the capture session close so playback doesn't clip —
+      // that is a reason to delay the *audio*, not a reason to leave the
+      // model idle. The first chunk of a narration is the only one anyone
+      // ever waits on, so this is the one place the wait is worth shaving.
+      primeAhead();
       beginSpeaking();
       // Let Chrome finish closing the recognition audio session before
       // starting narration; without this small gap the first words can clip.
@@ -1546,7 +1603,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r18 (queen takes f7 is a move, not a question)';
+  const BUILD='v2-r19 (render ahead, not one ahead)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
