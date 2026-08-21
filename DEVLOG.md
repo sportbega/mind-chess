@@ -1214,3 +1214,27 @@ option and a much bigger change than this was.
 being measured turned out not to be a defect.
 
 Deployed to `/` and `/v2/` as `v2-r19`.
+
+## 2026-08-21 — Day 3.16: the beta line
+
+2.0 is declared the **official public beta**. Nothing changed in the app; what
+changed is that there is now a version we're asking people to use, and a rule
+about which link that is.
+
+**Share `/`, never `/v2/`.** They are byte-identical the moment a release
+ships, which is exactly what makes handing out the wrong one easy — and `/v2/`
+drifts ahead into half-finished work as soon as the next session starts. `/`
+only moves when `./publish.sh release` is run on purpose. The README now says
+so at the top, where the link is.
+
+Next session is a polish pass, tracked as [OUR-71](https://linear.app/bega-workspace/issue/OUR-71):
+coach defaults, tips, difficulty, puzzles, and pre-rendering the engine's reply
+while the player's own move is still being spoken.
+
+**One process note worth carrying, from Day 3.15.** `publish.sh` writes the
+repo root from the `v2` branch, so uncommitted edits made on `main` are
+destroyed by it — which is precisely what happened: a whole fix was written on
+`main` by mistake, committed there, and then reverted by its own publish. It
+came back from the reflog and cost only a round-trip, but the lesson is cheap
+to write down and expensive to rediscover: **check the branch before editing,
+because the publish step is destructive by design.**
