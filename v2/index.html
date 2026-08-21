@@ -255,9 +255,9 @@
     </div>
     <div class="field">
       <label for="levelSelect">Level</label>
-      <select id="levelSelect">
-        <option value="1">Casual</option>
-        <option value="2" selected>Club</option>
+      <select id="levelSelect" title="Casual plays instantly and needs no download. Club and above use a real chess engine — 7.3 MB, fetched once and then cached for offline use.">
+        <option value="1" selected>Casual</option>
+        <option value="2">Club</option>
         <option value="3">Sharp</option>
         <option value="master">Master</option>
       </select>
@@ -412,8 +412,16 @@
   let boardHidden = true;
   let mode = 'computer';
   let humanColor = 'w';
-  let levelKey = '2';         // key into LEVELS: '1' | '2' | '3' | 'master'
-  let searchDepth = 2;        // only the fallback engine's depth now, see LEVELS
+  // Casual is the default, which is a change from 2.0 and does two things at
+  // once. It is the only way "nothing downloads on a first visit" can be true
+  // — a default of Club would fetch 7.3 MB before the first reply, however
+  // local the Casual rung is. And it keeps the default *difficulty* roughly
+  // where 2.0 had it: the ladder rework made Club Stockfish at depth 4, far
+  // stronger than the depth-2 alpha-beta that used to carry that name, so
+  // leaving the default on Club would have quietly made the app harder for
+  // every new player. Anyone with a saved level keeps it.
+  let levelKey = '1';         // key into LEVELS: '1' | '2' | '3' | 'master'
+  let searchDepth = 1;        // the local engine's depth, and the SF fallback's
   let verbosity = 'terse';
   let coach = 'hints';     // off | hints | full — engine-backed answers (C1)
   // rate 0.7 was never a preference — it was a workaround for whatever voice
@@ -1411,7 +1419,10 @@
   // engine cannot load at all. Something has to answer when a browser has no
   // usable WebAssembly, and "no opponent" is a worse answer than "a weak one".
   // BENCH-BASELINE-START — tools/level-ladder.js lifts everything between
-  // these markers to score the new ladder against the engine it replaced.
+  // these markers, so the bench scores the *actual* Casual rung rather than a
+  // copy of it. It ends after localReply() deliberately: the anti-reversal
+  // nudge is part of how this engine plays, and a bench that reimplemented
+  // the search without it would be measuring a slightly different opponent.
   function evaluate(g){
     const board=g.board();
     let score=0;
@@ -1443,15 +1454,23 @@
     }
     return best;
   }
-  // BENCH-BASELINE-END
-  function computerMove(){
+  // Depth is passed rather than read off a global: this is now both the Casual
+  // rung *and* the fallback for the other three, and those want different
+  // depths. A global would silently hand one of them the other's.
+  //
+  // Choosing the move and playing it are also separate now. The Casual rung
+  // needs the choice on its own, so it can predict the narration and reserve
+  // the audio before the move is applied — exactly as the Stockfish path does
+  // between `bestmove` arriving and applyMove().
+  function localReply(depth){
     const moves=game.moves({verbose:true});
-    if(!moves.length) return;
+    if(!moves.length) return null;
+    const d=depth||searchDepth;
     const white=game.turn()==='w';
     let best=null,bestScore=white?-Infinity:Infinity;
     for(const m of moves){
       game.move(m.san);
-      let score=searchScore(game,searchDepth-1,-Infinity,Infinity,!white);
+      let score=searchScore(game,d-1,-Infinity,Infinity,!white);
       game.undo();
       // Undoing the engine's own last move is legal but usually pointless —
       // nudge it away from an exact reversal unless that's genuinely the
@@ -1461,6 +1480,12 @@
       }
       if(white?score>bestScore:score<bestScore){ bestScore=score; best=m; }
     }
+    return best?{from:best.from,to:best.to,promotion:best.promotion}:null;
+  }
+  // BENCH-BASELINE-END
+  function computerMove(depth){
+    const best=localReply(depth);
+    if(!best) return;
     lastComputerMove={from:best.from,to:best.to};
     applyMove(best);
   }
@@ -1470,11 +1495,11 @@
   // self-hosted alongside index.html since Worker scripts can't be
   // constructed cross-origin from a CDN in every browser.
   //
-  // It used to load only for "Master", so the other three levels cost
-  // nothing. Now every level is this engine, and the 7.3 MB is the price of
-  // the ladder being honest — paid once, cached, and still offline after.
-  // warmEngine() starts it as soon as the opponent is the computer so the
-  // download isn't sitting in front of the player's first move.
+  // It used to load only for "Master". Now it carries Club, Sharp and Master
+  // — three rungs of one engine, which is what makes "harder" mean stronger
+  // — while Casual stays on the local engine so that opening the page and
+  // playing costs nothing. warmEngine() starts the download the moment a
+  // level that needs it is selected, and not one moment before.
   // ===============================================================
   // ---------------------------------------------------------------
   // The ladder — one engine at four settings
@@ -1491,9 +1516,9 @@
   // like someone new to this, so the rungs cap depth as well.
   //
   // **Depth is the lever; movetime is only a ceiling.** Measured in the
-  // bench, every rung below Master reaches its depth in ~10 ms, so the time
-  // limit never binds — which is the point. A time-defined level is a
-  // different opponent on a fast laptop than on a slow phone, and a player
+  // bench, every Stockfish rung below Master reaches its depth in ~10 ms, so
+  // the time limit never binds — which is the point. A time-defined level is
+  // a different opponent on a fast laptop than on a slow phone, and a player
   // who moves from one to the other has no way to know why the game got
   // harder. Depth plays the same everywhere. The ceiling exists only so a
   // pathological position on slow hardware can't stall the game; if it ever
@@ -1501,17 +1526,26 @@
   // round. Master is deliberately the exception — "as good as it can be in
   // 1.2 seconds" is what that rung means, and it has no depth cap.
   //
-  // The numbers came out of tools/level-ladder.js, not out of taste: over
-  // four games a side each rung beat the one below it (3–0–1, 3–0–1, 3–0–1).
+  // **Casual runs the local engine, on purpose.** Putting every rung on
+  // Stockfish made the ladder honest and charged 7.3 MB to everyone who
+  // opened the page — including someone trying the app for the first time on
+  // a phone, who has not asked for a strong opponent and would be paying a
+  // download before their first move. The bottom rung is exactly where that
+  // trade is worst and where it buys least: a first visit gets a game
+  // immediately, and nothing downloads until the player reaches for a real
+  // opponent. The rungs above it are still one engine at three settings, so
+  // "harder" still means stronger everywhere the comparison is being made.
+  //
+  // The numbers came out of tools/level-ladder.js, not out of taste.
   // LEVELS-START — read by tools/level-ladder.js
   const LEVELS = {
-    '1':      { name:'Casual', skill:0,  depth:1, movetime:2500 },
-    '2':      { name:'Club',   skill:3,  depth:4, movetime:2500 },
-    '3':      { name:'Sharp',  skill:9,  depth:8, movetime:2500 },
-    'master': { name:'Master', skill:20,          movetime:1200 }
+    '1':      { name:'Casual', engine:'local', depth:1 },
+    '2':      { name:'Club',   engine:'sf', skill:3,  depth:4, movetime:2500 },
+    '3':      { name:'Sharp',  engine:'sf', skill:9,  depth:8, movetime:2500 },
+    'master': { name:'Master', engine:'sf', skill:20,          movetime:1200 }
   };
   // LEVELS-END
-  const DEFAULT_LEVEL='2';
+  const DEFAULT_LEVEL='1';
   function currentLevel(){ return LEVELS[levelKey]||LEVELS[DEFAULT_LEVEL]; }
 
   let sfInitPromise = null;
@@ -1647,6 +1681,21 @@
 
   function triggerComputerMove(){
     const g=generation, spec=currentLevel();
+    if(spec.engine==='local'){
+      // No worker, no download, no promise — the whole point of this rung.
+      // It still waits for the player's own move to be read out, because that
+      // was never about which engine is thinking.
+      const move=localReply(spec.depth);
+      if(!move) return;
+      const text=predictNarration(move);
+      if(text) requestReserve(splitForSpeech(voiceizeSquares(text))[0]);
+      whenSpeechIdle(()=>{
+        if(g!==generation||gameOver) return;
+        lastComputerMove={from:move.from,to:move.to};
+        applyMove(move);
+      },REPLY_WAIT_MAX_MS);
+      return;
+    }
     stockfishBestMove(game.fen(), spec).then(uci=>{
       if(g!==generation||gameOver) return;
       if(!uci||uci==='(none)'){ warn('The engine returned no move.'); return; }
@@ -1884,7 +1933,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r22 (wait for narration, but only ever once in vain)';
+  const BUILD='v2-r23 (Casual costs nothing to start)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4001,15 +4050,23 @@
     warmEngine();
     saveState();
   });
-  // Every level is Stockfish now, so the 7.3 MB engine is no longer something
-  // only "Master" pays for — which means waiting until the first move to
-  // start fetching it would put that download in front of the first thing the
-  // player does. Start it as soon as we know the opponent is the computer.
-  // Announced only once, and only if it hasn't already arrived, so a returning
-  // player with it cached sees nothing at all.
+  // Start the 7.3 MB engine as soon as we know it will be needed, so the
+  // download isn't sitting in front of the player's first move — but *only*
+  // when the chosen level actually needs it.
+  //
+  // This is the whole first-visit protection, and it is one condition: a
+  // player who lands on the page, leaves the Level select alone and starts
+  // playing downloads nothing at all, because Casual is the local engine.
+  // Nothing is fetched until they reach for a stronger opponent, at which
+  // point they have asked for it and the wait means something.
+  //
+  // The coach is deliberately not warmed here. It needs the same engine, but
+  // it is on-demand by nature — it already says "Let me look" — and warming
+  // for a question nobody has asked yet would quietly undo all of this.
   function warmEngine(){
     if(mode!=='computer'||sfInitPromise) return;
-    log('System','Loading the chess engine (7.3 MB, once — then it’s cached and works offline).');
+    if(currentLevel().engine!=='sf') return;
+    log('System','Loading the chess engine for this level (7.3 MB, once — then it’s cached and works offline).');
     stockfishInit().catch(()=>{});
   }
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
