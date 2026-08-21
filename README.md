@@ -1,6 +1,8 @@
 # Mind Chess
 
-**Live:** https://sportbega.github.io/mind-chess/ — public, hosted on GitHub Pages (same setup as Giga Chess), no install needed. Share this link with testers.
+**Live (public beta):** https://sportbega.github.io/mind-chess/ — no install needed, hosted on GitHub Pages. **This is the link to share.**
+
+⚠️ Share `/`, not `/v2/`. They are identical the moment a release ships, but `/v2/` is the rolling preview and drifts ahead into half-finished work as soon as the next session starts. `/` only moves when `./publish.sh release` is run deliberately.
 
 Browser chess with a voice / blindfold mode — play by speaking moves ("e4", "knight to f3", "queen takes e5", "castle kingside") while the board stays hidden, or reveal it any time.
 
@@ -25,7 +27,7 @@ Then open http://localhost:8000
 
 ## Status
 
-**2.0 is the current release.** The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
+**2.0 is the current release — the official public beta.** The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
 
 What 2.0 added on top of v1.0:
 
