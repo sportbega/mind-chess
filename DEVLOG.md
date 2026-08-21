@@ -1582,3 +1582,60 @@ opened cold — and the only reason it got opened was a habit of checking what
 was published rather than trusting what was pushed. A fallback that fires on
 every move is not a fallback; it is the new normal path, and it needs to be
 measured as one.
+
+## 2026-08-21 — Day 4.3: Casual costs nothing to start (r23)
+
+Day 4.1 put every rung on Stockfish and charged 7.3 MB to everyone who opened
+the page. Adni's call: keep Casual on the local engine and protect the first
+visit. Right call, and the reasoning generalises — the bottom rung is where
+that download is worst and buys least. Someone trying a blindfold chess app for
+the first time, on a phone, has not asked for a strong opponent; making them
+wait for one before their first move is the wrong first impression to sell.
+
+So Casual is the local alpha-beta again, and Club/Sharp/Master are one engine
+at three settings. The ladder still means something everywhere the player is
+actually comparing, and the seam is measured rather than assumed:
+
+```
+Club   4–0–0 Casual (local)
+Sharp  4–0–0 Club
+Master 4–0–0 Sharp
+```
+
+A clean sweep at every step, including across the seam.
+
+**The change that actually did the work was the default level.** Making Casual
+local protects nothing while the app still *starts* on Club — a first visit
+would fetch 7.3 MB before the first reply regardless. That only turned up
+because the check was "did anything get requested", not "does the code look
+right": `performance.getEntriesByType('resource')` said
+`stockfish-18-lite-single.js` had been asked for on a page where nobody had
+touched the Level select. Now a first visit requests **nothing**, and a whole
+game against Casual requests nothing.
+
+Casual as the default is also the more honest difficulty default. The Day 4.1
+rework made Club *Stockfish at depth 4* — far stronger than the depth-2
+alpha-beta that used to carry that name — so leaving the default there would
+have quietly made the app harder for every new player under cover of a
+refactor. Anyone with a saved level keeps it.
+
+**Two smaller things worth recording.**
+
+- `computerMove()` split into `localReply()` (choose) and `computerMove()`
+  (choose and play). Casual needs the choice on its own, so it can predict the
+  narration and reserve the audio before applying the move — exactly what the
+  Stockfish path does between `bestmove` arriving and `applyMove()`. The reply
+  still waits for the player's sentence to finish, because that was never
+  about which engine is thinking.
+- Depth is now passed into the search instead of read off a global. The same
+  function is both the Casual rung *and* the fallback for the other three, and
+  those want different depths; a global would silently hand one the other's.
+
+**The bench now runs the real thing.** `tools/level-ladder.js` used to
+reimplement the alpha-beta search, which was fine when it was only measuring a
+retired engine — and not fine now that it *is* the Casual rung. The marked
+region was extended to cover `localReply()` and the bench supplies the three
+globals it closes over rather than rewriting them. Its copy had quietly omitted
+the anti-reversal nudge, so it had been measuring a slightly different opponent
+than the one that ships. Reimplementing what you are measuring is how a bench
+starts lying to you, and it takes a change of purpose like this to notice.

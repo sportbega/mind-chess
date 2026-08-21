@@ -36,7 +36,7 @@ What 2.0 added on top of v1.0:
 - **Ask the board anything** — thirteen computed answers: where a piece is, what it can reach, what's on a square, what attacks or defends it, what's loose, castling rights, material, available captures. All computed by chess.js, never recalled by a model
 - **A coach**, at `hints` by default — Stockfish answers "how am I doing", "what should I worry about", "is my king safe". It never volunteers anything: every answer is one you asked for. `hints` never names a number or a move; `full` does, and stays opt-in. Say `coach off` for board facts only
 - **A natural voice** — optional Kokoro, and a voice/speed picker for the system voice. The computer's reply is rendered while your own move is still being read out, so it arrives already spoken rather than after a pause
-- **An honest difficulty ladder** — Casual/Club/Sharp/Master are one engine at four settings rather than two different engines, so "harder" means stronger and not merely different. Verified head-to-head by `tools/level-ladder.js`
+- **An honest difficulty ladder** — each rung beats the one below it, verified head-to-head by `tools/level-ladder.js` (Club 4–0 Casual, Sharp 4–0 Club, Master over Sharp). Club upward is one engine at three settings; Casual stays local so a first visit costs no download
 - **On-device recognition** — optional Moonshine, no network round-trip, and the only route to voice on iOS
 - Voice diagnostics at `?debug=1` — the full mic timeline, what was heard, and how the matcher ranked it
 - **Test voice** — plays a sample and says whether audio actually *started*, so a silent phone is a visible failure rather than an app that looks idle
@@ -47,7 +47,7 @@ v1.0's feature set, all still here:
 - Voice input with a constrained-vocabulary matcher (scores speech alternatives against the actual legal move list)
 - Text input fallback
 - Blindfold mode: board hidden by default, toggle to reveal
-- Vs. computer — **every level is real Stockfish**, at its own Skill Level and depth cap (Casual / Club / Sharp / Master); the alpha-beta engine ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html) is kept only as the fallback for a browser that can't load the WASM engine — or pass-and-play
+- Vs. computer — **Club, Sharp and Master are all real Stockfish**, at their own Skill Level and depth cap, so "harder" means stronger rather than different. **Casual is the local alpha-beta engine** (ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)) and is the default, so opening the page and playing downloads nothing at all — the 7.3 MB engine is fetched only when you pick a level that needs it. The local engine also covers any browser that can't load the WASM engine — or pass-and-play
 - Clock — optional per-side time control (3/5/10/20/30 min presets, or "Custom…" with +/-1 min stepper buttons for any starting time from 1–180 min), silent by default in blindfold mode except for the flag-fall announcement; works vs-computer, pass-and-play, and online. Online clocks are synced through the shared game row (remaining ms + a `last_move_at` anchor) rather than each peer ticking an independent local timer, so both sides agree without any periodic sync write.
 - Disambiguation / promotion prompts when a spoken move is ambiguous
 - Move narration at terse / standard / verbose levels, speech synthesis toggle

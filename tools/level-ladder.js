@@ -83,21 +83,15 @@ ${pvMatch[0]}
 ${baselineSrc}
 const LEVELS = ${levelsSrc.trim().replace(/^const LEVELS\s*=\s*/,'').replace(/;\s*$/,'')};
 
-// ---- the baseline opponent, the engine the ladder replaced ----
-// computerMove() itself isn't lifted: it reads app state (lastComputerMove,
-// applyMove). The *search* is what defines the strength, and that is.
-function baselineMove(g,depth){
-  const moves=g.moves({verbose:true});
-  if(!moves.length) return null;
-  const white=g.turn()==='w';
-  let best=null,bestScore=white?-Infinity:Infinity;
-  for(const m of moves){
-    g.move(m.san);
-    const score=searchScore(g,depth-1,-Infinity,Infinity,!white);
-    g.undo();
-    if(white?score>bestScore:score<bestScore){ bestScore=score; best=m; }
-  }
-  return best?{from:best.from,to:best.to,promotion:best.promotion}:null;
+// ---- the local engine, lifted whole ----
+// localReply() comes straight out of index.html, anti-reversal nudge and all,
+// so the Casual rung measured here is the Casual rung that ships. It closes
+// over three module globals, which the bench supplies rather than rewrites —
+// rewriting them is exactly how a bench starts measuring its own copy.
+let game=null, lastComputerMove=null, searchDepth=2;
+function localMove(g,depth){
+  game=g;
+  return localReply(depth);
 }
 
 // ---- Stockfish, driven exactly the way index.html drives it ----
@@ -133,15 +127,19 @@ function sfMove(fen,spec){
   }));
 }
 
+// Dispatch on the LEVELS entry's own engine field, so the bench cannot
+// disagree with the app about which rung runs on what.
 function player(def){
-  if(def.kind==='sf') return { label:def.label, move:g=>sfMove(g.fen(),def.spec).then(uci=>
+  const spec=def.spec;
+  if(spec.engine==='local') return { label:def.label, move:g=>Promise.resolve(localMove(g,spec.depth)) };
+  return { label:def.label, move:g=>sfMove(g.fen(),spec).then(uci=>
     (!uci||uci==='(none)')?null:{from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci.length>4?uci[4]:undefined}) };
-  return { label:def.label, move:g=>Promise.resolve(baselineMove(g,def.depth)) };
 }
 
 const MAX_PLIES=200;   // adjudicated a draw past here; a real result is rare beyond it
 function playGame(white,black){
   const g=new Chess();
+  lastComputerMove=null;
   let plies=0;
   function step(){
     if(g.game_over()||plies>=MAX_PLIES){
@@ -184,15 +182,14 @@ function pairing(a,b,n){
   return next();
 }
 
+// Each rung against the one below it. That is the only claim the Level select
+// makes, and the only one worth checking — including across the seam, where
+// Club (Stockfish) meets Casual (the local engine). If the ladder holds there
+// too, the mixed bottom rung costs nothing the player can feel.
 const MATCHUPS=[
-  // The ladder itself: each rung against the one below it.
-  [{kind:'sf',label:'Club',  spec:LEVELS['2']},      {kind:'sf',label:'Casual',spec:LEVELS['1']}],
-  [{kind:'sf',label:'Sharp', spec:LEVELS['3']},      {kind:'sf',label:'Club',  spec:LEVELS['2']}],
-  [{kind:'sf',label:'Master',spec:LEVELS['master']}, {kind:'sf',label:'Sharp', spec:LEVELS['3']}],
-  // And against what each rung used to be, so "honest" doesn't quietly mean
-  // "harder". The old ladder was depth 1/2/3 of the alpha-beta.
-  [{kind:'sf',label:'Casual(new)',spec:LEVELS['1']}, {kind:'base',label:'Casual(old d1)',depth:1}],
-  [{kind:'sf',label:'Sharp(new)', spec:LEVELS['3']}, {kind:'base',label:'Sharp(old d3)', depth:3}]
+  [{label:'Club',  spec:LEVELS['2']},      {label:'Casual',spec:LEVELS['1']}],
+  [{label:'Sharp', spec:LEVELS['3']},      {label:'Club',  spec:LEVELS['2']}],
+  [{label:'Master',spec:LEVELS['master']}, {label:'Sharp', spec:LEVELS['3']}]
 ];
 
 document.getElementById('run').addEventListener('click',function(){
