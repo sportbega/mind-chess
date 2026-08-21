@@ -299,6 +299,13 @@
       </select>
     </div>
     <div class="field">
+      <label for="tipsSelect">Tips</label>
+      <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
+        <option value="on" selected>On</option>
+        <option value="off">Off</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="verbositySelect">Narration</label>
       <select id="verbositySelect">
         <option value="terse" selected>Terse</option>
@@ -383,6 +390,9 @@
       <li><b>Ask the engine</b> (<b>Coach</b>, on by default — say <code>coach off</code> to silence it) — <code>how am I doing</code>,
         <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
         number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
+      <li><b>Tips</b> (on by default — say <code>tips off</code>) — occasional spoken facts you'd have seen with a
+        board in front of you: both queens coming off, a piece type disappearing, a repeated position, the
+        fifty-move count. Never advice, and never a move — that's what the coach is for.</li>
       <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
         (then it's cached and works offline), needs WebGPU, and falls back to the system voice if anything is
         missing. Nothing downloads until you pick it.</li>
@@ -424,6 +434,7 @@
   let searchDepth = 1;        // the local engine's depth, and the SF fallback's
   let verbosity = 'terse';
   let coach = 'hints';     // off | hints | full — engine-backed answers (C1)
+  let tips = 'on';         // off | on — unprompted, computed, never advice
   // rate 0.7 was never a preference — it was a workaround for whatever voice
   // the browser happened to default to being hard to follow. Now that the
   // voice is choosable, the workaround's premise is weaker, so the default
@@ -502,7 +513,7 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
-        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'),
+        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), tipsSelect=$('tipsSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'),
@@ -836,7 +847,11 @@
   }
 
   function requestReserve(text){
-    if(ttsEngine!=='kokoro'||!kokoro||!text) return;
+    // Same guard primeAhead() states for itself: rendering a clip nobody will
+    // play is pure waste, and here it is a second or two of a model that has
+    // other work. "Speak aloud" off is exactly that case, and the reserve was
+    // rendering right through it.
+    if(!voiceOn||ttsEngine!=='kokoro'||!kokoro||!text) return;
     if(kokoroReserve&&kokoroReserve.text===text) return;
     if(kokoroReserveWant===text) return;
     dropReserve();
@@ -1397,7 +1412,11 @@
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
     playMoveSound(!!applied.captured);
-    speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied));
+    // Tips go last, after the nudge, and like the nudge they are excluded from
+    // predictNarration() — both mutate "what have I already said" state, and
+    // predicting would spend the tip on a sentence nobody hears. Both append a
+    // separate sentence, so the reserved first chunk still matches.
+    speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied)+tipFor());
     if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); }
     renderAll();
     if(mode==='online') saveOnline();
@@ -1933,7 +1952,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r23 (Casual costs nothing to start)';
+  const BUILD='v2-r24 (tips: what you would have seen)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2266,6 +2285,154 @@
     lastNudgeAt=Date.now();
     return ' '+pick(['That’s '+spokenSquare(hit)+' — the square you keep checking.',
                      'You’ve been asking about '+spokenSquare(hit)+'; that’s the one that just changed.']);
+  }
+
+  // ===============================================================
+  // Tips — the bookkeeping a sighted player gets for free
+  // ===============================================================
+  // Deliberately not a small coach. The coach answers "how am I doing" with
+  // Stockfish's judgement, and it only speaks when asked. Tips speak without
+  // being asked, which is a much higher bar, so they are restricted to things
+  // that are *countable* rather than judged: what is on the board, how often a
+  // position has occurred, how long since anything was captured.
+  //
+  // The distinction is the whole design. "Watch your f7" is advice, and it
+  // does the work the player came here to do. "Queens are off" is a fact they
+  // would have seen instantly with a board in front of them, and losing track
+  // of it is an artifact of playing blind rather than a chess weakness. Tips
+  // restore the second kind and never touch the first — nothing here consults
+  // the engine, and nothing names a move.
+  //
+  // Three rules keep them from becoming chatter:
+  //   - they ride along on a move narration and never interrupt, the same
+  //     shape recallNudge() already proved;
+  //   - each one fires on a *change* of state and then never repeats itself,
+  //     so nothing is said twice;
+  //   - and one tip per narration at most, with a gap of several plies.
+  //
+  // Guardrail 4 applies as it does everywhere: not one of these suggests a
+  // phrase to say back.
+  // Material has to *settle* before it is worth saying. Announced the instant
+  // it changes, a queen trade reads "White is a queen up." and then, one ply
+  // later, "Material is level again." — two sentences describing one exchange,
+  // the first of them briefly untrue in spirit. Waiting a few plies for the
+  // recapture means a trade that comes out even is never mentioned at all,
+  // which is the correct amount to say about it.
+  const TIP_MATERIAL_SETTLE=3;
+  let tipSaid={material:0};    // which tips have already been given, so none repeats
+  let tipPendingBucket=0, tipPendingSince=-99;
+  // material starts known and level, so the first real swing is the first
+  // thing said rather than being swallowed as the baseline.
+  function resetTips(){ tipSaid={material:0}; tipPendingBucket=0; tipPendingSince=-99; }
+
+  // A position key ignoring the clocks, which is what repetition means.
+  function positionKey(g){ return g.fen().split(' ').slice(0,4).join(' '); }
+  function currentPositionCount(){
+    const probe=new Chess(), here=positionKey(game);
+    let n=positionKey(probe)===here?1:0;
+    const hist=game.history();
+    for(let i=0;i<hist.length;i++){
+      if(!probe.move(hist[i])) return 0;    // shouldn't happen; refuse rather than miscount
+      if(positionKey(probe)===here) n++;
+    }
+    return n;
+  }
+
+  function materialFor(color){
+    return game.board().reduce((sum,row)=>sum+row.reduce((a,c)=>
+      a+(c&&c.color===color?PIECE_VALUE[c.type]:0),0),0);
+  }
+  // Coarse on purpose: the point is "something changed by about this much",
+  // not a number. A number is what the coach gives you at `full`.
+  function materialBucket(diff){
+    const a=Math.abs(diff);
+    if(a<1) return 0;
+    const size=a<3?1:a<5?3:a<9?5:9;
+    return diff>0?size:-size;
+  }
+  const BUCKET_WORD={1:'a pawn',3:'a piece',5:'a rook',9:'a queen'};
+
+  // "You" only means something when one side is yours.
+  function tipSeat(){ return mode==='two-player'?null:myColor(); }
+
+  function tipMaterial(){
+    const seat=tipSeat();
+    const me=seat||'w';
+    const diff=materialFor(me)-materialFor(me==='w'?'b':'w');
+    const bucket=materialBucket(diff), ply=game.history().length;
+    if(bucket===tipSaid.material){ tipPendingBucket=bucket; return null; }   // nothing new
+    if(bucket!==tipPendingBucket){ tipPendingBucket=bucket; tipPendingSince=ply; return null; }
+    if(ply-tipPendingSince<TIP_MATERIAL_SETTLE) return null;                 // mid-exchange
+    tipSaid.material=bucket;
+    if(bucket===0) return 'Material is level again.';
+    const word=BUCKET_WORD[Math.abs(bucket)];
+    if(seat) return bucket>0?'That puts you '+word+' up.':'That puts you '+word+' down.';
+    return (bucket>0?'White':'Black')+' is '+word+' up.';
+  }
+
+  function tipQueens(){
+    if(tipSaid.queens) return null;
+    if(pieceSquares('w','q').length||pieceSquares('b','q').length) return null;
+    tipSaid.queens=true;
+    return 'Both queens are off the board now.';
+  }
+
+  // Losing track of the roster is the characteristic blindfold difficulty, and
+  // the moment a whole piece type disappears is the cheapest time to re-anchor.
+  const TIP_PIECE_WORD={n:'knights',b:'bishops',r:'rooks'};
+  function tipLastOfType(){
+    const seat=tipSeat();
+    for(const type of ['r','b','n']){
+      for(const color of ['w','b']){
+        const key='gone-'+color+type;
+        if(tipSaid[key]) continue;
+        if(pieceSquares(color,type).length) continue;
+        tipSaid[key]=true;
+        const word=TIP_PIECE_WORD[type];
+        if(seat) return color===seat?'Your '+word+' are both gone now.'
+                                    :'Their '+word+' are both gone now.';
+        return (color==='w'?'White':'Black')+'’s '+word+' are both gone now.';
+      }
+    }
+    return null;
+  }
+
+  // Neither of these is visible even with a board in front of you, and both
+  // decide games.
+  function tipRepetition(){
+    const n=currentPositionCount();
+    if(n<2||tipSaid.repetition===n) return null;
+    tipSaid.repetition=n;
+    return n>=3?'That position has now come up three times — that’s a draw if claimed.'
+               :'That position has come up twice now.';
+  }
+  function tipFiftyMove(){
+    const half=+game.fen().split(' ')[4]||0;
+    const moves=Math.floor(half/2);
+    if(moves<40||tipSaid.fifty===moves) return null;
+    if(tipSaid.fifty&&moves<tipSaid.fifty+5) return null;   // don't count out loud every move
+    tipSaid.fifty=moves;
+    return moves+' moves now with no capture and no pawn move.';
+  }
+
+  // Order matters: the rarest and most consequential first, because only one
+  // is ever spoken.
+  function tipFor(){
+    if(tips!=='on') return '';
+    // No global cooldown, because it isn't what keeps these rare — every tip
+    // above fires on a state change and then never repeats, and the landmarks
+    // can each happen only once in a game. A cooldown on top of that would
+    // only ever delay a true statement until the moment it stopped being
+    // interesting: "both queens are off" five plies after they came off.
+    // Material is the one that can chatter, and it has its own settle above.
+    let text=null;
+    for(const fn of [tipRepetition,tipFiftyMove,tipQueens,tipLastOfType,tipMaterial]){
+      text=fn();
+      if(text) break;
+    }
+    if(!text) return '';
+    micEvent('tts','tip: '+text);
+    return ' '+text;
   }
 
   // ===============================================================
@@ -2711,7 +2878,23 @@
     // first and never fired once — every rule there is gated on an
     // interrogative cue, and "coach on" hasn't got one. Matched by sound
     // because "coach" comes back as "couch" often enough to matter.
-    return matchCoachCommand(t);
+    return matchCoachCommand(t)||matchTipsCommand(t);
+  }
+
+  // Same shape as the coach command, and for the same reason: "tips off" has
+  // no interrogative cue, so matchQuestion would never see it. "tips" is a
+  // content word and matches by sound; on/off are function words and match
+  // literally — the A5 rule, because phon() invents meaning over short words.
+  function matchTipsCommand(t){
+    const words=t.split(/\s+/).filter(Boolean);
+    if(words.length>3||!hasSound(words,['tips','tip'])) return null;
+    return ()=>{
+      const want=hasWord(words,['off','stop','quiet','no'])?'off'
+                :hasWord(words,['on','yes'])?'on':null;
+      if(!want){ speak('Tips are '+tips+'.'); return; }
+      tips=want; tipsSelect.value=tips; saveState();
+      speak(tips==='off'?'Tips off.':'Tips on. Only things you could have seen.');
+    };
   }
 
   function matchCoachCommand(t){
@@ -4071,6 +4254,7 @@
   }
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
+  tipsSelect.addEventListener('change',()=>{ tips=tipsSelect.value; saveState(); });
   // A reserved clip was rendered at the old voice and the old speed. Keeping
   // it would make the computer's next move arrive in a voice the player just
   // changed away from.
@@ -4209,6 +4393,7 @@
   function startNewGame(){
     generation++;
     dropReserve();
+    resetTips();
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
     lastComputerMove=null;
     resetClock();
@@ -4233,7 +4418,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -4261,6 +4446,7 @@
       // A save written by 2.0 stores 'off' explicitly, so an existing player
       // keeps the setting they had; only a fresh install gets the new default.
       coach=saved.coach||'hints'; coachSelect.value=coach;
+      tips=saved.tips||'on'; tipsSelect.value=tips;
       speechRate=saved.speechRate||0.9; rateSelect.value=String(speechRate);
       voiceURI=saved.voiceURI||''; refreshVoices();
       kokoroVoice=saved.kokoroVoice||'af_heart';
@@ -4520,6 +4706,7 @@
   // continuous/maxAlternatives settings, which read "n-a" if the panel is
   // built first. Nothing is lost by waiting — mic events accumulate in
   // micLog from the start and the panel renders them when it appears.
+  resetTips();
   warmEngine();
   initDiagnostics();
   setupDebug();

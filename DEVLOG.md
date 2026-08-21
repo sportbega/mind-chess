@@ -1639,3 +1639,69 @@ globals it closes over rather than rewriting them. Its copy had quietly omitted
 the anti-reversal nudge, so it had been measuring a slightly different opponent
 than the one that ships. Reimplementing what you are measuring is how a bench
 starts lying to you, and it takes a change of purpose like this to notice.
+
+## 2026-08-21 — Day 4.4: tips, and the difference between a fact and advice (r24)
+
+The remaining "lighter than the coach" item from OUR-71. The design question was
+never how to compute a tip — it was what a tip is allowed to be, since these
+speak without being asked, which is a much higher bar than the coach clears.
+
+**The rule: tips are the bookkeeping a sighted player gets for free.** "Watch
+your f7" is advice and does the work you came here to do. "Both queens are off"
+is something you would have seen instantly with a board in front of you, and
+losing track of it is an artifact of playing blind rather than a chess weakness.
+Tips restore the second kind and never touch the first — nothing consults the
+engine, nothing names a move, and guardrail 4 holds as everywhere: not one of
+them suggests a phrase to say back.
+
+Five, in priority order, each firing on a state change and then never repeating:
+a position seen twice or three times, the fifty-move count, both queens off, a
+piece type disappearing from the board, and a material swing.
+
+**Material had to learn to wait.** Announced the moment it changes, a queen
+trade reads "White is a queen up." and then, one ply later, "Material is level
+again." — two sentences about one exchange, the first briefly untrue in spirit.
+So a material bucket must hold for three plies before it is worth saying, which
+means **a trade that comes out even is never mentioned at all**. Verified on the
+Ruy Lopez Exchange: `6.Qxd4 Qxd4 7.Nxd4` produced no material tip and exactly
+one sentence — "Knight takes d4. Both queens are off the board now."
+
+**No global cooldown, and that was a correction.** The first cut had one tip per
+six plies, which sounded prudent and was wrong: every tip already fires once per
+state change and the landmarks can each happen only once in a game, so a
+cooldown on top could only ever delay a true statement until it stopped being
+interesting — "both queens are off" arriving five plies after they came off.
+Rarity was already guaranteed by construction; the cooldown was guarding
+something that could not happen.
+
+**The instrument had a hole exactly where this feature lives.**
+`tools/phon-collisions.js` tests `Q_STOP` — the *question* matcher's vocabulary
+— against piece and ownership words. Command matchers ("coach full", now "tips
+off") carry their own inline `hasSound(words,[...])` lists, and those were never
+checked against anything. That is the Day 3.14 shape precisely: a command word
+that happens to sound like a piece would swallow a spoken move, and the tool
+whose job is to find that would have printed a clean report. It now lifts the
+vocabularies out of every `match*Command()` function by pattern, so a command
+matcher added later is covered without anyone remembering to come back.
+
+Getting the scope right took two goes. Sweeping *all* `hasSound` calls pulled in
+the question rules, where piece and ownership words belong by design ("where is
+my king"), and buried the signal under self-matches — `king` sounds like `king`.
+Restricted to command matchers and with self-matches dropped, it reports 11
+words and no collisions. `tips` and `tip` are clean.
+
+**And one thing found by reading a timeline rather than the code:** the reserve
+was rendering the computer's reply even with "Speak aloud" off — a second of a
+326 MB model spent on audio nobody would hear. `primeAhead()` states that guard
+for itself; `requestReserve()` never did.
+
+Confirmed in the fake-Kokoro harness that a tip does not cost the pre-render.
+The tip is a second sentence, so it becomes chunk 2 and the reserved first chunk
+still matches:
+
+```
+tip: That puts you a pawn down.
+reserve hit: "Knight takes e4."
+kokoro chunk in 7ms
+rendered ahead(2) in 962ms
+```

@@ -82,6 +82,55 @@ WORDS.forEach(w => {
   if (byOwner[k]) ownerHits.push(pad(w) + k + '  ->  ' + byOwner[k].join(' / '));
 });
 
+// ---------------------------------------------------------------
+// Command vocabularies — the gap this tool had until Day 4.4
+// ---------------------------------------------------------------
+// Everything above tests Q_STOP, which is the *question* matcher's
+// vocabulary. Command matchers ("coach full", "tips off") have their own word
+// lists, written inline as hasSound(words,[...]) — and those were never
+// checked against anything. That is precisely the Day 3.14 shape: a command
+// word that happens to sound like a piece would swallow a move, and the tool
+// whose job is to find that would have printed a clean report.
+//
+// Scoped to the command matchers only — functions named match<Something>Command.
+// The *question* matcher also calls hasSound, but piece and ownership words
+// belong in its vocabulary by design ("where is my king"), and sweeping those
+// in buries the real signal under a page of self-matches. Found by pattern
+// rather than by name, so a command matcher added later is covered without
+// anyone remembering to come back here.
+const COMMAND_WORDS = [];
+const seenCmd = new Set();
+const cmdFns = [...src.matchAll(/\n  function (match\w*Command)\(/g)];
+if (!cmdFns.length) {
+  throw new Error('Found no match*Command() functions in index.html — either they were renamed ' +
+                  'or the indentation changed, and this check is now silently testing nothing.');
+}
+cmdFns.forEach(fn => {
+  const from = fn.index;
+  const nextFn = src.indexOf('\n  function ', from + 1);
+  const body = src.slice(from, nextFn === -1 ? src.length : nextFn);
+  body.replace(/hasSound\(\s*words\s*,\s*\[([^\]]*)\]/g, (_, list) => {
+    list.split(',').forEach(part => {
+      const m = part.match(/'([^']+)'|"([^"]+)"/);
+      if (!m) return;
+      const w = (m[1] || m[2]).toLowerCase();
+      if (!seenCmd.has(w)) { seenCmd.add(w); COMMAND_WORDS.push(w); }
+    });
+    return _;
+  });
+});
+
+const cmdHits = [];
+COMMAND_WORDS.forEach(w => {
+  const k = encode(w);
+  // A word sounding like itself is not a collision. Only another word
+  // arriving at the same code can steal a move.
+  const piece = (byPiece[k] || []).filter(x => x !== w);
+  const owner = (byOwner[k] || []).filter(x => x !== w);
+  if (piece.length) cmdHits.push(pad(w) + k + '  ->  ' + piece.join(' / ') + '  [PIECE]');
+  else if (owner.length) cmdHits.push(pad(w) + k + '  ->  ' + owner.join(' / ') + '  [OWNERSHIP]');
+});
+
 function pad(w) { return (w + '                ').slice(0, 16) + ''; }
 
 console.log('Checked ' + WORDS.length + ' matcher words against ' +
@@ -90,3 +139,15 @@ console.log('Checked ' + WORDS.length + ' matcher words against ' +
 const a = report('Sound like a PIECE (must be in Q_STOP — they are, or this list would be a bug):', pieceHits);
 const b = report('Sound like a COLOUR or PRONOUN (must be matched literally, never by sound):', ownerHits);
 console.log('\n' + (a + b) + ' collisions — all are neutralised by Q_STOP / literal matching in matchQuestion().');
+
+console.log('\nAlso checked ' + COMMAND_WORDS.length + ' command words from hasSound(words,[...]): ' +
+  COMMAND_WORDS.join(' '));
+const c = report('Command words that sound like a PIECE or an OWNER (a move could be eaten by a command):', cmdHits);
+if (c) {
+  console.log('\n' + c + ' command collision(s). Each one needs the *command* rule to demand more than the ');
+  console.log('sound — a length guard, a required second word, or literal matching — or a spoken move can');
+  console.log('be swallowed. See Day 3.14: a guard has a direction, and this is the other one.');
+  process.exitCode = 1;
+} else {
+  console.log('\nNo command word collides with a piece or an owner.');
+}
