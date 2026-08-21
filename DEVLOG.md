@@ -1079,6 +1079,78 @@ iPhone. Everything above says it should — the whole path is `getUserMedia` +
 `AudioWorklet` + WASM/WebGPU, all of which iOS Safari has — but "should" is
 not the same as a move played on the device this phase exists for.
 
+## 2026-08-21 — Day 3.13: the app had never made a sound on a phone (r16, r17)
+
+*Backfilled Day 3.16 — this sat between 3.12 and 3.14 as a gap in the log.*
+
+Two bugs, both found because the user opened the app on their Android, and
+both invisible from a desktop forever. That is the thread holding them
+together: **neither is reachable by testing on the machine you develop on.**
+
+### r16 — `?debug=1` broke the whole app, not just the panel
+
+Reported as *"feel wierd on my android with chrome"*. Reproduced immediately at
+375px, and the cause is a one-liner with a wide blast radius: **`body` is
+`display:flex; flex-direction:row`, and `setupDebug()` appends the diagnostics
+panel as a direct child of it.** So the panel is a flex *sibling* of the app
+column. On a wide screen that is the deliberate side-by-side layout it was
+built for. On a phone the two items fight over the width:
+
+| | app column | panel | page |
+|---|---|---|---|
+| r15 | `left=-123` | `left=220`, right edge 498 | scrollWidth 498 vs 375 |
+| r16 | `left=16` | stacked below | no overflow |
+
+The app itself was shifted off-screen and clipped. Letting the row wrap fixes
+both, and the wrap is set from `setupDebug()` rather than in the stylesheet, so
+a page without `?debug=1` is untouched — desktop still measures app at
+`left=40 w=720`, panel at `left=760`.
+
+Pre-existing since the panel was added on Day 3.1. Nobody had ever opened
+`?debug=1` on a phone. **Which is the uncomfortable part: the diagnostics URL
+is the one you hand to a tester when something is wrong**, so the tool for
+investigating a problem was creating a worse one.
+
+### r17 — every phone had been silent since the beginning
+
+Then the real one. **Android Chrome and iOS Safari ignore
+`speechSynthesis.speak()` unless the first call of the page's life happens
+inside a user-gesture task.** Every narration in this app is fired from a
+`setTimeout` after an async recognition result, so *not one of them qualifies*.
+
+The app was fully audible on a desktop and said **nothing at all** on a phone,
+and had been for twelve sessions. There was no gesture unlock anywhere in the
+file — `grep` for `pointerdown`/`touchstart`/`unlock` returned nothing.
+
+The fix spends the page's first gesture on a silent utterance (`' '`, volume 0),
+which unlocks the queue for everything after it. Three details that matter:
+
+- **Capture phase**, on `pointerdown`/`touchstart`/`keydown`, so a handler that
+  stops propagation cannot consume the one gesture we need.
+- **Not routed through `say()`.** It must not touch `speechGeneration`, must
+  not open the mic gate, and nothing should be able to barge in on it — it is
+  not narration.
+- Verified on the live page: the silent `' '` at volume 0 on the gesture, then
+  `"Pawn to ee 4."` at volume 1. Desktop unaffected.
+
+The first narration of a page load — *"Game restored. White to move."* — is
+still silent on a phone, and correctly so. It happens before any gesture, and
+no browser will allow it.
+
+### What this pair is really about
+
+Both bugs are the same shape: **a mobile browser enforces something a desktop
+browser does not, and the code was only ever exercised on the desktop.** One
+was layout, one was audio policy, and both had survived every session because
+every session verified in the same place.
+
+Also settled here: **the user has no iPhone.** D2's stated "done when: voice
+works on your iPhone" cannot be tested by them, so it is parked rather than
+scheduled. Their phone is Android, where Chrome *does* have `SpeechRecognition`
+— which means Hearing defaults to Browser and D2's local recogniser never
+engages unless it is switched by hand. Android polish was then deprioritised at
+their request.
+
 ## 2026-08-21 — Day 3.14: 2.0 ships, and the game that stopped it (r18, v2.0)
 
 Four sessions of work had reached nobody. `/` still served v1.0 — the link in
