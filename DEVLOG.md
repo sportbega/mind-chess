@@ -960,3 +960,121 @@ for many sessions, and I can't hear it to judge. If it turns out to spell
 letters out too, the fix is to drop the `spokenFile` branch entirely.
 
 Deployed to `/v2/` as `v2-r14`. Branch `v2`.
+
+## 2026-08-21 — Day 3.12: D2, the app grows its own ears (r15)
+
+The last thing on the phone-shaped list. Every iOS browser is WebKit, WebKit
+has no `SpeechRecognition` at all, and until today [index.html](index.html)
+simply apologised for that. A model running in the page is the only way an
+iPhone ever hears a move, so D2 was never really "better recognition" — it was
+"voice exists on the device you actually carry".
+
+### The design decision was the shape, not the model
+
+`LocalRecognition` presents the **same interface the app already drives** —
+`lang`/`continuous`/`interimResults`/`maxAlternatives`, `start`/`stop`/`abort`,
+`onstart`/`onspeechstart`/`onresult`/`onerror`/`onend`. `setupRecognition()`
+picks a constructor and nothing downstream is touched.
+
+That one choice inherits, for free: Phase A's constrained matcher, Phase B's
+invariant that nothing heard while speaking can reach `route()`, the restart
+backoff, the give-up counter, the stale-session watchdog and the whole
+`?debug=1` timeline. A parallel pipeline would have had to re-earn every one
+of them. The precedent was already in the repo — `tools/fake-recognizer.js`
+has been impersonating this interface since Phase B.
+
+Matching an interface means matching its *contract*, not just its method
+names. `start()` is deliberately not an `async function`: Web Speech throws
+synchronously when a session is already open and `startListening()` catches
+exactly that, while an async function turns the same throw into a rejected
+promise that sails past the catch.
+
+### What Web Speech was doing for us
+
+**Endpointing.** Now an energy VAD with an adaptive noise floor (tracked only
+from quiet frames, so a fan raises the bar instead of being transcribed), a
+120 ms open, a 700 ms close, and a **350 ms pre-roll**. Owning the microphone
+means the opening phoneme can never be clipped — the exact bug that used to
+turn *"knight to f3"* into *"to f3"*, losing the word that identifies the
+piece, is now structurally impossible rather than worked around.
+
+**Alternatives.** Web Speech returned ten; a decoder returns one. This is a
+real loss and it cuts the opposite way to the obvious reading: the constrained
+matcher becomes *more* essential, not less. Measured live — Moonshine heard
+`"Pond to e4"` and the matcher played the right pawn move anyway. A better STT
+was never a substitute for A1–A3; it is a thing A1–A3 makes usable.
+
+### Measured, because guessing would have got all three wrong
+
+| dtype | loads? | download | median |
+|---|---|---|---|
+| q8 | **no** | — | — |
+| fp16 | **no** | — | — |
+| q4 | yes | 59 MB | 406 ms |
+| fp32 | yes | 113 MB | **194 ms** |
+
+- **q8 does not load at all** in Transformers.js 4.2.0 — `MatMulNBits missing
+  scale`. It fails identically for Whisper, so it is the runtime, not the
+  model. The playbook's "~120 MB WASM" plan was costed on a build that cannot
+  run.
+- **fp32 is twice as fast as q4 at twice the download.** That is the second
+  time here that quantisation has been slower rather than faster, after
+  Kokoro in D1. Stop treating it as a size/speed trade.
+- **tiny is not good enough.** On identical Kokoro-spoken phrases it returned
+  *nothing at all* for `"knight to f3"` and `"e7 e5"` — every dtype, warmed or
+  cold, with and without the language option. `base` got all six, 330–578 ms.
+  Whisper-tiny got all six too and took **3.7 s each**, which is not a wait,
+  it is a hang.
+- **Padding an utterance with silence makes it worse.** Three phrases that
+  transcribed correctly raw came back empty padded. Hypothesis tested, killed.
+
+Shipping: **moonshine-base, fp32, from the HF CDN, opt-in, 247 MB.** Same
+contract as D1 — the game is fully playable before a byte of it arrives. Live
+it loads cached in **2.6 s on WebGPU** and transcribes in **155–423 ms**.
+
+Self-hosting was genuinely on the table for once (every file is under
+GitHub's 100 MB limit) and was still the wrong call: D1's rule is that hosting
+is decided by speed, not size, and nothing here was binding on storage.
+
+### Giving the harness a microphone
+
+There is no mic in the agent's browser, which is what made Phase B untestable
+until it faked the recogniser. This time the fake goes one layer lower: Kokoro
+*speaks* a chess command into a `MediaStreamAudioDestinationNode`, and
+`getUserMedia` is overridden to hand the app that stream. The worklet, the
+VAD, the endpointing, the worker and `route()` then all run for real. A
+spoken *"knight to f3"* played `Nf3` and the engine answered `Nc6`.
+
+Committed as `tools/stt-bench.js` — Kokoro speaks, the app's own worker has to
+hear it back. It reads the model id out of `index.html` so it cannot drift.
+
+### Four bugs it found, one of them old
+
+- **`stt-worker`: a transcribe message started its own `load()`**, asking for
+  model `undefined` with remote fetching disabled. Invisible while the real
+  load succeeded; the moment one failed, every utterance reported a baffling
+  "file not found locally" instead of the actual error.
+- **`stt-worker` passed `language` to every model.** English-only builds throw
+  on it outright. Moonshine tolerates it, so this was pure latent brittleness.
+- **The debug header lied twice** — built before the recogniser existed
+  (`continuous=n-a`), and claiming 10 alternatives for a decoder that returns
+  1. "How many candidates did the scorer get" is the first question to ask
+  when a move is misheard, so that line has to be true.
+- **`tools/fake-recognizer.js` had been dead since Day 3.9.** Its stand-in
+  `speechSynthesis` has no `addEventListener`, and Day 3.9's voice picker
+  started listening for `voiceschanged` — so loading the harness threw before
+  `setupRecognition()` ever ran. Three sessions passed without anyone
+  noticing, because nothing re-ran it. **An instrument that isn't re-run
+  rots**, and the memory rule "re-run both after touching the mic state
+  machine" is what caught it.
+
+Also: `sync-v2-preview.sh` now *fails* when v2 has a root file its copy list
+doesn't mention. That list has shipped a broken `/v2/` before, and this is the
+second phase in a row to add a file next to `index.html`.
+
+Deployed to `/v2/` as `v2-r15`. Branch `v2`.
+
+**Not yet proven, and only a real phone can:** that this works on an actual
+iPhone. Everything above says it should — the whole path is `getUserMedia` +
+`AudioWorklet` + WASM/WebGPU, all of which iOS Safari has — but "should" is
+not the same as a move played on the device this phase exists for.
