@@ -2646,7 +2646,7 @@
   // STT is not a substitute for the constrained matcher; it feeds it.
   // ===============================================================
   const STT_SR=16000;             // what Moonshine and Whisper both expect
-  const VAD_FRAME=512;            // 32ms at 16kHz
+  const VAD_FRAME=512;            // 32ms at 16kHz — see the worklet below
   const VAD_OPEN_MS=120;          // speech this long opens an utterance
   const VAD_CLOSE_MS=700;         // silence this long ends one
   const VAD_PREROLL_MS=350;       // audio kept from *before* the trigger
@@ -2656,11 +2656,22 @@
   // Frames arrive from an AudioWorklet rather than a ScriptProcessorNode.
   // Blob URL because a worklet module must be same-origin, and this keeps it
   // in one file with everything else.
+  // A processor is handed 128 samples per call — 8ms at 16kHz, and 125
+  // postMessages a second if each one is forwarded on its own. Batching to
+  // VAD_FRAME first cuts that to about 31 while losing nothing: the VAD's
+  // thresholds are in milliseconds and derive their frame size from the
+  // buffer they are given, so the only thing that changes is the traffic.
   const WORKLET_SRC=`
+    const N=${VAD_FRAME};
     class Tap extends AudioWorkletProcessor {
+      constructor(){ super(); this.buf=new Float32Array(N); this.n=0; }
       process(inputs){
         const ch=inputs[0] && inputs[0][0];
-        if(ch) this.port.postMessage(new Float32Array(ch));
+        if(!ch) return true;
+        for(let i=0;i<ch.length;i++){
+          this.buf[this.n++]=ch[i];
+          if(this.n===N){ this.port.postMessage(this.buf.slice()); this.n=0; }
+        }
         return true;
       }
     }
