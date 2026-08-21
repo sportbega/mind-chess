@@ -1078,3 +1078,71 @@ Deployed to `/v2/` as `v2-r15`. Branch `v2`.
 iPhone. Everything above says it should — the whole path is `getUserMedia` +
 `AudioWorklet` + WASM/WebGPU, all of which iOS Safari has — but "should" is
 not the same as a move played on the device this phase exists for.
+
+## 2026-08-21 — Day 3.14: 2.0 ships, and the game that stopped it (r18, v2.0)
+
+Four sessions of work had reached nobody. `/` still served v1.0 — the link in
+the README, the one you'd send a tester — while everything from Phases A
+through D sat at `/v2/`, a preview with no reason for anyone to find it. So:
+release.
+
+### The verification game, which is the whole argument for playing one
+
+Staged a position one move from mate, opened the mic, and said *"queen takes
+f7"*. The recogniser heard it perfectly. The app answered with a **list of
+available captures**.
+
+Typing `Qxf7` played the mate. Saying the form the app advertises in its own
+placeholder — `queen takes e5` is right there in the UI — did not.
+
+**`phon("can")` and `phon("queen")` are both `kn`.** The "what can I take"
+rule fires on `hasSound(words, ['can','any','anything','what','whats','which'])`,
+and "queen" satisfies it. A mate on the board, silently converted into a
+sentence.
+
+This is the *opposite direction* from the one `Q_STOP` guards. `Q_STOP` stops
+a question word being read as a piece — `can` never becomes a queen. Nothing
+stopped a piece being read as a question word. The instrument had even printed
+the collision every time it ran, under a heading saying it was neutralised:
+
+```
+can             kn  ->  queen
+```
+
+It was neutralised, in one direction, and the note said so in a way that read
+as "handled".
+
+**Fixed in `hasSound()`, not in the rule.** Auditing every call site against
+the fifteen measured collisions found **7 of 31 exposed to the same class**:
+`what`→white in the coach trigger, `fine`→phone in "is my king safe",
+`many`→mine in "how many pieces", `there`/`has` in "what's on e4". Patching
+the one rule that bit would have left six. So the colliding function words now
+match literally and content words still match by sound — which is exactly the
+A5 rule as already written down. It simply had nowhere it was enforced.
+
+All eight questions still answer correctly; `queen takes f7`, `bishop takes
+f7`, `knight takes e5` and `castle kingside` all play.
+
+### Shipping
+
+- `/` is **2.0**. `/v1/` stays frozen and byte-identical to the `v1.0` tag.
+  `/v2/` continues as the rolling preview and may run ahead of the release.
+- **`publish.sh` replaces `sync-v2-preview.sh`** (kept as a wrapper, since
+  every past entry names it). One file list, one guard, two targets. A release
+  built from a different set of files than the preview it was tested against
+  is the exact mistake that list has already made once, and now it cannot be
+  made differently for the two of them.
+- Dropped `_kokoro-demo.html` and `_vad-harness.html` from `main` — generated
+  files that had been committed and were being published with the site.
+- Tagged `v2.0`.
+
+Anyone with a v1.0 game saved at `/` now loads 2.0; their old game is
+untouched under the v1.0 key and still opens at `/v1/`. That separation was
+designed in on Day 2.4 and this is the first time it actually mattered.
+
+### Still open
+
+- **On-device recognition has never run on an iPhone**, which is the one thing
+  it was built for. No iPhone available to test on.
+- D1's chunk prefetch still covers most chunks and not all — 1076 / 46 / 972 /
+  39 ms, unexplained by the code. Polish.
