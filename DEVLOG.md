@@ -1397,3 +1397,148 @@ Next in [OUR-71](https://linear.app/bega-workspace/issue/OUR-71): the honest
 difficulty ladder (Casual/Club/Sharp onto Stockfish's native Skill Level, so
 "harder" means stronger rather than a different opponent), then pre-rendering
 the engine's reply while the player's own move is still being spoken.
+
+## 2026-08-21 — Day 4.1: one ladder, and a reply that waits its turn (r21)
+
+Two items off [OUR-71](https://linear.app/bega-workspace/issue/OUR-71). The
+second one turned up a shipping bug that had nothing to do with the feature it
+was hiding under.
+
+### The ladder is one engine now
+
+Casual/Club/Sharp were depths 1/2/3 of a hand-rolled alpha-beta and Master was
+Stockfish, so moving the Level select changed *who you were playing*, not how
+well they played. Every rung is now Stockfish at its own Skill Level.
+
+The engine was asked what it supports rather than assumed: `Skill Level` 0–20
+and `UCI_LimitStrength`/`UCI_Elo` 1320–3190 are both there. Elo would give a
+number worth printing, but its floor of 1320 is far too strong for a bottom
+rung on a *blindfold* opponent, where the player is already handicapped. Skill
+Level goes lower than UCI_Elo can, so Skill Level it is.
+
+**Depth is the lever; movetime is only a ceiling.** Measured, every rung below
+Master reaches its depth in about 10 ms, so the time limit never binds — which
+is the point. A time-defined level is a different opponent on a fast laptop
+than on a slow phone, and the player has no way to know why the game got
+harder. Depth plays the same everywhere. Master keeps a pure time budget,
+because "as good as it can be in 1.2 seconds" is exactly what that rung means.
+
+`tools/level-ladder.js` is new and is what chose the numbers. Four games a
+side, colours alternating, both the LEVELS table and the old engine lifted out
+of `index.html` so the bench cannot measure something the app no longer ships:
+
+```
+Club   3–0–1 Casual        Casual(new) 2–0–2 Casual(old d1)
+Sharp  3–0–1 Club          Sharp(new)  3–0–1 Sharp(old d3)
+Master 3–0–1 Sharp
+```
+
+Monotonic, and — the check that mattered more — the bottom rung stayed
+forgiving. Getting honest by making the app harder to start playing would have
+been the wrong trade, and new Casual only draws-or-edges the depth-1 engine it
+replaced. Sharp did get genuinely sharper.
+
+**Two things that were nearly wrong.**
+
+- **UCI options are worker state, not call arguments.** One worker is shared by
+  four playing strengths *and* the coach; once `Skill Level 0` is set it stays
+  set for whoever posts next. So every caller now states its whole
+  configuration, and `stockfishAnalyse()` — the coach — pins itself to 20. An
+  engine deliberately set to blunder telling a blindfold player "you're fine"
+  is a failure they cannot see. Verified by tapping `postMessage`: Casual's
+  move goes out as `Skill Level 0 / go depth 1`, and the coach's very next call
+  as `Skill Level 20`. Day 3.8's rule was "everything must go through
+  `sfQueue()`"; the rule now is *and state its own options*, because sfQueue
+  serialising the callers is the only reason that is safe.
+- **The custom engine is kept, not deleted.** OUR-71 said delete it. Every rung
+  being Stockfish means a browser that can't load 7.3 MB of WASM has no
+  opponent at all, not just no Master. It stays as the fallback and now says so
+  out loud instead of quietly playing a different game than the one selected.
+
+The real cost of this change is that the 7.3 MB engine is no longer something
+only Master pays for. `warmEngine()` starts the download as soon as the
+opponent is the computer, so it isn't sitting in front of the player's first
+move, and it is still cached and offline after.
+
+### The computer's reply was cutting you off
+
+This started as "pre-render the engine's reply during the player's narration"
+and the measurement found something first. Tapping `speechSynthesis.speak()`
+and `.cancel()` through one move:
+
+```
+  0ms  cancel
+122ms  speak  "Pawn to ee 4."
+670ms  cancel            ← 548ms into a ~1.4s sentence
+793ms  speak  "Pawn to dee 6."
+```
+
+`say()` begins by cancelling whatever is speaking, and the computer replies
+650 ms after your move plus ~10 ms of thinking. **You heard "Pawn to e—" and
+then the reply, on every move, on every level below Master.** It has been that
+way the whole beta. A whole game was played by voice on Day 3.4 without it
+being caught, which says something about how easily you stop hearing a thing
+you expect to happen.
+
+So the reply now waits for your sentence to finish — and the wait is not a
+cost, it is precisely the window the pre-render needed. Same tap after:
+
+```
+122ms  speak  "Pawn to ee 4."
+1624ms cancel            ← 102ms after the sentence ended
+1745ms speak  "Pawn to dee 5."
+```
+
+**The reserve.** `kokoroAhead` renders ahead *within* one narration, which is
+why the first chunk of every narration still costs a full generation — there is
+nothing before it to render during. The computer's reply is the exception: its
+move is chosen before it is spoken, so the sentence is knowable while your own
+move is still being read. The obstacle was lifetime — `say()` opens with
+`stopAudio()` → `dropAhead()`, destroying the buffer at exactly the boundary it
+has to survive. So the reserve is a separate single slot that `dropAhead()`
+cannot reach, and `say()` *promotes* it into the buffer only on an exact match
+of the first chunk. A wrong guess costs a discarded clip; it can never speak
+the wrong sentence.
+
+Rendering it goes through the existing chain rather than beside it —
+`primeAhead()` falls through to the reserve when the current narration is fully
+buffered, so it is strictly lower priority and never two generations at once.
+That is the Day 3.15 idea applied one narration further out.
+
+Measured with the fake voice, one move:
+
+```
++13.4s  rendered ahead(1) in 745ms      ← your move, unavoidable
++14.1s  reserved the reply in 746ms     ← rendered while your move plays
++14.3s  reserve hit: "Pawn to e5."
++14.4s  kokoro chunk in 3ms             ← 745ms → 3ms
+```
+
+All four paths were exercised, not just the happy one: **hit**, **miss** (force
+a wording change after the prediction — logged `reserve missed`, clip
+discarded, correct sentence spoken), **barge-in** (Escape mid-sentence releases
+the wait and the move lands immediately), and **deadline** (wedge playback so
+narration never ends — `narration never ended after 12000ms — moving anyway`,
+and the game continues). The deadline is deliberately long, because the two
+failure modes aren't symmetric: too long only matters when speech has actually
+wedged, while too short fires during a normal sentence and re-creates the exact
+bug this fixes.
+
+**A bug in the new code, found by testing the unhappy path.** `promoteReserve()`
+cleared the *pending request* as well as the rendered clip, so any narration in
+between — a rejected move, a warning, an answer to a question — silently
+cancelled the reserve. Not rare at all. The request now survives anything that
+isn't the narration it was made for.
+
+### The new instrument, and why it's a fake
+
+`tools/voice-harness.js --fake-kokoro` stands in for the 326 MB natural voice
+with a generator that has Kokoro's shape and Kokoro's latency and none of its
+bytes. Everything above only runs under the natural voice, which meant it was
+only testable by downloading a third of a gigabyte first — the same problem
+Phase B had with the microphone, and the same answer. Only the model is
+replaced: `kokoroClipFor()`, the ahead buffer, the reserve and the `<audio>`
+playback path all run exactly as they ship. It found the `promoteReserve()` bug
+on its second run.
+
+All four instruments re-run and still build from the current `index.html`.
