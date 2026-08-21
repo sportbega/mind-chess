@@ -4,7 +4,7 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phases A, B and C1/C2 are built.** Next session: **C3** (a local model for phrasing only — try C2 first and decide if it's still needed) or **D1** (Kokoro, the natural voice).
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phases A, B, C1/C2 and D1 are built.** Next session: **D2** (local STT — and the only route to voice on iPhone). **C3 is effectively dead**: its only job was phrasing, C2 covered it, and D1 delivered the thing that actually changed the experience.
 >
 > **Phase A is complete.** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers · A6 chess.js vendored, so a game against the computer needs no network at all.
 >
@@ -247,7 +247,7 @@ Its job is strictly **wording facts we hand it** — never recalling the board, 
 ### Phase D — Better ears and a better voice
 *Do this after A–C prove out. Each is independently shippable.*
 
-#### D1. Natural TTS
+#### D1. Natural TTS  ✅ **Done — Day 3.10, `v2-r12`**
 `speechSynthesis` at `rate=0.7` ([index.html:407](index.html)) is the robotic voice you're hearing — the slow rate is itself a legibility workaround.
 
 | Option | Quality | Cost | Notes |
@@ -257,6 +257,22 @@ Its job is strictly **wording facts we hand it** — never recalling the board, 
 | ~~Cloud TTS~~ | Excellent | Per character | **Ruled out** — metered. |
 
 Kokoro is the whole answer here: it's the one place where free and best-quality are the same option. Keep `speechSynthesis` as the fallback for machines that can't run it, and **stream sentence by sentence** so speech starts before the full response is ready.
+
+✅ **Built as fp32 from the HF CDN, opt-in, with `speechSynthesis` as the fallback.** What the measurements forced:
+
+| Build | Size | Speed | In the repo? |
+|---|---|---|---|
+| fp32 + WebGPU | 326 MB | ~8× realtime | no — over the 100 MiB per-file limit |
+| q8 + WebGPU | 92 MB | ~0.9× realtime | yes |
+| q8 + WASM | 92 MB | ~1.3× realtime | yes |
+
+**The only fast build is the one too big to host, and the only build that fits takes ~3s before a move is announced.** So it loads from Hugging Face — the size was never the binding constraint, the speed was. (This also killed the "host it on Supabase" idea: Supabase would have solved a problem we didn't have.)
+
+- **Prefetch the next chunk while the current one plays.** 598 ms for chunk one, 11 ms for chunk two.
+- **Warm the GPU on load.** The first generation costs ~1.9 s against ~400 ms warm, and without a throwaway clip at load it lands on the first move of the game.
+- **`speechSynthesis.cancel()` cannot stop an `<audio>` element.** Barge-in silenced the system voice while Kokoro talked on, until every teardown went through one `stopAudio()`.
+- **Grade the voices.** 12 of Kokoro's 28 are D or F (`am_adam` is F+), and a D-grade voice at low precision mangles English badly enough to be reported as *"the voices speak Chinese"*. It doesn't — `kokoro-js` refuses the Mandarin ids outright.
+- **Test the fallback by removing WebGPU:** `node tools/voice-harness.js --no-gpu`.
 
 #### D2. Local STT — and the iOS unlock
 Replacing Web Speech with an in-browser model buys three things: no Google round-trip, offline operation, and — the big one — **voice on iPhone**. iOS WebKit has no `SpeechRecognition` *at all* ([index.html:1191](index.html) currently just apologises for this). A local model is the *only* path to voice on iOS.
@@ -341,4 +357,4 @@ Ship A before C. A working matcher makes everything above it optional rather tha
 - [x] **chess.js 0.10.3 → 1.x?** ~~Needed for clean `attackers()` in A5.~~ **Closed Day 3.5: staying on 0.10.3**, with a hand-rolled `attackersOf()` that is pseudo-legal on purpose. A6 (self-hosting) is unaffected either way.
 - [x] **Coach setting default.** ~~Recommendation: off.~~ **Closed Day 3.8: built off / hints / full, defaulting to off**, with "coach on" as a one-word override and naming a move gated behind `full`.
 - [x] **How coarse should evaluations be?** **Closed Day 3.8: words at `hints`, numbers only at `full`.** Five buckets — level / a shade / clearly / winning / completely.
-- [ ] **Is C3 worth it at all?** Try C2 first. A 0.5–2 GB download to make phrasing nicer may not earn its place.
+- [x] **Is C3 worth it at all?** **Closed Day 3.10: no.** C2 fixed the phrasing for free, and D1 fixed what was actually wrong — the *voice*, not the words. A 0.5–2 GB download to reword facts we already compute has nothing left to buy.

@@ -255,6 +255,13 @@
       </select>
     </div>
     <div class="field">
+      <label for="engineSelect">Speech</label>
+      <select id="engineSelect">
+        <option value="system" selected>System</option>
+        <option value="kokoro">Natural — 326 MB once</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="voiceSelect">Voice</label>
       <select id="voiceSelect"><option value="">Default</option></select>
     </div>
@@ -346,6 +353,9 @@
       <li><b>Ask the engine</b> (needs <b>Coach</b> on — say <code>coach on</code>) — <code>how am I doing</code>,
         <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
         number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
+      <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
+        (then it's cached and works offline), needs WebGPU, and falls back to the system voice if anything is
+        missing. Nothing downloads until you pick it.</li>
       <li><b>Interrupt it</b> — press <kbd>Esc</kbd> (or tap the mic) any time it's talking. <b>Talk over it</b>
         does the same by voice, but it leaves the mic open while the app speaks, so it depends on your machine's
         echo cancellation — try it, and turn it off if it cuts itself short.</li>
@@ -382,6 +392,10 @@
   // sits at 0.9 and "Slow" is one click away.
   let speechRate = 0.9;
   let voiceURI = '';       // '' = let the browser choose
+  // D1. Kokoro is a real upgrade but it is a 326 MB download, so it is opt-in
+  // and the app is fully playable before a single byte of it arrives.
+  let ttsEngine = 'system';        // 'system' | 'kokoro'
+  let kokoroVoice = 'af_heart';    // Kokoro's own top-graded voice (A)
   let voiceOn = true;
   let handsFree = true;
   let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
@@ -435,7 +449,8 @@
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'),
-        voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), voiceToggle=$('voiceToggle'),
+        voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
+        voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
@@ -525,7 +540,37 @@
   // Chrome populates getVoices() asynchronously, and on the very first load
   // it usually returns nothing at all — so this runs again on voiceschanged.
   let voicesReady=[];
+  // Kokoro grades its own voices and 12 of its 28 are D or F — am_adam is an
+  // F+. Listed as raw ids in arbitrary order they are indistinguishable from
+  // the good ones until you play them, and a D-grade voice mangles English
+  // badly enough to be mistaken for another language entirely.
+  function fillKokoroVoices(){
+    const meta=kokoro.voices||{}, ids=Object.keys(meta);
+    const grade=id=>(meta[id]||{}).overallGrade||'F';
+    const score=g=>'ABCDF'.indexOf(g[0])*3-(/\+$/.test(g)?1:/-$/.test(g)?-1:0);
+    const poorly=id=>/^(D|F)/.test(grade(id));
+    const by=(a,b)=>score(grade(a))-score(grade(b));
+    const ok=ids.filter(id=>!poorly(id)).sort(by), poor=ids.filter(poorly).sort(by);
+    const label=id=>{
+      const m=meta[id]||{};
+      return (m.name||id)+' — '+(m.language==='en-gb'?'British':'American')+' '
+             +(m.gender||'').toLowerCase()+'  ·  '+grade(id);
+    };
+    voiceSelect.innerHTML='';
+    [['Good (A–C)',ok],['Poor — expect artefacts',poor]].forEach(([name,list])=>{
+      if(!list.length) return;
+      const g=document.createElement('optgroup'); g.label=name;
+      list.forEach(id=>{
+        const o=document.createElement('option'); o.value=id; o.textContent=label(id); g.appendChild(o);
+      });
+      voiceSelect.appendChild(g);
+    });
+    if(!ids.includes(kokoroVoice)) kokoroVoice=ok[0]||ids[0]||'af_heart';
+    voiceSelect.value=kokoroVoice;
+  }
+
   function refreshVoices(){
+    if(ttsEngine==='kokoro'&&kokoro){ fillKokoroVoices(); return; }
     if(!('speechSynthesis' in window)) return;
     const all=speechSynthesis.getVoices();
     if(!all.length) return;
@@ -579,6 +624,101 @@
         || speechSynthesis.getVoices().find(v=>v.voiceURI===voiceURI) || null;
   }
 
+  // ---------------------------------------------------------------
+  // D1 — Kokoro, loaded on demand and never on the critical path
+  // ---------------------------------------------------------------
+  // fp32 only. The 92 MB q8 build fits in the repo but generates at roughly
+  // 1x realtime — three seconds before a move is announced — so the choice
+  // was never "GitHub or Supabase", it was "fast or self-hosted". Measured:
+  // fp32 on WebGPU runs ~8x realtime, q8 ~1x on either backend.
+  const KOKORO_MODEL='onnx-community/Kokoro-82M-v1.0-ONNX';
+  const KOKORO_ESM='https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
+  let kokoro=null, kokoroLoading=null, kokoroAhead=null, currentAudio=null;
+
+  async function hasWebGPU(){
+    try{ return !!(navigator.gpu && await navigator.gpu.requestAdapter()); }
+    catch(e){ return false; }
+  }
+
+  function loadKokoro(){
+    if(kokoro) return Promise.resolve(kokoro);
+    if(kokoroLoading) return kokoroLoading;
+    kokoroLoading=(async()=>{
+      // fp32 on WASM is far slower than realtime. Better to say so and stay
+      // on the system voice than to ship a voice that arrives after the move.
+      if(!await hasWebGPU()) throw new Error('this browser has no WebGPU');
+      note('Fetching the natural voice…');
+      const {KokoroTTS}=await import(KOKORO_ESM);
+      const tts=await KokoroTTS.from_pretrained(KOKORO_MODEL,{
+        dtype:'fp32', device:'webgpu',
+        progress_callback:pr=>{
+          if(pr.status==='progress'&&pr.total)
+            note('Natural voice: '+Math.round(100*pr.loaded/pr.total)+'%  ('
+                 +Math.round(pr.loaded/1048576)+' of '+Math.round(pr.total/1048576)+' MB)');
+        }
+      });
+      kokoro=tts; note('');
+      micEvent('tts','kokoro ready');
+      // The first generation pays for GPU pipeline warmup — measured at ~1.9s
+      // against ~400ms once warm — and without this it lands squarely on the
+      // first move of the game. Spend it on a throwaway nobody hears.
+      const warm=Date.now();
+      tts.generate('ready',{voice:kokoroVoice})
+         .then(()=>micEvent('tts','warmed in '+(Date.now()-warm)+'ms'))
+         .catch(()=>{});
+      return tts;
+    })();
+    kokoroLoading.catch(()=>{ kokoroLoading=null; });
+    return kokoroLoading;
+  }
+
+  function kokoroClipFor(text){
+    return kokoro.generate(text,{voice:kokoroVoice,speed:speechRate})
+      .then(a=>URL.createObjectURL(a.toBlob()));
+  }
+
+  // Generation costs ~0.7s a line, which would be dead air before every move.
+  // Rendering the next chunk while the current one plays hides all of it
+  // except the very first.
+  function primeNextChunk(){
+    if(!kokoro||!speechQueue.length){ kokoroAhead=null; return; }
+    const next=speechQueue[0];
+    if(kokoroAhead&&kokoroAhead.text===next) return;
+    kokoroAhead={text:next,url:kokoroClipFor(next)};
+  }
+
+  function speakChunkKokoro(chunk,myGeneration,myChunk,advance){
+    const started=Date.now();
+    const pending=(kokoroAhead&&kokoroAhead.text===chunk)?kokoroAhead.url:kokoroClipFor(chunk);
+    kokoroAhead=null;
+    pending.then(url=>{
+      if(myGeneration!==speechGeneration||myChunk!==chunkToken){ URL.revokeObjectURL(url); return; }
+      primeNextChunk();
+      const el=new Audio(url);
+      currentAudio=el;
+      const finish=()=>{
+        URL.revokeObjectURL(url);
+        if(currentAudio===el) currentAudio=null;
+        advance();
+      };
+      el.onended=finish; el.onerror=finish;
+      el.play().then(()=>{
+        micEvent('tts','kokoro chunk in '+(Date.now()-started)+'ms');
+      }).catch(()=>{
+        // Autoplay refused — nothing to do but hand this line to the system
+        // voice, which is allowed to speak because the user just interacted.
+        URL.revokeObjectURL(url);
+        if(currentAudio===el) currentAudio=null;
+        speakChunkSystem(chunk,myGeneration,myChunk,advance);
+      });
+    }).catch(err=>{
+      micEvent('tts','kokoro failed: '+(err&&err.message));
+      warnSilent('Natural voice failed — using the system voice.');
+      ttsEngine='system'; engineSelect.value='system'; saveState(); refreshVoices();
+      speakChunkSystem(chunk,myGeneration,myChunk,advance);
+    });
+  }
+
   function beginSpeaking(){
     speaking=true;
     setMicState('speaking','narration started');
@@ -594,11 +734,22 @@
     if(recognition&&listening&&!bargeIn){ try{recognition.abort();}catch(e){} }
   }
 
+  // Kokoro plays through an <audio> element, so speechSynthesis.cancel() is
+  // deaf to it. Every teardown path has to go through here or barge-in would
+  // stop the system voice and let the natural one keep talking.
+  function stopAudio(){
+    kokoroAhead=null;
+    if(!currentAudio) return;
+    try{ currentAudio.pause(); currentAudio.src=''; }catch(e){}
+    currentAudio=null;
+  }
+
   function endSpeaking(fast){
     if(!speaking) return;
     speaking=false;
     speakingText='';
     speechQueue.length=0;
+    stopAudio();
     if(speechWatchdog){ clearInterval(speechWatchdog); speechWatchdog=null; }
     lastMicActivity=Date.now();
     if(!(wantLoop&&handsFree)) setMicState('idle','narration ended, not looping');
@@ -613,6 +764,7 @@
     if(!speaking) return false;
     speechGeneration++;                       // orphans every in-flight callback
     speechQueue.length=0;
+    stopAudio();
     try{ speechSynthesis.cancel(); }catch(e){}
     micEvent('barge-in',why+(speakingText?'  cut: "'+speakingText.slice(0,44)+'"':''));
     endSpeaking(true);
@@ -623,6 +775,7 @@
     if(!voiceOn || !('speechSynthesis' in window)) return;
     try{
       const myGeneration=++speechGeneration;
+      stopAudio();
       speechSynthesis.cancel();
       speechQueue=splitForSpeech(text);
       beginSpeaking();
@@ -648,6 +801,11 @@
       if(myGeneration!==speechGeneration||myChunk!==chunkToken) return;
       speakNextChunk(myGeneration);
     };
+    if(ttsEngine==='kokoro'&&kokoro) speakChunkKokoro(chunk,myGeneration,myChunk,advance);
+    else speakChunkSystem(chunk,myGeneration,myChunk,advance);
+  }
+
+  function speakChunkSystem(chunk,myGeneration,myChunk,advance){
     const u=new SpeechSynthesisUtterance(chunk);
     const v=chosenVoice();
     // Always state the language, even with no voice chosen. Left unset, the
@@ -664,7 +822,9 @@
     speechSynthesis.speak(u);
     // Backstop: Chrome drops onend often enough that relying on it alone
     // would eventually strand the mic muted. Poll the queue instead, but
-    // only after it has had time to actually start.
+    // only after it has had time to actually start. Only the system path
+    // needs this — Kokoro's advance is driven by an <audio> element, which
+    // fires reliably.
     const startedAt=Date.now();
     if(speechWatchdog) clearInterval(speechWatchdog);
     speechWatchdog=setInterval(()=>{
@@ -1306,7 +1466,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r11 (pin narration language)';
+  const BUILD='v2-r12 (D1: natural voice)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -3032,7 +3192,26 @@
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
   rateSelect.addEventListener('change',()=>{ speechRate=parseFloat(rateSelect.value)||0.9; saveState(); sampleVoice(); });
-  voiceSelect.addEventListener('change',()=>{ voiceURI=voiceSelect.value; saveState(); sampleVoice(); });
+  voiceSelect.addEventListener('change',()=>{
+    if(ttsEngine==='kokoro') kokoroVoice=voiceSelect.value; else voiceURI=voiceSelect.value;
+    saveState(); sampleVoice();
+  });
+
+  engineSelect.addEventListener('change',async()=>{
+    if(engineSelect.value==='system'){
+      ttsEngine='system'; refreshVoices(); saveState(); sampleVoice(); return;
+    }
+    engineSelect.disabled=true;
+    try{
+      await loadKokoro();
+      ttsEngine='kokoro'; refreshVoices(); saveState(); sampleVoice();
+    }catch(err){
+      // Falling back is the whole contract: no WebGPU, no network, no model —
+      // the game keeps talking, just not as nicely.
+      ttsEngine='system'; engineSelect.value='system'; refreshVoices(); note('');
+      warn('Natural voice unavailable — '+((err&&err.message)||'it failed to load')+'. Staying on the system voice.');
+    }finally{ engineSelect.disabled=false; }
+  });
   // Changing a voice you can't hear is guesswork, so say something in it.
   function sampleVoice(){
     if(!voiceOn) return;
@@ -3076,7 +3255,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -3099,6 +3278,16 @@
       coach=saved.coach||'off'; coachSelect.value=coach;
       speechRate=saved.speechRate||0.9; rateSelect.value=String(speechRate);
       voiceURI=saved.voiceURI||''; refreshVoices();
+      kokoroVoice=saved.kokoroVoice||'af_heart';
+      if(saved.ttsEngine==='kokoro'){
+        // Remember the choice without acting on it up front. The weights are
+        // browser-cached so this is usually instant, but if they aren't, the
+        // game stays fully playable on the system voice and simply improves
+        // when the download lands — never a blank app waiting on 326 MB.
+        engineSelect.value='kokoro';
+        loadKokoro().then(()=>{ ttsEngine='kokoro'; refreshVoices(); })
+                    .catch(()=>{ engineSelect.value='system'; note(''); });
+      }
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;

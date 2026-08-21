@@ -13,6 +13,10 @@
 // never delivered" recovery can be tested without waiting a minute and a half.
 // Leave it off when testing the restart/give-up logic, or the watchdog will
 // keep forcing sessions and you will be measuring the harness, not the app.
+//
+// --no-gpu hides navigator.gpu, which is the only way to exercise D1's
+// fallback on a machine that has WebGPU: the natural voice must refuse to
+// load, say so, revert the Speech setting, and leave the game talking.
 
 const fs = require('fs');
 const path = require('path');
@@ -32,6 +36,15 @@ if (process.argv.includes('--fast')) {
   if (out === before) throw new Error('--fast could not find STALE_SESSION_MS; it was renamed or removed');
 }
 
+if (process.argv.includes('--no-gpu')) {
+  out = out.replace('<script>\n(function(){\n  "use strict";',
+    '<script>\n// HARNESS --no-gpu: pretend WebGPU is absent, to exercise the D1 fallback.\n'
+    + 'Object.defineProperty(navigator, "gpu", { get(){ return undefined; }, configurable: true });\n'
+    + '</script>\n<script>\n(function(){\n  "use strict";');
+}
+
 fs.writeFileSync(path.join(root, '_vad-harness.html'), out);
-console.log('wrote _vad-harness.html' + (process.argv.includes('--fast') ? '  (stale threshold 3s)' : ''));
+console.log('wrote _vad-harness.html'
+  + (process.argv.includes('--fast') ? '  (stale threshold 3s)' : '')
+  + (process.argv.includes('--no-gpu') ? '  (no WebGPU)' : ''));
 console.log('open  http://localhost:8934/_vad-harness.html?debug=1');
