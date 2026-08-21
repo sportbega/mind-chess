@@ -1013,6 +1013,7 @@
   function endSpeaking(fast){
     if(!speaking){ releaseSpeechIdle(); return; }
     speaking=false;
+    lastSpokeAt=Date.now();            // opens the trailing-echo window
     speakingText='';
     speechQueue.length=0;
     stopAudio();
@@ -1034,6 +1035,7 @@
     stopAudio();
     try{ speechSynthesis.cancel(); }catch(e){}
     micEvent('barge-in',why+(speakingText?'  cut: "'+speakingText.slice(0,44)+'"':''));
+    lastSpokeAt=Date.now();
     endSpeaking(true);
     return true;
   }
@@ -1045,6 +1047,7 @@
       stopAudio();
       speechSynthesis.cancel();
       speechQueue=splitForSpeech(voiceizeSquares(text));
+      rememberSpoken(text);            // for telling our own voice from yours
       // stopAudio() above just cleared the ahead buffer. If a clip was
       // reserved for this exact sentence, put it back — that is the whole
       // point of the reserve living outside dropAhead()'s reach.
@@ -1148,14 +1151,69 @@
   // and if it is mostly our own words coming back it is echo, not you.
   // Compared phonetically, because what returns is what our voice *sounded*
   // like through a speaker and a microphone, not what it was.
-  function considerBargeIn(transcript){
+  // What we have said lately, for telling our own voice from yours.
+  //
+  // This used to be `speakingText` alone — the one chunk playing right now —
+  // and that is too narrow in two directions, both of which a real voice game
+  // hit within minutes:
+  //
+  //   1. Recognition lags. A phrase finalised from chunk N arrives while
+  //      chunk N+1 is already playing, so it is compared against a sentence
+  //      it has no words in common with and reads as an interruption. Measured
+  //      live: the app read "Puzzle 4. Black to play and mate in one. White:
+  //      king a3." and cut *itself* off at "White: king a3." on hearing its
+  //      own "black to play and mate in".
+  //   2. The last echo of a narration usually lands *after* the narration
+  //      ends, when `speaking` is already false — so it misses the barge-in
+  //      path entirely and goes to route() as though the player had said it.
+  //      That is OUR-58 again by another door: the app obeying its own voice.
+  //
+  // So: keep a rolling window of the recent narrations, and keep consulting it
+  // for a moment after we stop talking. Widening it can only cost a real
+  // interruption being read as echo — which costs one un-cut sentence, while
+  // Escape, the mic button and typing all still interrupt unconditionally.
+  // The opposite error costs the app taking dictation from itself.
+  const ECHO_WINDOW=3;                 // narrations kept
+  const ECHO_TAIL_MS=2500;             // how long echo can still arrive after we stop
+  // Widening the window raises the chance a *real* interruption looks like our
+  // own voice, so the threshold was re-measured rather than left at the 0.5
+  // that suited comparing against a single chunk. Swept over ten real echoes
+  // and twelve real interruptions: 0.55–0.65 separates both classes cleanly,
+  // and at 0.5 three genuine questions land on exactly 50% and get swallowed —
+  // "what is on e4", "what can I take", "knight to c6", all pushed there by the
+  // known what/white and on/one collisions. Above 0.65 a partial echo like
+  // "that's made" (67%) starts leaking through and cutting narration again.
+  const ECHO_MIN=0.6;
+  let echoRecent=[];                   // phon-code sets of what we said
+  let lastSpokeAt=0;
+  function rememberSpoken(text){
+    const codes={};
+    speechKey(text).split(' ').filter(Boolean).forEach(w=>{ codes[phon(w)]=1; });
+    echoRecent.push(codes);
+    while(echoRecent.length>ECHO_WINDOW) echoRecent.shift();
+  }
+  function echoOverlap(transcript){
     const heard=speechKey(transcript).split(' ').filter(Boolean);
-    if(heard.length<2) return;          // a syllable of echo is not an interruption
+    if(heard.length<2) return 0;       // a syllable of echo is not an interruption
     const mine={};
+    echoRecent.forEach(codes=>{ Object.keys(codes).forEach(k=>{ mine[k]=1; }); });
     speechKey(speakingText).split(' ').filter(Boolean).forEach(w=>{ mine[phon(w)]=1; });
-    const overlap=heard.filter(w=>mine[phon(w)]).length/heard.length;
-    if(overlap>=0.5){ micEvent('echo','ignored "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)'); return; }
+    return heard.filter(w=>mine[phon(w)]).length/heard.length;
+  }
+  function considerBargeIn(transcript){
+    const overlap=echoOverlap(transcript);
+    if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2) return;
+    if(overlap>=ECHO_MIN){ micEvent('echo','ignored "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)'); return; }
     cancelSpeech('voice: "'+transcript.trim().slice(0,40)+'"');
+  }
+  // The same test, for audio that arrives just after narration ended. Nothing
+  // here can reach route(), which is the point.
+  function isTrailingEcho(transcript){
+    if(Date.now()-lastSpokeAt>ECHO_TAIL_MS) return false;
+    const overlap=echoOverlap(transcript);
+    if(overlap<ECHO_MIN) return false;
+    micEvent('echo','ignored after speaking "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)');
+    return true;
   }
 
   function speak(text){ lastNarration=text; log('Board',text); say(text); }
@@ -1963,7 +2021,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r26 (2.1 release candidate)';
+  const BUILD='v2-r27 (the app stops talking to itself)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3046,11 +3104,20 @@
     if(/whose turn|who.{0,3}s turn|who moves/.test(t)) return ()=>speak((game.turn()==='w'?'White':'Black')+' to move.');
     if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
     if(mode==='puzzle'){
-      if(/next puzzle|another puzzle|next one|skip/.test(t))
+      // Measured from a real game: "next", "another" and "new puzzle" were all
+      // tried and all bounced, because only "next puzzle" was matched. When
+      // someone has just solved one, almost anything they say means the same
+      // thing, and being pedantic about which word reads as being stuck.
+      if(/^(next|another|skip|new|nother)\b|next puzzle|another puzzle|next one|new puzzle|another go|one more/.test(t))
         return ()=>{ if(puzzle&&gameOver) puzzleDone[puzzle.id]=true; savePuzzleProgress(); startPuzzle(nextPuzzle()); };
       if(/solution|give up|show me|what.{0,3}s the move|tell me/.test(t)) return puzzleSolution;
-      if(/repeat the position|say the position|the position again/.test(t))
+      if(/repeat the position|say the position|the position again|read it again|again please/.test(t))
         return ()=>speak(describePuzzle()+' '+puzzleRoster());
+      // In puzzles there is no game to restart, so "new game" means the same
+      // as "next puzzle" — it used to drop the player into a fresh chess game
+      // while the Opponent select still said Puzzles.
+      if(/new game|restart|reset/.test(t))
+        return ()=>{ savePuzzleProgress(); startPuzzle(nextPuzzle()); };
     }
     if(/new game|restart|reset/.test(t)) return startNewGame;
     if(/take back|takeback|undo/.test(t)) return takeBack;
@@ -3848,6 +3915,11 @@
         // including the app's own voice. Interim results count, because
         // interrupting has to feel immediate.
         if(speaking){ considerBargeIn(res[0]?res[0].transcript:''); continue; }
+        // Just-stopped-speaking is still us. The last echo of a narration
+        // routinely lands after `speaking` goes false, and without this it
+        // reaches route() as though the player had said it — which is how the
+        // app ended up answering its own reading of a puzzle.
+        if(res.isFinal&&isTrailingEcho(res[0]?res[0].transcript:'')) continue;
         if(res.isFinal){
           // A session that produced a result was healthy, whatever happened
           // before it; otherwise a few short sessions early in a long game

@@ -1819,3 +1819,80 @@ its job as much as one that confirms a fix. Getting a number worth printing
 would need something like twenty games per anchor at a realistic time control,
 which is an hour of compute for a label; if that ever seems worth it, the
 harness is already written.
+
+## 2026-08-22 — Day 4.7: the app was talking to itself (r27)
+
+The 2.1 verification game — the thing I could not do, because this browser has
+neither microphone nor speaker — found a real bug in under twenty minutes, and
+a bug of exactly the kind no amount of my testing would have reached.
+
+From the report, playing a puzzle with "Talk over it" on:
+
+```
++1083.3s  echo  ignored "black to play and mate" (100% ours)
++1084.0s  barge-in  voice: "black to play and mate in"  cut: "White: king a3."
++1084.5s  routing "black to play and mate in one"  → REJECTED
+```
+
+The app read the puzzle aloud, heard itself, **cut itself off mid-position**,
+and then routed its own words as though the player had spoken them. Six
+fragments were correctly ignored as echo; the seventh was not. Same thing
+thirty seconds earlier: `barge-in voice: "that's made" cut: "Solved."`
+
+**The cause was the width of the comparison.** `considerBargeIn()` matched what
+it heard against `speakingText` — the chunk playing *right now*. Recognition
+lags, so a phrase finalised from chunk N arrives while chunk N+1 is playing and
+is compared against a sentence with none of its words in it. It reads as an
+interruption every time. With the mic held open through narration this is not
+an edge case, it is the normal case.
+
+And there is a second door. The last echo of a narration usually lands *after*
+narration ends, when `speaking` is already false — so it misses the barge-in
+path entirely and goes straight to `route()`. That is OUR-58 again: the app
+taking dictation from itself. Guardrail 4 stops us *speaking* a phrase to say
+back; nothing stopped us hearing one.
+
+So the window is now the last three narrations rather than the current chunk,
+and it stays consultable for 2.5 s after we stop talking, with anything
+matching dropped before it can reach `route()`.
+
+**Widening it forced the threshold to be re-measured, and that is the part
+worth writing down.** A wider window means more of our own text to accidentally
+match, so 0.5 stops being safe. New instrument, `tools/echo-threshold.js`,
+sweeps the threshold over eleven real echoes and fifteen real interruptions:
+
+```
+  threshold   echo caught   interruptions kept
+    0.50        11/11          10/15
+    0.55        11/11          15/15   <- clean
+    0.60        11/11          15/15   <- clean   <== shipped
+    0.65        11/11          15/15   <- clean
+    0.70        10/11          15/15
+```
+
+At the old 0.5 with the new window, **five of fifteen genuine interruptions
+would have been swallowed** — "what is on e4", "what can I take", "knight to
+c6" all land on exactly 50%, pushed there by the known `what`/`white` and
+`on`/`one` collisions. Above 0.65 a partial echo like "that's made" (67%)
+starts leaking through and cutting narration again. 0.6 sits in the middle of
+the only range that separates the two classes.
+
+Both errors are bad, and asymmetrically: swallowing an interruption costs one
+un-cut sentence, and Escape, the mic button and typing all still work. Treating
+our own voice as input costs the app obeying itself.
+
+**Also from the same report:** `next`, `another` and `new puzzle` were all
+tried after solving one, and all bounced, because only `next puzzle` was
+matched. When someone has just solved a puzzle, almost anything they say means
+the same thing, and being pedantic about which word reads as being stuck — which
+is exactly how it was reported: "this puzzle is not working and is stuck".
+`new game` in puzzle mode also dropped the player into a fresh chess game while
+the Opponent select still said Puzzles; it now means the next puzzle.
+
+**One thing found and not fixed:** `tools/fake-recognizer.js` cannot complete a
+narration once the mic is open — `endSpeaking()` never fires, `micState` sticks
+at `speaking`. Verified as pre-existing by checking out r26 and reproducing it
+there, so it is not from this change, and the real browser's own timeline shows
+clean `speaking → listening` transitions throughout. It is harness rot of the
+Day 3.12 kind and it made this session's end-to-end checks harder than they
+should have been. Worth its own pass.
