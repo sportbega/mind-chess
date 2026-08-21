@@ -1546,7 +1546,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r17 (speech unlocked on a phone)';
+  const BUILD='v2-r18 (queen takes f7 is a move, not a question)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -1747,8 +1747,27 @@
     t=preprocess(t).replace(/[^a-z0-9’ ]+/g,' ').replace(/’/g,'');
     return t.replace(/\s+/g,' ').trim();
   }
+  // Measured by tools/phon-collisions.js, not guessed: these matcher words
+  // collapse onto a piece or a colour under phon(). Sound-matching them reads
+  // a question keyword out of an ordinary content word in the user's sentence,
+  // and it is the *opposite* direction from the one Q_STOP guards — Q_STOP
+  // stops "can" being heard as a piece, and nothing stopped "queen" being
+  // heard as "can".
+  //
+  // Which is exactly what happened: "queen takes f7" satisfied the "can ...
+  // take" rule (phon("can") and phon("queen") are both "kn"), so an advertised
+  // move form was answered as a question about captures instead of played —
+  // a mate on the board, silently turned into a sentence.
+  //
+  // So: content words still match by sound, which is what makes questions
+  // robust; these function words must match literally. That is the A5 rule,
+  // enforced in one place instead of remembered at 31 call sites.
+  // Re-run tools/phon-collisions.js whenever a matcher word is added.
+  const SOUND_LITERAL=new Set(['can','hers','not','look','looks','fine','what','whats',
+                               'many','the','or','here','there','has','three']);
   function hasSound(words,list){
     return list.some(w=>{
+      if(SOUND_LITERAL.has(w)) return words.some(tk=>tk===w||tk.replace(/s$/,'')===w);
       const k=phon(w);
       return words.some(tk=>tk===w||phon(tk)===k||phon(tk.replace(/s$/,''))===k);
     });
