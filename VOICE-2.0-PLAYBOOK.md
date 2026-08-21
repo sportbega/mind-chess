@@ -4,9 +4,9 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r5`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63). **Next session: A5 — [OUR-64](https://linear.app/bega-workspace/issue/OUR-64).**
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phase A and B are built and both played in real games. Next session: C1/C2.**
 >
-> **Done:** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate. **Remaining in Phase A: A5** (board questions) and A6 (self-host chess.js).
+> **Phase A is complete.** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers · A6 chess.js vendored, so a game against the computer needs no network at all.
 >
 > ### What the build actually taught us
 >
@@ -21,6 +21,10 @@
 > **Aggressive homophones need a length guard.** `nice`/`light`/`like` are what Chrome returns for a spoken "knight" in most real utterances — but the same words are filler in a sentence. Spoken moves are short; that's the cheapest reliable separator.
 >
 > **Half the input surface was missed at first.** A2 gave *moves* phonetic matching; commands stayed exact-regex, so "hide board" ("hi board", "Highboy") was rejected for a whole session. Worth remembering for A5, where question phrasing will vary at least as much.
+>
+> **Match content words by sound, function words literally** (A5, Day 3.5). Turning the phonetic matcher on question phrasing made it invent pieces and players, because short words carry almost no phonemes and collapse into each other: `can`→**queen**, `what`→**white**, `the`→**they**, `three`→**their**, plus `not`→knight, `hers`→horse, `many`→mine, `has`→his. Piece names and verbs are worth matching by sound and the recognizer really does mangle them; pronouns, colours and articles are short, common, correctly transcribed, and running them through `phon()` can only invent meaning that was never spoken. **`what`→`white` is the one to remember** — it was invisible for a whole test round because the seat under test was White, so every wrong answer came out accidentally right.
+>
+> **Keep the collision instrument.** That table was measured, not guessed, by `tools/phon-collisions.js` — it runs every word the matcher uses against the piece and ownership vocabularies and prints the overlaps. Three of the eight were unguessable. It reads `phon()`, `PIECE_WORDS` and `Q_STOP` out of `index.html` at run time rather than copying them, so it can't drift; **run it whenever a word is added to any of those lists.**
 
 **Status:** Phase A shipped (see above). Phases B–D not yet built. v1.0 is tagged and frozen (`git tag v1.0`).
 **Goal:** make the voice layer good enough that you can play a whole blindfold game without touching the keyboard — and talk to the board while you do it.
@@ -131,7 +135,7 @@ Three bands instead of two:
 **A4. Formalize the mic state machine.**
 Explicit `IDLE → LISTENING → THINKING → SPEAKING → LISTENING`, with the mic **hard-muted** during `SPEAKING`. This replaces the 120 ms timing hack in `say()` ([index.html:404](index.html)) and makes the OUR-58 class of bug structurally impossible rather than patched case-by-case.
 
-**A5. Widen the deterministic question set.** *(This is most of the "answer questions about the board" ask — and the trustworthy part of it.)*
+**A5. Widen the deterministic question set.** ✅ **Done — Day 3.5, `v2-r6`.** Thirteen computed answers; question phrasing is matched by sound (content words only — see the retrospective above). *(This was most of the "answer questions about the board" ask — and the trustworthy part of it.)*
 `matchCommand()` ([index.html:1001](index.html)) currently handles ~8 things, and `announceBoard()` dumps *every piece on the board* — unusable mid-game. Add exact, computed answers for:
 - "where are my knights?" / "where's my queen?"
 - "what's on e4?" / "is d5 empty?"
@@ -140,17 +144,36 @@ Explicit `IDLE → LISTENING → THINKING → SPEAKING → LISTENING`, with the 
 - "what were the last three moves?" / "what did I just play?"
 - "how many pieces do I have left?"
 
-⚠️ **Note:** the project pins **chess.js 0.10.3** (CDN, [index.html:10](index.html)), which has no `attackers()`. Attack/defence queries need a helper (enumerate opponent moves targeting the square) — or upgrade to chess.js 1.x, which is a breaking API change. Decide before writing A5.
+✅ **Decided:** stayed on **chess.js 0.10.3**. `attackersOf()` reads the board directly (~30 lines) instead of upgrading to 1.x for one function. Two reasons beyond avoiding a breaking change: it never mutates `game`, and it is deliberately **pseudo-legal** — enumerating `moves()` would silently drop *pinned* attackers, and a pinned piece still attacks. Telling a blindfold player their queen is safe when it isn't is the worst failure this app has.
 
-**A6. Self-host chess.js.**
-Stockfish is self-hosted but chess.js still comes from a CDN. If 2.0 is meant to work offline, fix the inconsistency.
+**A6. Self-host chess.js.** ✅ **Done — Day 3.6, `v2-r7`.** Vendored as `chess-0.10.3.js` (47KB, from `npm pack chess.js@0.10.3`, BSD-2 header intact), added to `sync-v2-preview.sh`'s copy list, and the "couldn't be fetched from the CDN" screen reworded — it can now only mean an incomplete deploy.
+
+**Verified offline properly, by making it fail rather than by assuming.** Every remaining remote URL — Google Fonts, `supabase-js`, the move sounds — was repointed at a 404 in a throwaway copy of the page, which is exactly what a `<script>` sees when a CDN is unreachable. The app boots, plays, and answers questions with all three dead: fonts fall back through their stacks, `window.supabase` is simply `undefined` and every online entry point already guards on `!db`, and the move sounds fall back to `woodFallback()`. Only the deliberate 404s appear in the console — no exceptions.
+
+**Still remote, and correctly so:** Supabase (online play is inherently networked) and Google Fonts (cosmetic, with fallbacks). "Offline" here means *vs. computer works with no network at all*, which it now does.
 
 **Done when:** you can play a full game against the computer, hands-free, and the recogniser handles a normal speaking voice without you consciously over-enunciating.
 
 ---
 
-### Phase B — The continuous loop, done safely
+### Phase B — The continuous loop, done safely  ✅ **Done — Day 3.7, `v2-r8`**
 *This is the OpenClaw-style always-on behaviour. It's mostly a discipline problem, not a technology problem.*
+
+> **How it was actually built, and the one item deliberately skipped.**
+>
+> **There is no VAD, on purpose.** Item 2 below calls for Silero via `@ricky0123/vad-web`. Against it: a multi-megabyte download in a project whose whole approach through C2 is *no downloads*; a second `getUserMedia` stream, which `primeMic()` has warned against since Day 1 as a way to destabilise Chrome's recognizer; and decisively — **the only job VAD has in Phase B is barge-in, and the recognizer is already a speech detector.** It is running, it owns the mic, it reports words. A second, worse speech detector answering a question the first one already answers is not a safety measure, it is another thing to go wrong.
+>
+> **The danger is removed structurally instead of acoustically.** With "Talk over it" on, the session runs straight through our own narration — OUR-58's setup exactly — and the first line of `onresult` is `if(speaking){ considerBargeIn(...); continue; }`. **There is deliberately no path from audio captured while speaking to `route()`.** It can cancel narration and nothing else. Hearing ourselves costs a cut-off sentence; it can never cost a move. That invariant holds even when the acoustics are terrible, which is the condition OUR-58 was reported under — worth more here than any echo-cancellation setting.
+>
+> **Echo is filtered phonetically**, against the sentence being spoken right now, reusing A2/A5's `phon()` — what comes back is what our voice *sounded like* through a speaker and a mic. Over 50% overlap is us; under, it's you.
+>
+> **Escape, the mic button and typing also interrupt**, and they work regardless of the machine's echo cancellation. That is the reliable route; voice is the nice one, and ships **off**.
+>
+> **A5 had shipped a truncation bug:** Chrome silently cuts an utterance past ~15s, and "what's on the board" measures **34 seconds**. Narration is now a chunk queue.
+>
+> **Confirmed in a real game, 2026-08-21.** The user played with "Talk over it" on and reported it working — no self-talk, no spurious cut-offs. That is the test that mattered, and the harness could never have run it.
+>
+> **Still only one game, and no timeline was captured**, so these stay worth a glance if anything ever feels off: whether the 50% echo threshold is right on other hardware, whether a full 30-minute session holds, and whether the app ever cuts itself off mid-sentence (which would mean the echo filter reading its own voice as yours). None of it is blocking anything.
 
 Always-on listening while the app is also *speaking* is exactly the setup that produced **OUR-58** (the app heard its own voice, failed to parse it, spoke a suggestion, and looped). Going always-on multiplies that risk, so the safety pieces are prerequisites, not polish:
 
@@ -160,7 +183,9 @@ Always-on listening while the app is also *speaking* is exactly the setup that p
 4. **Barge-in** — VAD fires during `SPEAKING` → cancel TTS immediately, switch to `LISTENING`. Target <200 ms. Essential once responses get chatty and long; you must be able to talk over it.
 5. **Never speak a suggestion of what to say.** The `warnSilent()` rule from OUR-58 becomes a permanent design rule, not a bug fix.
 
-**Done when:** you can leave the mic on for a 30-minute game, the app never talks to itself, and you can interrupt it mid-sentence.
+**Done when:** you can leave the mic on for a 30-minute game, the app never talks to itself, and you can interrupt it mid-sentence. ✅ *Met — verified in the harness, then played for real on 2026-08-21.*
+
+**The voice test harness** — `node tools/voice-harness.js [--fast]`, then open `/_vad-harness.html?debug=1`. Injects a scriptable `SpeechRecognition` (`__fakeSR.hear()`, `.fail()`, and an honest `_started` that drops audio when the mic is shut) plus a `speechSynthesis` that resolves at 55ms/word. Generated from the current `index.html`, never committed, so it cannot drift. **None of Phase B is testable by clicking — there is no microphone in the agent's browser** — and this found four real bugs on its first run: a sticky network backoff, two restart paths racing, a lost `onend` leaving the app deaf with every recovery gated on the missing event, and an unsound assertion of my own. ⚠️ The agent's browser clamps timers to ~1s regardless of tab focus; any sub-second timing result from it is a lie.
 
 ---
 
@@ -300,7 +325,7 @@ Ship A before C. A working matcher makes everything above it optional rather tha
 
 ## Open decisions
 
-- [ ] **chess.js 0.10.3 → 1.x?** Needed for clean `attackers()` in A5. Breaking API change; decide before A5.
+- [x] **chess.js 0.10.3 → 1.x?** ~~Needed for clean `attackers()` in A5.~~ **Closed Day 3.5: staying on 0.10.3**, with a hand-rolled `attackersOf()` that is pseudo-legal on purpose. A6 (self-hosting) is unaffected either way.
 - [ ] **Coach setting default.** Recommendation: off. Engine-backed answers are strong enough to become accidental cheating, and unsolicited hints undermine blindfold training.
 - [ ] **How coarse should evaluations be?** "Slightly better" vs "+0.43" — recommendation: words, not numbers, unless you ask for precision.
 - [ ] **Is C3 worth it at all?** Try C2 first. A 0.5–2 GB download to make phrasing nicer may not earn its place.

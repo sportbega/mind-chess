@@ -458,3 +458,264 @@ Fixed by *not guessing*: both readings are offered as extra alternatives and the
 Deployed to `/v2/` as `v2-r5`, verified by fetching the deployed file and checking the build marker and both fixes are present.
 
 Working tree: `index.html`, this DEVLOG entry. Branch `v2`, build `v2-r5`.
+
+## 2026-08-20 — Day 3.5: A5, the board answers questions (r6)
+
+Phase A's last real feature. `matchCommand()` handled about eight fixed
+phrases and `announceBoard()` read out all 32 pieces one at a time; neither is
+usable mid-game when you can't see the board. There are now thirteen computed
+answers: where a piece is, where it can go, what's on a square, what's
+attacking or defending something, what's loose, whether you're in check,
+whether you can still castle, what was played (yours, theirs, or the last N),
+how much material is left, and what you can take.
+
+**Everything is read straight off chess.js.** No engine, no model, no
+heuristics past counting material on a square. That isn't caution for its own
+sake — a blindfold player has nothing to check an answer against, so a
+confident wrong one is worse here than in any other kind of app.
+
+**chess.js stays at 0.10.3; the open decision is closed.** A5 needed
+`attackers()`, which 0.10.3 doesn't have, and the alternative was a breaking
+upgrade to 1.x for one function. Computing it from the board instead is about
+thirty lines and better on two counts: it never mutates `game` (the FEN
+round-trip would have had to, then restore it), and it stays *pseudo-legal* —
+`moves()` would have silently dropped pinned attackers, and a pinned piece
+still attacks. Telling a blindfold player their queen is safe when it isn't is
+the worst thing this app could do.
+
+**The phonetic matcher, turned on question phrasing, invents pieces and
+players.** This was the whole substance of the session. Sound-alike matching
+is what makes moves robust, and A5's note in the playbook said to expect the
+same for questions — but running it over *function* words is where it goes
+wrong, because short words carry almost no phonemes and collapse into each
+other:
+
+| heard | `phon` | collides with |
+|---|---|---|
+| `can` | `kn` | **queen** — "where can my bishop go" answered about the queen |
+| `what` | `wht` | **white** — every "what…?" question answered about White |
+| `the` | `th` | **they** — "what were *the* last three moves" read as "what did *they* play" |
+| `three` | `thr` | **their** |
+| `not`, `hers`, `many`, `has`, `here`, `there`, `or` | | knight, horse, mine, his, her, their, our |
+
+The `what`/`white` one is the instructive one: it was invisible for a whole
+round of testing because the seat under test happened to be White, so every
+wrong answer was accidentally right. It would have mangled every question in
+every game played as Black.
+
+The fix isn't more vocabulary, it's knowing where the technique applies:
+**match content words by sound, function words literally.** Piece names,
+"attacking", "defended", "kingside" — those are worth matching phonetically and
+the recognizer really does mangle them. Pronouns, colours and articles are
+short, common, and transcribed correctly nearly always; running them through
+`phon()` can only invent meaning that was never spoken. Question words are now
+a stoplist that piece detection skips entirely, and colour/ownership words are
+compared literally.
+
+**Measured, not guessed** — the same lesson as Day 3.1. The collision table
+above came out of a script that runs every word the matcher uses against the
+piece vocabulary and the ownership words and prints what overlaps. Three of the
+eight I'd never have predicted, and `three`→`their` would have broken the exact
+question the playbook uses as its own example. It's kept as
+`tools/phon-collisions.js` rather than thrown away, and it lifts `phon()`,
+`PIECE_WORDS` and `Q_STOP` out of `index.html` at run time instead of copying
+them, so it can't quietly go stale — run it after adding a word to any of those
+lists. It reports 12 collisions today, all neutralised.
+
+**Guard against the reverse failure:** every question rule needs an
+interrogative cue *and* its own keyword, and the utterance must be nine words
+or fewer. "what's on e4" contains a perfectly legal move, and playing it
+instead of answering would be unrecoverable. Verified the other direction too —
+`e4`, `nice to F3`, `bishop to c4`, `castle kingside`, `pawn to d3`,
+`night to c3` all still play, including the mangled forms from the r4/r5 logs.
+Questions are `type:'command'`, so they answer while the computer is thinking
+and after the game ends, which is when you most want them.
+
+Two smaller things: `announceBoard()` now groups by piece type and leads with
+your own side, and "what can I take" sorts by what's being won, because the
+list is cut at six and the free queen must not be the entry that got trimmed.
+
+Deployed to `/v2/` as `v2-r6`.
+
+Working tree: `index.html`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`.
+Branch `v2`, build `v2-r6`.
+
+## 2026-08-20 — Day 3.6: A6, the rules stop needing a network (r7)
+
+Phase A is done. chess.js was the last remote dependency the game actually
+needed to function: Stockfish has been self-hosted since Day 2.3, but the
+*rules engine* — the thing without which the page shows an error screen instead
+of a board — was still a CDN fetch. For an app whose whole premise is playing
+chess in your head, on a plane, that was backwards.
+
+Vendored `chess-0.10.3.js` (47KB, `npm pack chess.js@0.10.3`, BSD-2 header
+intact) next to the Stockfish files. Kept unminified — the npm package doesn't
+ship a minified build, the project has no build step, and 47KB is noise next to
+a 7.3MB `.wasm`. The version is in the filename because staying on 0.10.3 is
+now a deliberate decision (closed in A5, see Day 3.5) rather than an accident.
+
+**Staying on 0.10.3, confirmed again.** The only thing 1.x offered was
+`attackers()`, and A5 hand-rolled that. A breaking API change for nothing.
+
+**Verified offline by making it fail, not by assuming it wouldn't.** The
+temptation was to point the `<script>` at a local file, watch the page work,
+and call it offline-capable — but the page still referenced Google Fonts,
+`supabase-js` and the chess.com move sounds, and "it works on my machine with
+full internet" proves nothing about any of them. So I repointed every remaining
+remote URL at a 404 in a throwaway copy of the page, which is precisely what a
+`<script>`, `<link>` or `Audio` sees when a CDN is unreachable, and played a
+game in it:
+
+- fonts fall back through their stacks (`system-ui`, `serif`, `monospace`)
+- `window.supabase` is `undefined`, and all four online entry points already
+  guarded on `!db` — nothing throws
+- move sounds fall back to the existing `woodFallback()`
+- moves, captures, castling, PGN history and all thirteen A5 answers work
+- the console shows only the deliberate 404s, no exceptions
+
+Two things that stay remote on purpose: Supabase, because online play is
+inherently networked, and Google Fonts, because it's cosmetic and degrades.
+"Offline" here means *vs. computer works with no network at all* — and that is
+now true.
+
+Two small corrections that fell out of it:
+
+- The "Chess engine didn't load" screen said chess.js "couldn't be fetched from
+  the CDN. Check your network" — advice that can now only send someone chasing
+  the wrong thing. It names the missing file and says the deploy is incomplete,
+  which is the only way to reach it.
+- "Online play needs supabase-config.js set up" was the same kind of stale
+  certainty: with offline now a supported state, the likelier cause is no
+  network. It says both.
+
+`sync-v2-preview.sh` gained the new file in its copy list. Forgetting that
+would have left `/v2/` loading a `chess-0.10.3.js` that was never copied —
+the fail screen would have fired on the live site while working perfectly
+locally.
+
+Deployed to `/v2/` as `v2-r7`.
+
+Working tree: `index.html`, `chess-0.10.3.js`, `README.md`,
+`VOICE-2.0-PLAYBOOK.md`, this DEVLOG entry (and `sync-v2-preview.sh` on main).
+Branch `v2`, build `v2-r7`.
+
+## 2026-08-21 — Day 3.7: Phase B, the always-on loop (r8)
+
+Phase B is the always-on behaviour: leave the mic on for a whole game, never
+let the app talk to itself, and be able to cut it off mid-sentence. Four of the
+playbook's five items are done. The fifth — Silero VAD — I deliberately did not
+build, and the reasoning matters more than the code.
+
+**Why there is no VAD.** The playbook calls for `@ricky0123/vad-web` to segment
+speech. Three things argue against it here: it's a multi-megabyte model
+download in a project whose whole approach through C2 is "no downloads"; it
+needs its own `getUserMedia` stream, and `primeMic()` has carried a warning
+since Day 1 that a second capture session destabilises Chrome's recognizer; and
+most of all, **the only job VAD has in Phase B is barge-in — and the recognizer
+is already a speech detector.** It is running, it owns the microphone, and it
+tells us when it hears words. Adding a second, worse speech detector alongside
+it to answer a question the first one already answers is not a safety measure,
+it's a second thing to go wrong.
+
+**So the mic stays open during narration instead, and the danger is removed
+structurally rather than acoustically.** With "Talk over it" on, `beginSpeaking()`
+skips the `abort()` and the session runs straight through our own voice. That's
+the OUR-58 setup exactly — so the first line of `onresult` is now:
+
+```js
+if(speaking){ considerBargeIn(res[0].transcript); continue; }
+```
+
+There is deliberately **no path from audio captured while speaking to
+`route()`**. It can cancel narration. It can do nothing else. Hearing ourselves
+can cost a cut-off sentence; it can never cost a move, which is the one failure
+a blindfold player cannot survive. That invariant is what makes an open mic
+during speech acceptable at all, and it's worth more than any amount of echo
+cancellation, because it holds even when the acoustics are terrible — which is
+precisely the condition OUR-58 was reported under.
+
+**Telling our own voice from yours, without a second pipeline.** Everything
+heard while speaking is compared against the sentence being spoken right now,
+phonetically — because what comes back is what our voice *sounded like* through
+a speaker and a microphone, not what it was. A2/A5's `phon()` already does
+exactly this job. Above 50% overlap it's echo and is ignored; below, it's you,
+and narration stops. In the harness, "your nights are on be one and gee one"
+fed back against *"Your knights are on bee 1 and gee 1"* scored 100% ours and
+was correctly ignored, while "no no stop" cut the sentence off mid-word.
+
+**Interrupting without a microphone at all.** Escape, the mic button and typing
+in the text box all cancel narration instantly, and they work regardless of
+what the machine's echo cancellation is like. That's the reliable route;
+voice is the nice one. The toggle ships **off** for that reason.
+
+**A5 shipped a truncation bug and this session found it.** Chrome silently cuts
+a single utterance somewhere past ~15 seconds, and "what's on the board" now
+reads out both rosters — measured at **34 seconds** of continuous speech. It was
+being cut off and nothing said so. Narration is now a queue of sentence-sized
+chunks; verified end to end, the full roster now runs the whole 34 seconds and
+returns cleanly to idle.
+
+### The harness, and the four bugs it found
+
+None of this is testable by clicking: there is no microphone in the agent's
+browser. So `tools/voice-harness.js` injects `tools/fake-recognizer.js` into a
+throwaway copy of the page — a scriptable `SpeechRecognition` (`hear()`,
+`fail()`, and an honest `_started` that *drops* audio when the mic is shut) and
+a `speechSynthesis` that resolves at 55ms/word. Same discipline as
+`tools/phon-collisions.js`: generated from the current `index.html`, never
+committed as a copy, so it can't drift.
+
+It earned its keep immediately:
+
+1. **A network blip slowed every restart for the rest of the game.**
+   `lastErrorWasNetwork` was only ever cleared by a *different* error, so one
+   bad second of wifi left a 2.5s backoff on every session for an hour. Cleared
+   on any session that successfully opens — the backoff belongs to the problem,
+   not to the session count.
+2. **Two restart paths raced.** The stale-session recovery aborted the session
+   *and* scheduled its own restart, while the resulting `onend` scheduled
+   another. Now it only steps in when `onend` didn't arrive.
+3. **A lost `onend` left the app permanently deaf.** `listening` stays true, and
+   both `scheduleRestart()` and the watchdog are gated on it being false — every
+   mechanism designed to notice was waiting on the event that went missing.
+   This is the exact shape of a 30-minute-game failure: silent, and invisible
+   from inside. A session claiming to listen for 90 seconds without hearing
+   anything is now treated as dead, not patient.
+4. **My own test assertion was unsound.** `say()` calls
+   `speechSynthesis.cancel()` itself, so *every* narration looked like a
+   barge-in and the echo filter appeared broken when it was working perfectly.
+   Caught by checking the app's own timeline instead of my proxy for it.
+
+The debug panel now carries a mic timeline — every state transition, session,
+error, restart, watchdog save, barge-in and ignored echo, with a summary line.
+That's the deliverable for the part I can't test: one real game with `?debug=1`
+says whether this holds.
+
+### What is and isn't proven
+
+Proven in the harness and the real page: the no-route invariant (both with the
+toggle on and off), the echo filter, voice/Escape/mic-button barge-in, chunked
+narration completing a 34-second answer, network-error recovery, and
+lost-`onend` recovery.
+
+**Not proven, and not claimable:** anything acoustic. Whether real echo
+cancellation on this Mac keeps the filter above 50%, whether a real 30-minute
+session holds, and whether barge-in latency is under 200ms with real audio.
+Also unproven: the give-up-after-5-dead-sessions path — the agent's browser
+clamps timers to ~1s regardless of tab focus, so sessions can't be killed fast
+enough to trigger it. That path is unchanged Day 3.0 code and my edits can only
+make it fire *less*; the watchdog covers its purpose better anyway.
+
+Deployed to `/v2/` as `v2-r8`.
+
+**Confirmed the same day.** The user played a real game with "Talk over it" on
+and reported it working — no self-talk, no spurious cut-offs — and judged the
+diagnostics capture unnecessary. That closes the one thing the harness
+structurally could not test. Worth noting what the report does and doesn't
+carry: it's one game, subjectively fine, with no timeline captured, so it
+confirms the loop holds in practice without saying whether the echo filter ever
+actually had to fire. Both outcomes look identical from the outside, and both
+are fine. The timeline is still there in `?debug=1` if anything ever feels off.
+
+Working tree: `index.html`, `tools/fake-recognizer.js`, `tools/voice-harness.js`,
+`.gitignore`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`. Branch `v2`, build `v2-r8`.
