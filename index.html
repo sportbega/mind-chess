@@ -947,8 +947,20 @@
   // If the deadline wins, the action happens anyway and says so in the
   // timeline — a silent stall is the failure mode with no diagnosis.
   let speechIdleWaiters=[];
+  // Waiting for narration to end assumes narration *ends*. On a browser where
+  // speechSynthesis.speaking sticks true — no audio device, or Chrome losing
+  // an onend with the watchdog's own `!speaking` test then never firing either
+  // — it doesn't, and the deadline below is all that saves the game. That is
+  // fine once. Paying it on every move would turn a cosmetic problem (the
+  // reply cutting your sentence off) into a twelve-second stall per move,
+  // which is far worse than the bug this feature fixes.
+  //
+  // So the deadline is also a verdict: once it fires, stop waiting for the
+  // rest of the session and go back to replying immediately. One stall, then
+  // it degrades to exactly the pre-r21 behaviour instead of compounding.
+  let speechEndTrusted=true;
   function whenSpeechIdle(fn,maxWaitMs){
-    if(!speaking||!voiceOn){ fn(); return; }
+    if(!speaking||!voiceOn||!speechEndTrusted){ fn(); return; }
     const entry={done:false};
     entry.fire=(why)=>{
       if(entry.done) return;
@@ -958,7 +970,10 @@
       if(why) micEvent('tts',why);
       fn();
     };
-    entry.timer=setTimeout(()=>entry.fire('narration never ended after '+maxWaitMs+'ms — moving anyway'),maxWaitMs);
+    entry.timer=setTimeout(()=>{
+      speechEndTrusted=false;
+      entry.fire('narration never ended after '+maxWaitMs+'ms — moving anyway, and not waiting again this session');
+    },maxWaitMs);
     speechIdleWaiters.push(entry);
   }
   function releaseSpeechIdle(){
@@ -1869,7 +1884,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r21 (one ladder, and a reply that waits its turn)';
+  const BUILD='v2-r22 (wait for narration, but only ever once in vain)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

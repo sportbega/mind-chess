@@ -1542,3 +1542,43 @@ playback path all run exactly as they ship. It found the `promoteReserve()` bug
 on its second run.
 
 All four instruments re-run and still build from the current `index.html`.
+
+## 2026-08-21 — Day 4.2: never wait in vain twice (r22)
+
+Caught by smoke-testing the *published* preview rather than the local copy,
+which is the only reason it was caught at all.
+
+`/v2/` served r21 correctly, but the computer's reply took twelve seconds to
+arrive. Diagnosis: `speechSynthesis.speaking` is stuck `true` in that browser
+(no audio device), so narration never "ends", and the reply was being released
+by the deadline rather than by the sentence finishing.
+
+The deadline did its job — the game never stalled permanently. But it exposed
+a regression that r21 had introduced and the local tests had all stepped
+around: **on any browser where speech-end is unreliable, every computer move
+now costs a twelve-second wait**, where before it merely got cut off. That
+trades a cosmetic problem for a much worse one. And it is not exotic — the
+app's own chunk watchdog tests `!speechSynthesis.speaking`, so the same stuck
+flag defeats the watchdog too; a lost `onend` in Chrome lands in exactly this
+state.
+
+The fix is to treat the deadline as a verdict rather than only a rescue. Once
+it fires, `speechEndTrusted` goes false and nothing waits for narration again
+for the rest of the session. One stall, then the app degrades to precisely the
+pre-r21 behaviour instead of paying it every move. Measured on the browser that
+actually has the fault:
+
+```
+player e4    0.1s  →  computer replies 12.8s     ← deadline, once
+player Nf3  15.8s  →  computer replies 16.5s     ← 0.7s
+player Bc4  20.9s  →  computer replies 21.4s     ← 0.5s
+```
+
+**The lesson is about where the test ran, not about speech.** Every local test
+of r21 either stubbed `speaking` to behave properly or drove the fake Kokoro
+path, which ends via `<audio>`'s own `onended` and therefore never touched the
+stuck flag. The one environment that reproduced it was the real deployed site
+opened cold — and the only reason it got opened was a habit of checking what
+was published rather than trusting what was pushed. A fallback that fires on
+every move is not a fallback; it is the new normal path, and it needs to be
+measured as one.
