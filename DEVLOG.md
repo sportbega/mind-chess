@@ -719,3 +719,77 @@ are fine. The timeline is still there in `?debug=1` if anything ever feels off.
 
 Working tree: `index.html`, `tools/fake-recognizer.js`, `tools/voice-harness.js`,
 `.gitignore`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`. Branch `v2`, build `v2-r8`.
+
+## 2026-08-21 — Day 3.8: C1 + C2, the coach (r9)
+
+Phase C's premise is that the smartest chess entity available has been sitting
+in the repo since Day 2.3. Asked "how am I doing", a language model produces a
+plausible-sounding guess; Stockfish produces a number it actually computed. For
+the one question where being wrong hurts a blindfold player most, the free
+option is also the correct one. So C1 isn't "add an AI" — it's connecting the
+engine already here to the conversation.
+
+**It defaults to off, which is the whole point.** This app exists to make you
+hold the board in your head, and an engine murmuring "watch f7" removes the
+thing you came to practise. Three levels: `off` (board facts only), `hints`
+(coarse words, never a number, never a move), `full` (numbers, and the best
+move if you ask for it). "Coach on" turns it on in one utterance, and the
+off-reply says so rather than being a dead end. Naming a move stays behind
+`full` on purpose — that's the level that's actually cheating.
+
+**What it answers:** *how am I doing* (eval, bucketed into words), *what should
+I worry about* (their best move), *is my king safe* (does their best line check
+you in the next few plies), and at `full`, *what's the best move*. "Am I hanging
+anything" stayed with A5's deterministic version — it's exact and free, and the
+engine adds nothing to it.
+
+**The null-move trick.** "What are they threatening?" is "what would they play
+if it were their move", so hand them the move: flip the side-to-move in the FEN
+and analyse that. Not legal chess, but a legal *position* — as long as the side
+losing the move isn't already in check, which is exactly when the threat is the
+check and there's nothing to compute anyway.
+
+**One worker, one `onmessage` slot, and now two callers.** The Master level and
+the coach share the engine, and `stockfishBestMove` installs a handler and nulls
+it — overlap them and the second silently steals the first's `bestmove`. Both go
+through a promise queue now. Verified by racing them deliberately: coach answered,
+Master still played its move.
+
+**The sign convention is the easiest thing here to get catastrophically wrong.**
+UCI reports from the seat of whoever is to move, so a naive read tells a player
+they're winning while they're being mated — the exact failure this app can least
+afford. Tested by loading one position (White has just given up the queen for a
+pawn) from both seats: **−5.6 as White, +5.7 as Black.** That test is worth more
+than the code it checks.
+
+### C2 — "chatty" is a writing problem, not a model problem
+
+- **Varied phrasing** via `pick()`, which never repeats the same choice twice
+  running. It varies the sentence *around* a fact, never the fact.
+- **Terse and Standard were byte-identical** in `describeMove` and had been
+  since v1.0 — two settings, one behaviour, nobody noticed. Terse is now
+  actually terse: mid-game you already know whose move it was.
+- **Conversational state that's pure computation.** "You've lost the right to
+  castle", "your rooks are connected" — every clause is something a sighted
+  player would simply see, appended to the eval answer.
+- **It remembers what you keep losing.** Ask about the same square three times
+  and the next move that touches it says so: *"Pawn to dee 4. You've been asking
+  about dee 4; that's the one that just changed."* Bounded hard — three asks, and
+  at most one reminder a minute — because this is the feature most likely to
+  become noise.
+
+The counter was wired into `questionTargets()`, which the attack and defence
+rules use — and *not* the two rules that ask about a square most often ("what's
+on d4", "where are my knights"). It counted almost nothing until that was fixed.
+
+**Two smaller things caught in testing.** `coach on` was written as a question
+rule and never fired once: every rule in `matchQuestion` is gated on an
+interrogative cue, and "coach on" hasn't got one. It's a command, and it lives in
+`matchCommand` now. And `tools/phon-collisions.js` found three new collisions the
+moment C1's vocabulary went in — including **`fine` → `phone` → pawn**, so "is my
+king fine" would have gone looking for a pawn.
+
+Deployed to `/v2/` as `v2-r9`.
+
+Working tree: `index.html`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`.
+Branch `v2`, build `v2-r9`.

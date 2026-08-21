@@ -255,6 +255,14 @@
       </select>
     </div>
     <div class="field">
+      <label for="coachSelect">Coach</label>
+      <select id="coachSelect">
+        <option value="off" selected>Off</option>
+        <option value="hints">Hints</option>
+        <option value="full">Full</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="verbositySelect">Narration</label>
       <select id="verbositySelect">
         <option value="terse" selected>Terse</option>
@@ -321,6 +329,9 @@
         <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
         <code>how many pieces do I have</code>, <code>what can I take</code></li>
       <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
+      <li><b>Ask the engine</b> (needs <b>Coach</b> on — say <code>coach on</code>) — <code>how am I doing</code>,
+        <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
+        number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
       <li><b>Interrupt it</b> — press <kbd>Esc</kbd> (or tap the mic) any time it's talking. <b>Talk over it</b>
         does the same by voice, but it leaves the mic open while the app speaks, so it depends on your machine's
         echo cancellation — try it, and turn it off if it cuts itself short.</li>
@@ -350,6 +361,7 @@
   let searchDepth = 2;
   let masterLevel = false;    // Level select = "Master": use Stockfish instead of the custom engine
   let verbosity = 'terse';
+  let coach = 'off';       // off | hints | full — engine-backed answers (C1)
   let voiceOn = true;
   let handsFree = true;
   let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
@@ -402,7 +414,7 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
-        verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
+        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
@@ -778,7 +790,10 @@
       base=cap(piece)+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
       if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
     }
-    if(v==='terse') return color+' plays. '+base+'.';
+    // These two were byte-identical, so "Terse" and "Standard" have been the
+    // same setting since v1.0. Terse is now actually terse: mid-game you
+    // already know whose move it was.
+    if(v==='terse') return cap(base)+'.';
     if(v==='standard') return color+' plays. '+base+'.';
     let t=color+' plays '+piece+' from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
     if(m.captured) t+=' Captures the '+PIECE_NAME[m.captured]+'.';
@@ -835,7 +850,7 @@
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
     playMoveSound(!!applied.captured);
-    speak(describeMove(applied,verbosity)+endSuffix());
+    speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied));
     if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); }
     renderAll();
     if(mode==='online') saveOnline();
@@ -929,8 +944,20 @@
     sfInitPromise.catch(()=>{ sfInitPromise=null; });
     return sfInitPromise;
   }
+  // One worker, one `onmessage` slot, and now two callers: the Master level
+  // playing a move and the coach analysing on demand. Overlap them and the
+  // second handler silently steals the first one's `bestmove`. Everything
+  // that talks to the engine queues here.
+  let sfChain = Promise.resolve();
+  function sfQueue(fn){
+    const run = () => fn();
+    const p = sfChain.then(run, run);
+    sfChain = p.then(()=>{}, ()=>{});
+    return p;
+  }
+
   function stockfishBestMove(fen, movetimeMs){
-    return stockfishInit().then(worker=>new Promise(resolve=>{
+    return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
       worker.onmessage = function(e){
         const line = e.data;
         if(typeof line==='string' && line.indexOf('bestmove')===0){
@@ -940,7 +967,35 @@
       };
       worker.postMessage('position fen '+fen);
       worker.postMessage('go movetime '+movetimeMs);
-    }));
+    })));
+  }
+
+  // Same search, but keeping the last `info` line — that is where the score
+  // and the principal variation live. Returns the score from the point of
+  // view of whoever is to move in `fen`, which is UCI's convention and the
+  // single easiest thing to get backwards here.
+  function stockfishAnalyse(fen, movetimeMs){
+    return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
+      let best=null;
+      worker.onmessage = function(e){
+        const line = e.data;
+        if(typeof line!=='string') return;
+        if(line.indexOf('info ')===0 && line.indexOf(' pv ')!==-1){
+          const sc=line.match(/ score (cp|mate) (-?\d+)/);
+          if(!sc) return;
+          const d=line.match(/ depth (\d+)/);
+          best={ kind:sc[1], value:+sc[2], depth:d?+d[1]:0,
+                 pv:line.slice(line.indexOf(' pv ')+4).trim().split(/\s+/) };
+        }else if(line.indexOf('bestmove')===0){
+          worker.onmessage = null;
+          const uci=line.split(' ')[1];
+          if(best) best.bestmove=uci;
+          resolve(best);
+        }
+      };
+      worker.postMessage('position fen '+fen);
+      worker.postMessage('go movetime '+movetimeMs);
+    })));
   }
   function uciToMoveSpec(uci){
     return {from:uci.slice(0,2), to:uci.slice(2,4), promotion:uci.length>4?uci[4]:undefined};
@@ -1166,7 +1221,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r8 (always-on loop, barge-in)';
+  const BUILD='v2-r9 (coach: engine answers)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -1396,7 +1451,13 @@
     +'cheque czech chek empty occupied occupies holds has have free vacant stands sits board state describe '
     +'read material time clock remaining piece pieces count square squares side sides white black opponent '
     +'opponents enemy computer locate find get got make made turn one two three four five six seven eight '
-    +'nine ten').split(' '));
+    +'nine ten '
+    // C1's vocabulary. "king" is deliberately absent: it is a real piece word
+    // and "where is my king" has to keep working.
+    +'coach coaching couch doing standing position eval evaluation score winning losing better worse '
+    +'going look looks looking worry worried worrying threaten worrier plan plans planning coming safe '
+    +'safety ok okay fine exposed best should recommend recommends suggest suggests advice hint hints '
+    +'full everything stop quiet on off').split(' '));
   function questionPiece(words){
     for(let i=0;i<words.length;i++){
       if(Q_STOP.has(words[i])) continue;
@@ -1443,9 +1504,168 @@
   // "what's attacking my queen" names a piece; "is e5 attacked" names a
   // square. Both come back as a list of squares to examine.
   function questionTargets(words,sqs){
-    if(sqs.length) return sqs.slice(0,3);
-    const p=questionPiece(words);
-    return p?pieceSquares(askedColor(words),p):[];
+    const out=sqs.length?sqs.slice(0,3):(()=>{
+      const p=questionPiece(words);
+      return p?pieceSquares(askedColor(words),p):[];
+    })();
+    noteAsked(out);
+    return out;
+  }
+
+  // You ask about the same square three times because you keep losing track
+  // of it. Noticing that is free, and remembering it for you is the one bit
+  // of "chatty" that earns its place in blindfold play. Rare on purpose —
+  // three asks, and at most one reminder a minute.
+  const askedAbout={};
+  let lastNudgeAt=0;
+  function noteAsked(sqs){
+    (sqs||[]).forEach(sq=>{ askedAbout[sq]=(askedAbout[sq]||0)+1; });
+  }
+  function recallNudge(m){
+    if(!m||Date.now()-lastNudgeAt<90000) return '';
+    const hit=[m.to,m.from].filter(sq=>(askedAbout[sq]||0)>=3)[0];
+    if(!hit) return '';
+    lastNudgeAt=Date.now();
+    return ' '+pick(['That’s '+spokenSquare(hit)+' — the square you keep checking.',
+                     'You’ve been asking about '+spokenSquare(hit)+'; that’s the one that just changed.']);
+  }
+
+  // ===============================================================
+  // The coach (C1) — Stockfish's judgement, worded coarsely on purpose
+  // ===============================================================
+  // The smartest chess entity available here has been sitting in the repo
+  // since Day 2.3. Asked "how am I doing", a language model produces a
+  // plausible guess; Stockfish produces a number it actually computed. For
+  // the one question where being wrong hurts a blindfold player most, the
+  // free option is also the correct one.
+  //
+  // Which is exactly why it defaults to OFF. This app exists to make you hold
+  // the board in your head, and an engine murmuring "watch f7" removes the
+  // thing you came to practise. Say "coach on" when you want it.
+  const COACH_MS=600;          // judgement, not playing strength
+  let coachGeneration=0;
+
+  // Several phrasings per answer, so it stops sounding like a vending machine
+  // (C2). Never varies a *fact* — only the sentence around it. The last
+  // choice is remembered so the same one doesn't land twice running, which is
+  // the thing that actually reads as robotic.
+  const lastPick={};
+  function pick(list){
+    if(list.length===1) return list[0];
+    const key=list[0];
+    let i=Math.floor(Math.random()*list.length);
+    if(list[i]===lastPick[key]) i=(i+1)%list.length;
+    lastPick[key]=list[i];
+    return list[i];
+  }
+
+  // "What are they threatening?" is "what would they play if it were their
+  // move" — so hand them the move. A null move isn't legal chess, but it is a
+  // legal position as long as the side about to lose the move isn't in check,
+  // which is precisely when the threat is the check and there is nothing to
+  // compute anyway.
+  function nullMoveFen(){
+    if(game.in_check()) return null;
+    const parts=game.fen().split(' ');
+    parts[1]=parts[1]==='w'?'b':'w';
+    parts[3]='-';              // an en-passant square belongs to the move that created it
+    parts[4]='0';
+    const fen=parts.join(' ');
+    const probe=new Chess();
+    return probe.load(fen)?fen:null;
+  }
+
+  function describeUci(fen,uci){
+    if(!uci||uci.length<4) return null;
+    const probe=new Chess();
+    if(!probe.load(fen)) return null;
+    return probe.move({from:uci.slice(0,2),to:uci.slice(2,4),
+                       promotion:uci.length>4?uci[4]:undefined})||null;
+  }
+
+  // Does the side that moves first in this line give check in its first few
+  // moves? Cheaper and more honest than inventing a "king safety score".
+  function pvGivesCheck(fen,pv,plies){
+    const probe=new Chess();
+    if(!probe.load(fen)) return null;
+    for(let i=0;i<Math.min(plies,pv.length);i++){
+      const u=pv[i];
+      const m=probe.move({from:u.slice(0,2),to:u.slice(2,4),promotion:u.length>4?u[4]:undefined});
+      if(!m) return null;
+      if(i%2===0 && probe.in_check()) return m;
+    }
+    return null;
+  }
+
+  // UCI reports from the seat of whoever is to move. Getting this backwards
+  // is the single easiest mistake here, and it would tell a blindfold player
+  // they're winning while they're being mated.
+  function scoreFromMySeat(res,fen){
+    const mover=(fen||game.fen()).split(' ')[1];
+    return res.value*(mover===myColor()?1:-1);
+  }
+
+  function evalSentence(res,fen){
+    if(res.kind==='mate'){
+      const forMe=scoreFromMySeat(res,fen)>0;
+      return forMe?pick(['There’s a forced mate for you.','You have mate here.','That’s a forced mate for you.'])
+                  :pick(['There’s a forced mate against you.','You’re getting mated.','They have a forced mate.']);
+    }
+    const cp=scoreFromMySeat(res,fen), a=Math.abs(cp), mine=cp>0;
+    const exact=coach==='full'?' ('+(cp/100>=0?'+':'')+(cp/100).toFixed(1)+')':'';
+    if(a<30) return pick(['It’s about level.','Dead level.','Roughly balanced.'])+exact;
+    if(a<90) return (mine?pick(['You’re a shade better.','You’re slightly better.','You’re a touch ahead.'])
+                         :pick(['You’re a shade worse.','You’re slightly worse.','They’re a touch ahead.']))+exact;
+    if(a<250) return (mine?pick(['You’re clearly better.','You’re well on top.','You’ve got the better of it.'])
+                          :pick(['You’re clearly worse.','They’re well on top.','They’ve got the better of it.']))+exact;
+    if(a<600) return (mine?pick(['You’re winning.','This should be winning for you.'])
+                          :pick(['You’re losing this.','This is going badly.']))+exact;
+    return (mine?pick(['You’re completely winning.','This is over — in your favour.'])
+                :pick(['You’re completely lost.','This is over, and not in your favour.']))+exact;
+  }
+
+  // Pure computation, but it reads like conversation (C2) — and every clause
+  // is something a sighted player would simply see.
+  function positionNotes(){
+    const notes=[], me=myColor(), rights=game.fen().split(' ')[2];
+    const castled=game.history().some(h=>h==='O-O'||h==='O-O-O'||/^O-O/.test(h));
+    const canCastle=rights.indexOf(me==='w'?'K':'k')!==-1||rights.indexOf(me==='w'?'Q':'q')!==-1;
+    if(!canCastle&&castled) notes.push('you’ve castled');
+    else if(!canCastle) notes.push('you’ve lost the right to castle');
+    const rooks=pieceSquares(me,'r');
+    if(rooks.length===2&&rooks[0][1]===rooks[1][1]){
+      const rank=rooks[0][1], a=FILES.indexOf(rooks[0][0]), b=FILES.indexOf(rooks[1][0]);
+      let clear=true;
+      for(let f=Math.min(a,b)+1;f<Math.max(a,b);f++) if(game.get(FILES[f]+rank)) clear=false;
+      if(clear) notes.push('your rooks are connected');
+    }
+    if(game.in_check()) notes.push('you’re in check');
+    return notes;
+  }
+
+  function coachOffReply(){
+    warn(pick(['The coach is off — say “coach on” if you want the engine’s read.',
+               'Coach is off. Say “coach on” to let the engine answer that.']));
+  }
+
+  // Every coach answer runs through here: it is the only place that has to
+  // know the engine is 7.3MB, lazily loaded, shared with the Master level and
+  // occasionally absent.
+  function askEngine(fen,then){
+    if(coach==='off'){ coachOffReply(); return; }
+    const g=++coachGeneration, gen=generation;
+    note('Thinking…');
+    speak(pick(['Let me look.','One moment.','Checking.']));
+    stockfishAnalyse(fen,COACH_MS).then(res=>{
+      if(g!==coachGeneration||gen!==generation) return;   // superseded, or the game moved on
+      note('');
+      if(!res){ warn('The engine didn’t come back with anything.'); return; }
+      then(res);
+    }).catch(err=>{
+      if(g!==coachGeneration) return;
+      note('');
+      warn('The engine isn’t available — '+((err&&err.message)||'it failed to load')+'.');
+    });
   }
 
   // Every rule needs an interrogative cue *and* its own keyword, which is
@@ -1463,11 +1683,86 @@
     if(!hasSound(words,Q_CUE)) return null;
     const sqs=squaresIn(t);
 
+    // --- how am I doing? ---
+    if((hasSound(words,['doing','standing','position','eval','evaluation','score','winning','losing','better','worse'])
+        &&hasSound(words,['how','who','what','am','is','are','i','my','doing']))
+       ||(hasSound(words,['how'])&&hasSound(words,['doing','going','look','looks','looking']))){
+      return ()=>{
+        if(coach==='off'){ coachOffReply(); return; }
+        askEngine(game.fen(),res=>{
+          const notes=positionNotes();
+          speak(evalSentence(res)+(notes.length&&verbosity!=='terse'?' '+cap(joinAnd(notes))+'.':''));
+        });
+      };
+    }
+
+    // --- what should I worry about? / what are they threatening? ---
+    if(hasSound(words,['worry','worried','threat','threats','threatening','threaten','threatens','danger','plan','planning','coming'])){
+      return ()=>{
+        if(coach==='off'){ coachOffReply(); return; }
+        if(game.in_check()){
+          const ksq=pieceSquares(myColor(),'k')[0];
+          const by=ksq?attackersOf(ksq,foeColor()):[];
+          speak('You’re in check'+(by.length?', from '+joinAnd(by.map(pieceAt)):'')+'. That first.');
+          return;
+        }
+        // If it's already their move, the threat is just their best move.
+        const theirTurn=game.turn()!==myColor();
+        const fen=theirTurn?game.fen():nullMoveFen();
+        if(!fen){ speak('Can’t work that one out from here.'); return; }
+        askEngine(fen,res=>{
+          const m=res.pv&&res.pv.length?describeUci(fen,res.pv[0]):null;
+          if(!m){ speak('Nothing obvious.'); return; }
+          const what=m.captured?pick(['they want to take '+pieceAt(m.to)+'.',
+                                      'they’re after '+pieceAt(m.to)+'.'])
+                    :pick(['their '+PIECE_NAME[m.piece]+' is eyeing '+spokenSquare(m.to)+'.',
+                           'watch their '+PIECE_NAME[m.piece]+' coming to '+spokenSquare(m.to)+'.',
+                           'they’d like the '+PIECE_NAME[m.piece]+' on '+spokenSquare(m.to)+'.']);
+          speak(cap(what));
+        });
+      };
+    }
+
+    // --- is my king safe? ---
+    if(hasSound(words,['king','kings'])&&hasSound(words,['safe','safety','ok','okay','fine','exposed','danger','dangerous'])){
+      return ()=>{
+        if(coach==='off'){ coachOffReply(); return; }
+        if(game.in_check()){ speak('No — you’re in check right now.'); return; }
+        const theirTurn=game.turn()!==myColor();
+        const fen=theirTurn?game.fen():nullMoveFen();
+        if(!fen){ speak('Can’t work that one out from here.'); return; }
+        askEngine(fen,res=>{
+          const chk=res.pv?pvGivesCheck(fen,res.pv,5):null;
+          if(chk){ speak(pick(['Not entirely — they have a check with the '+PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to)+'.',
+                               'There’s a check coming: '+PIECE_NAME[chk.piece]+' to '+spokenSquare(chk.to)+'.'])); return; }
+          speak(pick(['No immediate threats to your king.','Your king looks fine for now.','Nothing at your king right now.']));
+        });
+      };
+    }
+
+    // --- what should I play? (deliberately gated behind Coach: full) ---
+    if(hasSound(words,['best','should','recommend','suggest','advice'])
+       &&hasSound(words,['move','moves','play','do'])){
+      return ()=>{
+        if(coach!=='full'){
+          warn(coach==='off'
+            ? 'The coach is off. Even on, I’ll only name a move at “coach full”.'
+            : 'Not at this setting — say “coach full” if you really want the move.');
+          return;
+        }
+        askEngine(game.fen(),res=>{
+          const m=res.bestmove?describeUci(game.fen(),res.bestmove):null;
+          speak(m?'Engine likes '+cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to)+'.'
+                 :'No move came back.');
+        });
+      };
+    }
+
     // --- am I in check? ---
     if(hasSound(words,['check','cheque','czech','chek'])&&hasSound(words,['am','is','are','was','in','i','we'])){
       return ()=>{
         if(game.in_checkmate()){ speak('Checkmate. '+colorName(game.turn())+' is mated.'); return; }
-        if(!game.in_check()){ speak('No — nobody is in check.'); return; }
+        if(!game.in_check()){ speak(pick(['No — nobody is in check.','No check.','No, you’re fine.'])); return; }
         const side=game.turn(), ksq=pieceSquares(side,'k')[0];
         const by=ksq?attackersOf(ksq,side==='w'?'b':'w'):[];
         speak('Yes — '+(side===myColor()?'you are':colorName(side)+' is')+' in check'
@@ -1504,6 +1799,7 @@
         const c=askedColor(words);
         return ()=>{
           const at=pieceSquares(c,piece), name=PIECE_NAME[piece], mine=c===myColor();
+          noteAsked(at);
           if(!at.length){ speak((mine?'You have':colorName(c)+' has')+' no '+name+' left.'); return; }
           if(!wantMoves){
             speak(cap(owns(c))+' '+(at.length>1?name+'s are on ':name+' is on ')+sqList(at)+'.');
@@ -1534,7 +1830,7 @@
           const by=attackersOf(s,side==='w'?'b':'w');
           const subject=p?cap(owns(p.color))+' '+PIECE_NAME[p.type]+' on '+spokenSquare(s):cap(spokenSquare(s));
           return by.length?subject+' is attacked by '+joinAnd(by.map(pieceAt))
-                         :subject+' is not attacked';
+                         :subject+pick([' is not attacked',' isn’t under attack',' has nothing hitting it']);
         }).join('. ')+'.');
       };
     }
@@ -1550,7 +1846,7 @@
           const by=attackersOf(s,side).filter(a=>a!==s);
           const subject=p?cap(owns(p.color))+' '+PIECE_NAME[p.type]+' on '+spokenSquare(s):cap(spokenSquare(s));
           return by.length?subject+' is defended by '+joinAnd(by.map(pieceAt))
-                         :subject+' is undefended';
+                         :subject+pick([' is undefended',' has nothing defending it',' is on its own']);
         }).join('. ')+'.');
       };
     }
@@ -1625,7 +1921,7 @@
         // free queen must never be the entry that got trimmed.
         const caps=game.moves({verbose:true}).filter(m=>m.captured)
           .sort((a,b)=>PIECE_VALUE[b.captured]-PIECE_VALUE[a.captured]);
-        if(!caps.length){ speak('No captures available.'); return; }
+        if(!caps.length){ speak(pick(['No captures available.','Nothing to take right now.','There’s nothing hanging for you.'])); return; }
         speak('You can take '+joinAnd(caps.slice(0,6).map(m=>
           'the '+PIECE_NAME[m.captured]+' on '+spokenSquare(m.to)+' with the '+PIECE_NAME[m.piece]+' from '+spokenSquare(m.from)))
           +(caps.length>6?', and more':'')+'.');
@@ -1636,6 +1932,7 @@
     if(sqs.length&&hasSound(words,['on','empty','occupied','occupies','there','what','whats',
                                    'anything','holds','has','free','vacant','stands','sits'])){
       return ()=>{
+        noteAsked(sqs.slice(0,3));
         speak(sentence(joinAnd(sqs.slice(0,3).map(s=>{
           const p=game.get(s);
           return p?spokenSquare(s)+' has '+owns(p.color)+' '+PIECE_NAME[p.type]
@@ -1665,7 +1962,26 @@
     if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
     if(/new game|restart|reset/.test(t)) return startNewGame;
     if(/take back|takeback|undo/.test(t)) return takeBack;
-    return null;
+    // "coach on" is a command, not a question. It was in matchQuestion at
+    // first and never fired once — every rule there is gated on an
+    // interrogative cue, and "coach on" hasn't got one. Matched by sound
+    // because "coach" comes back as "couch" often enough to matter.
+    return matchCoachCommand(t);
+  }
+
+  function matchCoachCommand(t){
+    const words=t.split(/\s+/).filter(Boolean);
+    if(words.length>4||!hasSound(words,['coach','coaching','couch'])) return null;
+    return ()=>{
+      const want=hasWord(words,['off','stop','quiet','no'])?'off'
+                :hasSound(words,['full','everything','numbers'])?'full'
+                :hasWord(words,['on','yes'])||hasSound(words,['hints','hint','help'])?'hints':null;
+      if(!want){ speak('The coach is '+coach+'.'); return; }
+      coach=want; coachSelect.value=coach; saveState();
+      speak(coach==='off'?'Coach off. Board facts only.'
+           :coach==='full'?'Coach on, full — numbers, and the best move if you ask for it.'
+           :'Coach on. I’ll keep it vague on purpose.');
+    };
   }
   // Reading all 32 pieces out one at a time is unusable mid-game, which is
   // exactly what this did. Group them by piece type and lead with the side
@@ -2629,6 +2945,7 @@
     saveState();
   });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
+  coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
   voiceToggle.addEventListener('change',()=>{
     voiceOn=voiceToggle.checked;
     // Cancelling mid-utterance means onend never fires, so release the
@@ -2667,7 +2984,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -2687,6 +3004,7 @@
       searchDepth=saved.searchDepth||2; masterLevel=!!saved.masterLevel;
       levelSelect.value=masterLevel?'master':String(searchDepth);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
+      coach=saved.coach||'off'; coachSelect.value=coach;
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
