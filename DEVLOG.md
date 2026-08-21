@@ -904,4 +904,17 @@ Also carried over from chasing the "Kokoro speaks Chinese" report: the voice
 menu now shows Kokoro's own grades and quarantines the twelve D/F voices, so
 `am_adam` (F+) isn't sitting unlabelled next to Heart (A).
 
-Deployed to `/v2/` as `v2-r12`. Branch `v2`.
+**Follow-up (r13): a short first bite.** On the live site the roster answer's
+opening chunk took **3158 ms** — 139 characters, and generation scales with
+length. Only the first chunk is ever *heard* as a wait, so Kokoro now gets a
+deliberately small opener (≤60 chars) and catches up behind the sound of its
+own speech. That dropped it to **1076 ms**.
+
+Honest about what that did and didn't fix: the sequence measured
+1076 / 46 / 972 / 39 ms. Prefetch is clearly working — 46 ms and 39 ms are
+already-rendered chunks — but it isn't covering *every* chunk, and I couldn't
+account for the alternation from reading the code. Average latency is roughly
+halved and the worst case is a third of what it was; the remaining ~1 s on some
+middle chunks is worth a look next session rather than a claim that it's solved.
+
+Deployed to `/v2/` as `v2-r13`. Branch `v2`.
