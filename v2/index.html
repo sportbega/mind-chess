@@ -1963,7 +1963,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r25 (puzzles sized for a head)';
+  const BUILD='v2-r26 (2.1 release candidate)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4807,7 +4807,7 @@
   function reportSettings(){
     return ['mode='+mode,'level='+levelSelect.value,'speech='+ttsEngine,
             'hearing='+sttEngine,'voice='+(ttsEngine==='kokoro'?kokoroVoice:(voiceURI||'default')),
-            'rate='+speechRate,'coach='+coach,'narration='+verbosity,
+            'rate='+speechRate,'coach='+coach,'tips='+tips,'narration='+verbosity,
             'speak='+voiceOn,'keep-listening='+handsFree,'talk-over='+bargeIn,
             'unlocked='+speechUnlocked,'seat='+(humanColor==='w'?'white':'black'),
             'board='+(boardHidden?'hidden':'shown')].join('  ·  ');
