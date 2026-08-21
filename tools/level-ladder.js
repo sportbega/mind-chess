@@ -70,7 +70,8 @@ const html = `<!doctype html>
 </style>
 <h1>Level ladder bench</h1>
 <p class="sub">Generated from index.html — ${games} game(s) per pairing, colours alternate.</p>
-<button id="run">Run</button>
+<button id="run">Run ladder</button>
+<button id="runElo">Run Elo anchoring</button>
 <pre id="out"></pre>
 <script src="chess-0.10.3.js"></script>
 <script>
@@ -191,6 +192,87 @@ const MATCHUPS=[
   [{label:'Sharp', spec:LEVELS['3']},      {label:'Club',  spec:LEVELS['2']}],
   [{label:'Master',spec:LEVELS['master']}, {label:'Sharp', spec:LEVELS['3']}]
 ];
+
+// ---- Elo anchoring ----
+// Stockfish carries its own strength calibration (UCI_LimitStrength + UCI_Elo),
+// which is the only Elo scale available here that wasn't invented by us. So:
+// play each rung against a few of those settings and see where it sits.
+//
+// Read the caveat before believing a number. UCI_Elo is calibrated for normal
+// time control, and these anchors get ANCHOR_MS a move so the whole thing
+// finishes this century — which makes them weaker than their label. The
+// honest reading of a result is therefore "plays about evenly with Stockfish's
+// own Elo-N setting at ANCHOR_MS a move", not "is rated N". Treat it as an
+// ordering with a rough scale attached, and if the brackets come out wide,
+// that is the measurement telling you not to print a number in the UI.
+const ANCHOR_MS=250;
+const ANCHORS=[1320,1600,2000,2400];
+const ELO_GAMES=2;
+
+function anchorPlayer(elo){
+  return { label:'Elo'+elo, move:g=>sfInit().then(w=>new Promise(resolve=>{
+    w.onmessage=e=>{
+      const line=e.data;
+      if(typeof line==='string'&&line.indexOf('bestmove')===0){ w.onmessage=null; resolve(line.split(' ')[1]); }
+    };
+    w.postMessage('setoption name UCI_LimitStrength value true');
+    w.postMessage('setoption name UCI_Elo value '+elo);
+    w.postMessage('setoption name Skill Level value 20');
+    w.postMessage('position fen '+g.fen());
+    w.postMessage('go movetime '+ANCHOR_MS);
+  })).then(uci=>(!uci||uci==='(none)')?null:
+      {from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci.length>4?uci[4]:undefined}) };
+}
+
+function anchorPairing(rung,elo,n){
+  const A=player(rung), B=anchorPlayer(elo);
+  const t={w:0,l:0,d:0};
+  let i=0;
+  function next(){
+    if(i>=n) return Promise.resolve(t);
+    const aWhite=(i%2===0);
+    return playGame(aWhite?A:B, aWhite?B:A).then(r=>{
+      const aWon=(r.result==='1-0'&&aWhite)||(r.result==='0-1'&&!aWhite);
+      const bWon=(r.result==='1-0'&&!aWhite)||(r.result==='0-1'&&aWhite);
+      if(aWon) t.w++; else if(bWon) t.l++; else t.d++;
+      i++; return next();
+    });
+  }
+  return next();
+}
+
+document.getElementById('runElo').addEventListener('click',function(){
+  this.disabled=true; out.innerHTML='';
+  say('Elo anchoring — '+ELO_GAMES+' game(s) per anchor, anchors at '+ANCHOR_MS+'ms a move.');
+  say('UCI_Elo is calibrated for normal time control; at '+ANCHOR_MS+'ms these anchors are','dim');
+  say('weaker than their label. Read a result as "plays evenly with the Elo-N setting','dim');
+  say('at this budget", not as a rating.','dim');
+  say('');
+  const rungs=[
+    {label:'Casual',spec:LEVELS['1']},
+    {label:'Club',  spec:LEVELS['2']},
+    {label:'Sharp', spec:LEVELS['3']}
+  ];
+  let ri=0, ai=0;
+  const scores={};
+  (function next(){
+    if(ri>=rungs.length){
+      say('');
+      say('summary (score = points out of '+ELO_GAMES+' per anchor):');
+      rungs.forEach(r=>say('  '+r.label.padEnd(8)+ANCHORS.map(e=>'Elo'+e+' '+scores[r.label+e]).join('   ')));
+      return;
+    }
+    const rung=rungs[ri], elo=ANCHORS[ai];
+    return anchorPairing(rung,elo,ELO_GAMES).then(t=>{
+      const pts=(t.w+t.d/2).toFixed(1);
+      scores[rung.label+elo]=pts+'/'+ELO_GAMES;
+      say('  '+rung.label.padEnd(8)+'vs Elo '+elo+'  →  +'+t.w+' ='+t.d+' -'+t.l+'   ('+pts+'/'+ELO_GAMES+')',
+          t.w>t.l?'ok':(t.w<t.l?'bad':'dim'));
+      ai++; if(ai>=ANCHORS.length){ ai=0; ri++; say(''); }
+      next();
+    }).catch(e=>{ say('  FAILED: '+e.message,'bad'); ai++; if(ai>=ANCHORS.length){ai=0;ri++;} next(); });
+  })();
+});
 
 document.getElementById('run').addEventListener('click',function(){
   this.disabled=true; out.innerHTML='';

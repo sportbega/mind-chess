@@ -1775,3 +1775,47 @@ nudge as much as to a prompt.
 independently of the generator that wrote them. All 200 clean. And a first
 visit still fetches neither the engine nor the puzzle file: verified by asking
 the browser what it actually requested.
+
+## 2026-08-21 — Day 4.6: the Elo label that didn't survive being measured
+
+The idea was to let the Level select say what it means — "Club — around 1500"
+instead of a bare name — now that every rung above Casual is Stockfish and
+Stockfish carries its own calibration (`UCI_LimitStrength` + `UCI_Elo`). Added
+as an anchoring mode to `tools/level-ladder.js`: play each rung against a few
+of those settings and see where it lands.
+
+Two games per anchor, anchors at 250 ms a move:
+
+```
+            Elo1320   Elo1600   Elo2000   Elo2400
+  Casual     0.0/2     0.0/2     0.0/2     0.0/2
+  Club       1.5/2     0.0/2     1.5/2     0.5/2
+  Sharp      2.0/2     2.0/2     2.0/2     1.0/2
+```
+
+**Club loses to 1600 and beats 2000.** That is not a rating, it is noise with a
+number attached, and it is the whole result. Two games per anchor cannot
+separate settings a few hundred points apart, and the anchors are additionally
+handicapped: `UCI_Elo` is calibrated for normal time control and 250 ms a move
+is not that, so "Elo 1600" here is not playing at 1600 either. Both problems
+push the same way — the scale is real, the measurement of it is not.
+
+So no number goes in the UI. Shipping "Club — around 1500" would have been
+worse than the bare name it replaced: a player who is 1500 and gets beaten
+would conclude something false about themselves rather than about our
+labelling, and a blindfold player already has enough that they cannot check.
+
+What the run *does* establish, because those rows are unambiguous:
+
+- **Casual is below the 1320 floor** — 0 points against every anchor including
+  the weakest setting Stockfish will accept. That is the honest reading of
+  "below the bottom of the scale", and it is exactly what the bottom rung of a
+  blindfold app should be.
+- The ordering holds, which the ladder bench already showed 4–0 at every step.
+
+The anchoring mode stays in the tool. It answered the question — the answer was
+"don't", and an instrument that talks you out of shipping something is doing
+its job as much as one that confirms a fix. Getting a number worth printing
+would need something like twenty games per anchor at a realistic time control,
+which is an hour of compute for a label; if that ever seems worth it, the
+harness is already written.
