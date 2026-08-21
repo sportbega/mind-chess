@@ -34,10 +34,12 @@ What 2.0 added on top of v1.0:
 - **Voice input that survives being misheard.** Spoken moves are scored against the actual legal move list rather than pattern-matched, so "Pond to e4" still plays the pawn. Where two readings are equally legal it refuses instead of guessing — a rejection costs one repeat, a wrong move costs the game
 - **Always-on listening** — the mic stays open through narration ("Talk over it", ships off), and Escape, the mic button or typing always interrupt. Nothing heard while the app is speaking can ever play a move
 - **Ask the board anything** — thirteen computed answers: where a piece is, what it can reach, what's on a square, what attacks or defends it, what's loose, castling rights, material, available captures. All computed by chess.js, never recalled by a model
-- **A coach**, off by default — Stockfish answers "how am I doing", "what should I worry about", "is my king safe". `hints` never names a number or a move; `full` does
+- **A coach**, at `hints` by default — Stockfish answers "how am I doing", "what should I worry about", "is my king safe". It never volunteers anything: every answer is one you asked for. `hints` never names a number or a move; `full` does, and stays opt-in. Say `coach off` for board facts only
 - **A natural voice** — optional Kokoro, and a voice/speed picker for the system voice
 - **On-device recognition** — optional Moonshine, no network round-trip, and the only route to voice on iOS
 - Voice diagnostics at `?debug=1` — the full mic timeline, what was heard, and how the matcher ranked it
+- **Test voice** — plays a sample and says whether audio actually *started*, so a silent phone is a visible failure rather than an app that looks idle
+- **Report a problem** — copies a diagnostic report (build, settings, position, transcript, and the voice timeline) that a beta tester can paste back. Recording is always on, so a report works retrospectively; nothing leaves the browser until you paste it
 
 v1.0's feature set, all still here:
 

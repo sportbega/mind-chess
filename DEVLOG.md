@@ -1310,3 +1310,90 @@ destroyed by it — which is precisely what happened: a whole fix was written on
 came back from the reflog and cost only a round-trip, but the lesson is cheap
 to write down and expensive to rediscover: **check the branch before editing,
 because the publish step is destructive by design.**
+
+## 2026-08-21 — Day 4.0: 2.1 opens with the things a beta needs (r20)
+
+2.0 is a public beta with real people using it. This session is the part that
+was missing from that sentence: a way for them to tell us anything.
+
+**Recording is no longer conditional on having predicted the bug.** `?debug=1`
+already produced everything a report needs — the mic timeline, what the
+recognizer returned, how the matcher ranked it — but it gated the *recording*,
+not just the panel. That means the diagnostics existed only if you had decided,
+before the session began, that you were going to hit a problem. A bug report is
+always retrospective. So `recordDiagnostic()` now runs unconditionally, the log
+is capped at 200 entries, and `?debug=1` has gone back to meaning only "show me
+the panel".
+
+Two details that matter more than they look:
+
+- The trimmer splices from index 1, never 0, because index 0 is the build
+  marker. Day 3.2 cost half a session to a cached `index.html`, and a timeline
+  with no build line is indistinguishable from a fix that didn't work.
+- The `#N` counter moved off `debugLog.filter(l => l.startsWith('#')).length`
+  and onto its own `diagSeq`. Once the log rolls, a count derived from the log
+  would silently restart. Now a report reads `#32 … #231` under a heading that
+  says `(last 200 of 231)` — truncation you can see rather than infer.
+
+**"Report a problem"** builds on that: build, timestamp, user agent, every
+setting in play, the FEN *and* the PGN, the last twelve transcript lines, then
+the whole voice log. The textarea is editable and the caret lands at the bottom
+under a "describe what went wrong" prompt, because a timeline with no sentence
+saying what looked wrong is a log, not a report. It also says plainly that
+nothing leaves the browser until you paste it.
+
+**"Test voice" turns Day 3.13's failure mode into a visible one.** Every phone
+had been mute since the app existed, and it survived twelve sessions because
+silence looks exactly like nothing happening yet. A tester cannot tell an app
+that isn't talking from an app talking to a muted speaker — and neither could
+we. The button asks for a sample and then watches `lastAudioStartAt`, which is
+raised by the *audio*, in `utterance.onstart` and in Kokoro's `play()`
+resolution, not by the call that requested it. That distinction is the whole
+feature: `speak()` returning cleanly is exactly what the phone bug looked like.
+
+Verified against this browser, which has no audio device: `speechSynthesis`
+reports `speaking: true` and never fires `onstart`, and the button correctly
+says **no sound came out**. Confirmed as a true negative with a raw utterance
+probe before believing it — the button is only worth having if it isn't crying
+wolf. On success it says "voice started — you should have heard a move" rather
+than "voice is working", because a muted phone produces an identical `onstart`
+and overclaiming there would send a tester looking in the wrong place.
+
+Its timeout is engine-aware — 6 s for the system voice, 45 s for Kokoro, which
+may still be fetching 326 MB. And because pressing it is a genuine user
+gesture, it is also the one press that can prove the Day 3.13 unlock path works
+on a phone.
+
+**The coach now ships at `hints`.** This reads as a reversal of Day 3.8 and
+isn't. Every coach answer runs through `askEngine()`, which is only ever reached
+from a question the player asked out loud — nothing volunteers anything, so the
+default cannot murmur "watch f7" at you. What `off` actually bought was refusing
+to answer *when asked*, and in a beta that means the whole C1/C2 path goes
+untested while "how am I doing" replies "the coach is off". `hints` still gives
+no number and no move; `full` is what does, and it stays opt-in. Existing saves
+store `'off'` explicitly, so anyone who already had it off keeps it — verified
+by writing a 2.0-shaped save and reloading.
+
+**One thing found while there:** `sampleVoice()` still spoke `'Knight to eff
+3.'`. Day 3.11 moved that respelling into `voiceizeSquares()` precisely so it
+keys off which engine is speaking, and Kokoro reads a hardcoded "eff 3" as
+"ee-eff-eff three". The sample was the last place still saying it the old way —
+and it is the first thing a new user hears when they change the voice.
+
+Also fixed: report transcript lines read `"Youe4"` and `"BoardPawn to e4."`,
+because the speaker tag is a sibling span with no whitespace and `textContent`
+concatenates them. Read the tag off separately rather than unpicking it after.
+
+**Instruments re-run first, before touching anything** — the Day 3.12 lesson
+that an instrument nobody runs is already broken. All three still work:
+`phon-collisions` reports the same 15 neutralised collisions, and both browser
+harnesses rebuild from the current `index.html` without hitting a moved anchor.
+Re-run after the changes too.
+
+Checked at 375 px as well as desktop, per Day 3.12/3.13: no horizontal
+overflow, and `?debug=1` still lays out on a phone.
+
+Next in [OUR-71](https://linear.app/bega-workspace/issue/OUR-71): the honest
+difficulty ladder (Casual/Club/Sharp onto Stockfish's native Skill Level, so
+"harder" means stronger rather than a different opponent), then pre-rendering
+the engine's reply while the player's own move is still being spoken.
