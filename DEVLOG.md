@@ -708,5 +708,14 @@ make it fire *less*; the watchdog covers its purpose better anyway.
 
 Deployed to `/v2/` as `v2-r8`.
 
+**Confirmed the same day.** The user played a real game with "Talk over it" on
+and reported it working — no self-talk, no spurious cut-offs — and judged the
+diagnostics capture unnecessary. That closes the one thing the harness
+structurally could not test. Worth noting what the report does and doesn't
+carry: it's one game, subjectively fine, with no timeline captured, so it
+confirms the loop holds in practice without saying whether the echo filter ever
+actually had to fire. Both outcomes look identical from the outside, and both
+are fine. The timeline is still there in `?debug=1` if anything ever feels off.
+
 Working tree: `index.html`, `tools/fake-recognizer.js`, `tools/voice-harness.js`,
 `.gitignore`, this DEVLOG entry, `VOICE-2.0-PLAYBOOK.md`. Branch `v2`, build `v2-r8`.
