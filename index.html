@@ -255,6 +255,20 @@
       </select>
     </div>
     <div class="field">
+      <label for="voiceSelect">Voice</label>
+      <select id="voiceSelect"><option value="">Default</option></select>
+    </div>
+    <div class="field">
+      <label for="rateSelect">Speed</label>
+      <select id="rateSelect">
+        <option value="0.7">Slow</option>
+        <option value="0.9" selected>Measured</option>
+        <option value="1">Normal</option>
+        <option value="1.15">Brisk</option>
+        <option value="1.3">Fast</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="coachSelect">Coach</label>
       <select id="coachSelect">
         <option value="off" selected>Off</option>
@@ -362,6 +376,12 @@
   let masterLevel = false;    // Level select = "Master": use Stockfish instead of the custom engine
   let verbosity = 'terse';
   let coach = 'off';       // off | hints | full — engine-backed answers (C1)
+  // rate 0.7 was never a preference — it was a workaround for whatever voice
+  // the browser happened to default to being hard to follow. Now that the
+  // voice is choosable, the workaround's premise is weaker, so the default
+  // sits at 0.9 and "Slow" is one click away.
+  let speechRate = 0.9;
+  let voiceURI = '';       // '' = let the browser choose
   let voiceOn = true;
   let handsFree = true;
   let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
@@ -414,7 +434,8 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
-        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), voiceToggle=$('voiceToggle'),
+        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'),
+        voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
@@ -501,6 +522,61 @@
     return out.length?out:[String(text)];
   }
 
+  // Chrome populates getVoices() asynchronously, and on the very first load
+  // it usually returns nothing at all — so this runs again on voiceschanged.
+  let voicesReady=[];
+  function refreshVoices(){
+    if(!('speechSynthesis' in window)) return;
+    const all=speechSynthesis.getVoices();
+    if(!all.length) return;
+    voicesReady=all.filter(v=>/^en(-|_|$)/i.test(v.lang));
+    if(!voicesReady.length) voicesReady=all;
+    // These are the ones actually worth having when they exist. The
+    // network-backed Google voices are markedly better than the local ones.
+    const want=['google us english','google uk english female','google uk english male',
+                'samantha','alex','daniel','karen','moira','tessa','serena'];
+    const rank=v=>{
+      const i=want.indexOf(v.name.toLowerCase());
+      return i>=0?i:(v.localService?100:50);   // unlisted online voices beat unlisted local ones
+    };
+    const good=voicesReady.filter(v=>rank(v)<100).sort((a,b)=>rank(a)-rank(b));
+    const rest=voicesReady.filter(v=>rank(v)>=100).sort((a,b)=>a.name.localeCompare(b.name));
+
+    // macOS ships a pile of novelty voices — "Bad News", "Bubbles", "Boing" —
+    // and they sort to the top of a plain alphabetical list, which is a poor
+    // thing to hand someone looking for a voice to listen to all game. Group
+    // rather than filter: leaving them in costs nothing and someone will
+    // genuinely want their losses narrated by Bad News.
+    const keep=voiceURI;
+    voiceSelect.innerHTML='<option value="">Default</option>';
+    const addGroup=(label,list)=>{
+      if(!list.length) return;
+      const g=document.createElement('optgroup'); g.label=label;
+      list.forEach(v=>{
+        const o=document.createElement('option');
+        o.value=v.voiceURI;
+        o.textContent=v.name+' ('+v.lang+')'+(v.localService?'':' · online');
+        g.appendChild(o);
+      });
+      voiceSelect.appendChild(g);
+    };
+    addGroup('Recommended',good);
+    addGroup('All voices',rest);
+
+    if(keep&&voicesReady.some(v=>v.voiceURI===keep)) voiceSelect.value=keep;
+    else if(!keep){
+      // The app never chose a voice — it took whatever the browser handed it
+      // and slowed it down to compensate.
+      const best=good[0]||voicesReady.find(v=>/^en-US/i.test(v.lang));
+      if(best){ voiceURI=best.voiceURI; voiceSelect.value=voiceURI; }
+    }
+  }
+  function chosenVoice(){
+    if(!voiceURI) return null;
+    return voicesReady.find(v=>v.voiceURI===voiceURI)
+        || speechSynthesis.getVoices().find(v=>v.voiceURI===voiceURI) || null;
+  }
+
   function beginSpeaking(){
     speaking=true;
     setMicState('speaking','narration started');
@@ -571,7 +647,9 @@
       speakNextChunk(myGeneration);
     };
     const u=new SpeechSynthesisUtterance(chunk);
-    u.rate=0.7;
+    const v=chosenVoice();
+    if(v){ u.voice=v; u.lang=v.lang; }
+    u.rate=speechRate;
     u.pitch=0.98;
     u.volume=1;
     u.onend=advance;
@@ -1221,7 +1299,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r9 (coach: engine answers)';
+  const BUILD='v2-r10 (voice + speed picker)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
@@ -2946,6 +3024,13 @@
   });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
+  rateSelect.addEventListener('change',()=>{ speechRate=parseFloat(rateSelect.value)||0.9; saveState(); sampleVoice(); });
+  voiceSelect.addEventListener('change',()=>{ voiceURI=voiceSelect.value; saveState(); sampleVoice(); });
+  // Changing a voice you can't hear is guesswork, so say something in it.
+  function sampleVoice(){
+    if(!voiceOn) return;
+    say(pick(['Knight to eff 3.','Bishop takes see 4.','Pawn to ee 4. Your move.']));
+  }
   voiceToggle.addEventListener('change',()=>{
     voiceOn=voiceToggle.checked;
     // Cancelling mid-utterance means onend never fires, so release the
@@ -2984,7 +3069,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -3005,6 +3090,8 @@
       levelSelect.value=masterLevel?'master':String(searchDepth);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       coach=saved.coach||'off'; coachSelect.value=coach;
+      speechRate=saved.speechRate||0.9; rateSelect.value=String(speechRate);
+      voiceURI=saved.voiceURI||''; refreshVoices();
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
@@ -3126,6 +3213,9 @@
     pieceThemeSelect.value=localStorage.getItem(PIECE_THEME_KEY)||'classic';
   }catch(e){}
   applyTheme();
+
+  refreshVoices();
+  if('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged',refreshVoices);
 
   setupRecognition();
   setupDebug();
