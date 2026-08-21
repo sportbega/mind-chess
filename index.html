@@ -7,7 +7,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<!-- The rules engine is vendored, not fetched: Stockfish was already
+     self-hosted, and having the *rules* be the one thing a game of blindfold
+     chess needs a network for was backwards. Pinned at 0.10.3 on purpose —
+     see VOICE-2.0-PLAYBOOK.md. Supabase stays remote because online mode is
+     inherently remote; if it fails to load, online mode disables itself and
+     everything else keeps working. -->
+<script src="chess-0.10.3.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <style>
@@ -249,6 +255,42 @@
       </select>
     </div>
     <div class="field">
+      <label for="engineSelect">Speech</label>
+      <select id="engineSelect">
+        <option value="system" selected>System</option>
+        <option value="kokoro">Natural — 326 MB once</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="sttSelect">Hearing</label>
+      <select id="sttSelect">
+        <option value="system" selected>Browser</option>
+        <option value="local">On-device — 247 MB once</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="voiceSelect">Voice</label>
+      <select id="voiceSelect"><option value="">Default</option></select>
+    </div>
+    <div class="field">
+      <label for="rateSelect">Speed</label>
+      <select id="rateSelect">
+        <option value="0.7">Slow</option>
+        <option value="0.9" selected>Measured</option>
+        <option value="1">Normal</option>
+        <option value="1.15">Brisk</option>
+        <option value="1.3">Fast</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="coachSelect">Coach</label>
+      <select id="coachSelect">
+        <option value="off" selected>Off</option>
+        <option value="hints">Hints</option>
+        <option value="full">Full</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="verbositySelect">Narration</label>
       <select id="verbositySelect">
         <option value="terse" selected>Terse</option>
@@ -295,6 +337,7 @@
     <div class="spacer"></div>
     <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
     <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
+    <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
     <button class="btn" id="newGameBtn" type="button">New game</button>
   </div>
 
@@ -308,7 +351,21 @@
       <li><code>e8 promote to queen</code> — or just say <code>e8</code> and it will ask</li>
       <li><code>show board</code> / <code>hide board</code> — works any time, even mid-game</li>
       <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>how much time</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
+      <li><b>Ask about the position</b> — <code>where are my knights</code>, <code>where can my bishop go</code>,
+        <code>what's on e4</code>, <code>is d5 empty</code>, <code>what's attacking my queen</code>,
+        <code>is my knight defended</code>, <code>anything hanging</code>, <code>am I in check</code>,
+        <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
+        <code>how many pieces do I have</code>, <code>what can I take</code></li>
       <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
+      <li><b>Ask the engine</b> (needs <b>Coach</b> on — say <code>coach on</code>) — <code>how am I doing</code>,
+        <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
+        number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
+      <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
+        (then it's cached and works offline), needs WebGPU, and falls back to the system voice if anything is
+        missing. Nothing downloads until you pick it.</li>
+      <li><b>Interrupt it</b> — press <kbd>Esc</kbd> (or tap the mic) any time it's talking. <b>Talk over it</b>
+        does the same by voice, but it leaves the mic open while the app speaks, so it depends on your machine's
+        echo cancellation — try it, and turn it off if it cuts itself short.</li>
     </ul>
   </details>
 </div>
@@ -317,8 +374,11 @@
 (function(){
   "use strict";
 
+  // Kept, but it no longer means "your network is down" — chess-0.10.3.js
+  // ships next to this file, so the only way to get here is a deploy that
+  // dropped it (which is exactly what sync-v2-preview.sh's copy list is for).
   if(typeof Chess === 'undefined'){
-    document.body.innerHTML = '<div style="max-width:520px;margin:60px auto;padding:24px;background:#1b1e27;border:1px solid #c06b52;border-radius:14px;color:#ede9e2;font-family:sans-serif"><h2 style="margin-top:0;color:#c06b52">Chess engine didn\u2019t load</h2><p>chess.js couldn\u2019t be fetched from the CDN. Check your network and refresh.</p></div>';
+    document.body.innerHTML = '<div style="max-width:520px;margin:60px auto;padding:24px;background:#1b1e27;border:1px solid #c06b52;border-radius:14px;color:#ede9e2;font-family:sans-serif"><h2 style="margin-top:0;color:#c06b52">Chess engine didn\u2019t load</h2><p><code>chess-0.10.3.js</code> is missing \u2014 it should sit next to <code>index.html</code>. Refresh, and if that doesn\u2019t help the deploy is incomplete.</p></div>';
     return;
   }
 
@@ -332,8 +392,36 @@
   let searchDepth = 2;
   let masterLevel = false;    // Level select = "Master": use Stockfish instead of the custom engine
   let verbosity = 'terse';
+  let coach = 'off';       // off | hints | full — engine-backed answers (C1)
+  // rate 0.7 was never a preference — it was a workaround for whatever voice
+  // the browser happened to default to being hard to follow. Now that the
+  // voice is choosable, the workaround's premise is weaker, so the default
+  // sits at 0.9 and "Slow" is one click away.
+  let speechRate = 0.9;
+  let voiceURI = '';       // '' = let the browser choose
+  // D1. Kokoro is a real upgrade but it is a 326 MB download, so it is opt-in
+  // and the app is fully playable before a single byte of it arrives.
+  let ttsEngine = 'system';        // 'system' | 'kokoro'
+  let kokoroVoice = 'af_heart';    // Kokoro's own top-graded voice (A)
+  // D2. Which recogniser is listening. 'system' is Web Speech (Chrome/Edge,
+  // needs the network, unavailable on iOS at all); 'local' is Moonshine in
+  // the page. Defaults to system where system exists, because it costs no
+  // download — but on iOS it is local or nothing, so the picker decides
+  // itself on first load rather than offering a choice that isn't one.
+  let sttEngine = 'system';        // 'system' | 'local'
+  // base, not tiny, and that was measured rather than assumed. On identical
+  // Kokoro-spoken chess phrases, tiny returned *nothing at all* for "knight to
+  // f3" and "e7 e5" — every dtype, warmed or cold, with or without the
+  // language option. base got all six, at 330-578ms against tiny's ~180ms.
+  // An empty result is the safe failure (you repeat yourself; no wrong move is
+  // ever played) but it is still a broken feature, and 400ms is not a wait.
+  let sttModel  = 'onnx-community/moonshine-base-ONNX';
+  let sttDtype  = 'fp32';
+  let sttDevice = 'wasm';          // upgraded to webgpu when it is really there
+  let sttRemote = true;            // weights from the HF CDN unless self-hosted
   let voiceOn = true;
   let handsFree = true;
+  let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
   let lastMove = null;
   let lastComputerMove = null; // {from,to} the engine itself last played — used to discourage immediately undoing it
   let lastNarration = '';
@@ -358,12 +446,22 @@
   // Solid glyphs for BOTH colors; fill+stroke in CSS separates them legibly.
   const SOLID = {p:'\u265F',n:'\u265E',b:'\u265D',r:'\u265C',q:'\u265B',k:'\u265A'};
 
+  // The extra entries are not guesses \u2014 each one is a transcript Chrome
+  // actually returned for a spoken piece name during real games, collected
+  // from ?debug=1 logs. "cream to D7" and "point to eat for" were losing or
+  // misplaying moves purely because these weren't listed.
   const PIECE_WORDS = {
     pawn:'p',pawns:'p',pond:'p',ponds:'p',porn:'p',
+    point:'p',palm:'p',phone:'p',born:'p',
     knight:'n',knights:'n',night:'n',nights:'n',horse:'n',horses:'n','k-night':'n',
+    // "nice" / "light" / "like" are what Chrome returns for a spoken "knight"
+    // far more often than "knight" itself — they appear in most knight
+    // utterances in the captured logs. A false positive only costs a "Knight
+    // to where?" prompt; a false negative loses the move entirely.
+    nike:'n',knife:'n',nice:'n',light:'n',lights:'n',like:'n',likes:'n',
     bishop:'b',bishops:'b','bishop\u2019s':'b',
-    rook:'r',rooks:'r',rock:'r',rocks:'r',ruck:'r',brook:'r',
-    queen:'q',queens:'q',green:'q',
+    rook:'r',rooks:'r',rock:'r',rocks:'r',ruck:'r',brook:'r',brooke:'r',
+    queen:'q',queens:'q',green:'q',cream:'q',clean:'q',creamed:'q',
     king:'k',kings:'k'
   };
 
@@ -373,12 +471,16 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
-        verbositySelect=$('verbositySelect'), voiceToggle=$('voiceToggle'),
+        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'),
+        voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
+        sttSelect=$('sttSelect'),
+        voiceToggle=$('voiceToggle'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
-        handsFreeToggle=$('handsFreeToggle'), newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
+        handsFreeToggle=$('handsFreeToggle'), bargeInToggle=$('bargeInToggle'),
+        newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
         copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn'), lobbyBtn=$('lobbyBtn'),
         stopSpectateBtn=$('stopSpectateBtn'), lobbyPanel=$('lobbyPanel'), lobbyList=$('lobbyList'),
@@ -394,23 +496,426 @@
     if(sub){ const s=document.createElement('div'); s.className='heard'; s.textContent=sub; p.appendChild(s); }
     transcript.appendChild(p); transcript.scrollTop=transcript.scrollHeight;
   }
+  // ===============================================================
+  // Speaking gate — the mic is hard-muted while we talk
+  // ===============================================================
+  // Recognition now runs as one long-lived session, so it would otherwise
+  // stay open straight through our own narration and feed it back in as
+  // fresh input. That is the OUR-58 feedback loop, except permanent rather
+  // than occasional. Instead of timing hacks, speech and listening are made
+  // mutually exclusive: beginSpeaking() aborts the session, endSpeaking()
+  // brings it back. Every path out of speech must reach endSpeaking(), or
+  // the mic stays muted forever — hence the watchdog below.
+  let speaking=false;            // TTS is producing audio right now
+  let speechWatchdog=null;       // Chrome intermittently never fires utterance.onend
+  let speechQueue=[];            // chunks of the current narration still to speak
+  let speakingText='';           // the chunk being spoken right now, for echo detection
+  let chunkToken=0;              // dedupes onend against the watchdog below
+
+  // ---------------------------------------------------------------
+  // The mic state machine (A4, formalised in Phase B)
+  // ---------------------------------------------------------------
+  // IDLE → LISTENING → THINKING → SPEAKING → LISTENING.
+  //
+  // The booleans above still drive the recognition gate, unchanged. They are
+  // load-bearing and this harness has no microphone: rewriting a gate that
+  // only real speech can exercise, on the strength of reasoning alone, is how
+  // you break the one part that already works. `micState` is the formalisation
+  // layered on top — a single place that knows what the app is doing, which
+  // the narration queue, barge-in and the diagnostics timeline all read
+  // instead of each re-deriving it from three separate flags.
+  let micState='idle', lastMicActivity=Date.now();
+  const micLog=[];
+  function micEvent(kind,detail){
+    micLog.push({t:Date.now(),kind:kind,detail:detail||''});
+    if(micLog.length>500) micLog.shift();
+  }
+  function setMicState(next,why){
+    if(micState===next) return;
+    micEvent('state',micState+' → '+next+(why?'  ('+why+')':''));
+    micState=next;
+  }
+
+  // Chrome silently truncates a single utterance somewhere past ~15 seconds
+  // of speech, and A5's answers got long enough to hit it — "what's on the
+  // board" now reads out both rosters. Speaking in sentence-sized chunks costs
+  // nothing (the gate still closes once for the whole narration) and gives a
+  // clean cancellation point every couple of seconds instead of one at the end.
+  const SPEECH_CHUNK_MAX=140;
+  const FIRST_CHUNK_MAX=60;      // Kokoro only — see splitForSpeech
+  function splitForSpeech(text){
+    const out=[];
+    String(text).split(/(?<=[.!?])\s+/).forEach(sentence=>{
+      const s=sentence.trim();
+      if(!s) return;
+      if(s.length<=SPEECH_CHUNK_MAX){ out.push(s); return; }
+      // The over-long ones are the roster answers. Break them on commas,
+      // which is where they'd be read with a pause anyway.
+      let buf='';
+      s.split(/,\s*/).forEach(part=>{
+        const next=buf?buf+', '+part:part;
+        if(next.length>SPEECH_CHUNK_MAX&&buf){ out.push(buf); buf=part; }
+        else buf=next;
+      });
+      if(buf) out.push(buf);
+    });
+    // Only the first chunk's generation is ever heard as a wait — every one
+    // after it is rendered while the previous plays. Kokoro's cost scales with
+    // text length, and a 139-character opener measured 3.1s on the live site
+    // against ~0.5s for a short line. So give the natural voice a small first
+    // bite and let it catch up behind the sound of its own speech.
+    if(ttsEngine==='kokoro'&&out.length&&out[0].length>FIRST_CHUNK_MAX){
+      const head=out[0];
+      let cut=head.lastIndexOf(', ',FIRST_CHUNK_MAX);
+      if(cut<20) cut=head.lastIndexOf(' ',FIRST_CHUNK_MAX);
+      if(cut>20) out.splice(0,1,head.slice(0,cut+1).trim(),head.slice(cut+1).trim());
+    }
+    return out.length?out:[String(text)];
+  }
+
+  // Chrome populates getVoices() asynchronously, and on the very first load
+  // it usually returns nothing at all — so this runs again on voiceschanged.
+  let voicesReady=[];
+  // Kokoro grades its own voices and 12 of its 28 are D or F — am_adam is an
+  // F+. Listed as raw ids in arbitrary order they are indistinguishable from
+  // the good ones until you play them, and a D-grade voice mangles English
+  // badly enough to be mistaken for another language entirely.
+  function fillKokoroVoices(){
+    const meta=kokoro.voices||{}, ids=Object.keys(meta);
+    const grade=id=>(meta[id]||{}).overallGrade||'F';
+    const score=g=>'ABCDF'.indexOf(g[0])*3-(/\+$/.test(g)?1:/-$/.test(g)?-1:0);
+    const poorly=id=>/^(D|F)/.test(grade(id));
+    const by=(a,b)=>score(grade(a))-score(grade(b));
+    const ok=ids.filter(id=>!poorly(id)).sort(by), poor=ids.filter(poorly).sort(by);
+    const label=id=>{
+      const m=meta[id]||{};
+      return (m.name||id)+' — '+(m.language==='en-gb'?'British':'American')+' '
+             +(m.gender||'').toLowerCase()+'  ·  '+grade(id);
+    };
+    voiceSelect.innerHTML='';
+    [['Good (A–C)',ok],['Poor — expect artefacts',poor]].forEach(([name,list])=>{
+      if(!list.length) return;
+      const g=document.createElement('optgroup'); g.label=name;
+      list.forEach(id=>{
+        const o=document.createElement('option'); o.value=id; o.textContent=label(id); g.appendChild(o);
+      });
+      voiceSelect.appendChild(g);
+    });
+    if(!ids.includes(kokoroVoice)) kokoroVoice=ok[0]||ids[0]||'af_heart';
+    voiceSelect.value=kokoroVoice;
+  }
+
+  function refreshVoices(){
+    if(ttsEngine==='kokoro'&&kokoro){ fillKokoroVoices(); return; }
+    if(!('speechSynthesis' in window)) return;
+    const all=speechSynthesis.getVoices();
+    if(!all.length) return;
+    voicesReady=all.filter(v=>/^en(-|_|$)/i.test(v.lang));
+    // No English voices at all is a strange machine, not a reason to offer
+    // every language installed. Fall back to the browser default instead.
+    if(!voicesReady.length){ voiceSelect.innerHTML='<option value="">Default</option>'; return; }
+    // These are the ones actually worth having when they exist. The
+    // network-backed Google voices are markedly better than the local ones.
+    const want=['google us english','google uk english female','google uk english male',
+                'samantha','alex','daniel','karen','moira','tessa','serena'];
+    const rank=v=>{
+      const i=want.indexOf(v.name.toLowerCase());
+      return i>=0?i:(v.localService?100:50);   // unlisted online voices beat unlisted local ones
+    };
+    const good=voicesReady.filter(v=>rank(v)<100).sort((a,b)=>rank(a)-rank(b));
+    const rest=voicesReady.filter(v=>rank(v)>=100).sort((a,b)=>a.name.localeCompare(b.name));
+
+    // macOS ships a pile of novelty voices — "Bad News", "Bubbles", "Boing" —
+    // and they sort to the top of a plain alphabetical list, which is a poor
+    // thing to hand someone looking for a voice to listen to all game. Group
+    // rather than filter: leaving them in costs nothing and someone will
+    // genuinely want their losses narrated by Bad News.
+    const keep=voiceURI;
+    voiceSelect.innerHTML='<option value="">Default</option>';
+    const addGroup=(label,list)=>{
+      if(!list.length) return;
+      const g=document.createElement('optgroup'); g.label=label;
+      list.forEach(v=>{
+        const o=document.createElement('option');
+        o.value=v.voiceURI;
+        o.textContent=v.name+' ('+v.lang+')'+(v.localService?'':' · online');
+        g.appendChild(o);
+      });
+      voiceSelect.appendChild(g);
+    };
+    addGroup('Recommended',good);
+    addGroup('All voices',rest);
+
+    if(keep&&voicesReady.some(v=>v.voiceURI===keep)) voiceSelect.value=keep;
+    else if(!keep){
+      // The app never chose a voice — it took whatever the browser handed it
+      // and slowed it down to compensate.
+      const best=good[0]||voicesReady.find(v=>/^en-US/i.test(v.lang));
+      if(best){ voiceURI=best.voiceURI; voiceSelect.value=voiceURI; }
+    }
+  }
+  function chosenVoice(){
+    if(!voiceURI) return null;
+    return voicesReady.find(v=>v.voiceURI===voiceURI)
+        || speechSynthesis.getVoices().find(v=>v.voiceURI===voiceURI) || null;
+  }
+
+  // ---------------------------------------------------------------
+  // D1 — Kokoro, loaded on demand and never on the critical path
+  // ---------------------------------------------------------------
+  // fp32 only. The 92 MB q8 build fits in the repo but generates at roughly
+  // 1x realtime — three seconds before a move is announced — so the choice
+  // was never "GitHub or Supabase", it was "fast or self-hosted". Measured:
+  // fp32 on WebGPU runs ~8x realtime, q8 ~1x on either backend.
+  const KOKORO_MODEL='onnx-community/Kokoro-82M-v1.0-ONNX';
+  const KOKORO_ESM='https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
+  let kokoro=null, kokoroLoading=null, kokoroAhead=null, currentAudio=null;
+
+  async function hasWebGPU(){
+    try{ return !!(navigator.gpu && await navigator.gpu.requestAdapter()); }
+    catch(e){ return false; }
+  }
+
+  function loadKokoro(){
+    if(kokoro) return Promise.resolve(kokoro);
+    if(kokoroLoading) return kokoroLoading;
+    kokoroLoading=(async()=>{
+      // fp32 on WASM is far slower than realtime. Better to say so and stay
+      // on the system voice than to ship a voice that arrives after the move.
+      if(!await hasWebGPU()) throw new Error('this browser has no WebGPU');
+      note('Fetching the natural voice…');
+      const {KokoroTTS}=await import(KOKORO_ESM);
+      const tts=await KokoroTTS.from_pretrained(KOKORO_MODEL,{
+        dtype:'fp32', device:'webgpu',
+        progress_callback:pr=>{
+          if(pr.status==='progress'&&pr.total)
+            note('Natural voice: '+Math.round(100*pr.loaded/pr.total)+'%  ('
+                 +Math.round(pr.loaded/1048576)+' of '+Math.round(pr.total/1048576)+' MB)');
+        }
+      });
+      kokoro=tts; note('');
+      micEvent('tts','kokoro ready');
+      // The first generation pays for GPU pipeline warmup — measured at ~1.9s
+      // against ~400ms once warm — and without this it lands squarely on the
+      // first move of the game. Spend it on a throwaway nobody hears.
+      const warm=Date.now();
+      tts.generate('ready',{voice:kokoroVoice})
+         .then(()=>micEvent('tts','warmed in '+(Date.now()-warm)+'ms'))
+         .catch(()=>{});
+      return tts;
+    })();
+    kokoroLoading.catch(()=>{ kokoroLoading=null; });
+    return kokoroLoading;
+  }
+
+  function kokoroClipFor(text){
+    return kokoro.generate(text,{voice:kokoroVoice,speed:speechRate})
+      .then(a=>URL.createObjectURL(a.toBlob()));
+  }
+
+  // Generation costs ~0.7s a line, which would be dead air before every move.
+  // Rendering the next chunk while the current one plays hides all of it
+  // except the very first.
+  function primeNextChunk(){
+    if(!kokoro||!speechQueue.length){ kokoroAhead=null; return; }
+    const next=speechQueue[0];
+    if(kokoroAhead&&kokoroAhead.text===next) return;
+    kokoroAhead={text:next,url:kokoroClipFor(next)};
+  }
+
+  function speakChunkKokoro(chunk,myGeneration,myChunk,advance){
+    const started=Date.now();
+    const pending=(kokoroAhead&&kokoroAhead.text===chunk)?kokoroAhead.url:kokoroClipFor(chunk);
+    kokoroAhead=null;
+    pending.then(url=>{
+      if(myGeneration!==speechGeneration||myChunk!==chunkToken){ URL.revokeObjectURL(url); return; }
+      primeNextChunk();
+      const el=new Audio(url);
+      currentAudio=el;
+      const finish=()=>{
+        URL.revokeObjectURL(url);
+        if(currentAudio===el) currentAudio=null;
+        advance();
+      };
+      el.onended=finish; el.onerror=finish;
+      el.play().then(()=>{
+        micEvent('tts','kokoro chunk in '+(Date.now()-started)+'ms');
+      }).catch(()=>{
+        // Autoplay refused — nothing to do but hand this line to the system
+        // voice, which is allowed to speak because the user just interacted.
+        URL.revokeObjectURL(url);
+        if(currentAudio===el) currentAudio=null;
+        speakChunkSystem(chunk,myGeneration,myChunk,advance);
+      });
+    }).catch(err=>{
+      micEvent('tts','kokoro failed: '+(err&&err.message));
+      warnSilent('Natural voice failed — using the system voice.');
+      ttsEngine='system'; engineSelect.value='system'; saveState(); refreshVoices();
+      speakChunkSystem(chunk,myGeneration,myChunk,advance);
+    });
+  }
+
+  function beginSpeaking(){
+    speaking=true;
+    setMicState('speaking','narration started');
+    // abort(), not stop(): stop() delivers whatever it already captured,
+    // which may be the tail of our previous sentence.
+    //
+    // With "Talk over it" on we deliberately leave the session open, so the
+    // recognizer can hear you speak over us — which necessarily means it can
+    // hear *us* too. That is safe only because of the invariant in onresult:
+    // audio captured while we are speaking can cancel narration and nothing
+    // else. Hearing ourselves can cost a cut-off sentence. It can never cost
+    // a move, which is the failure a blindfold player could not survive.
+    if(recognition&&listening&&!bargeIn){ try{recognition.abort();}catch(e){} }
+  }
+
+  // Kokoro plays through an <audio> element, so speechSynthesis.cancel() is
+  // deaf to it. Every teardown path has to go through here or barge-in would
+  // stop the system voice and let the natural one keep talking.
+  function stopAudio(){
+    kokoroAhead=null;
+    if(!currentAudio) return;
+    try{ currentAudio.pause(); currentAudio.src=''; }catch(e){}
+    currentAudio=null;
+  }
+
+  function endSpeaking(fast){
+    if(!speaking) return;
+    speaking=false;
+    speakingText='';
+    speechQueue.length=0;
+    stopAudio();
+    if(speechWatchdog){ clearInterval(speechWatchdog); speechWatchdog=null; }
+    lastMicActivity=Date.now();
+    if(!(wantLoop&&handsFree)) setMicState('idle','narration ended, not looping');
+    else setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },fast?0:160);
+  }
+
+  // Barge-in. Every way of interrupting — Escape, the mic button, the text
+  // box, and (with the toggle on) your voice — comes through this one
+  // function, so there is a single path to reason about and a single place
+  // instrumented.
+  function cancelSpeech(why){
+    if(!speaking) return false;
+    speechGeneration++;                       // orphans every in-flight callback
+    speechQueue.length=0;
+    stopAudio();
+    try{ speechSynthesis.cancel(); }catch(e){}
+    micEvent('barge-in',why+(speakingText?'  cut: "'+speakingText.slice(0,44)+'"':''));
+    endSpeaking(true);
+    return true;
+  }
+
   function say(text){
     if(!voiceOn || !('speechSynthesis' in window)) return;
     try{
       const myGeneration=++speechGeneration;
+      stopAudio();
       speechSynthesis.cancel();
+      speechQueue=splitForSpeech(voiceizeSquares(text));
+      beginSpeaking();
       // Let Chrome finish closing the recognition audio session before
       // starting narration; without this small gap the first words can clip.
       setTimeout(()=>{
-        if(myGeneration!==speechGeneration || !voiceOn) return;
-        const u=new SpeechSynthesisUtterance(text);
-        u.rate=0.7;
-        u.pitch=0.98;
-        u.volume=1;
-        speechSynthesis.speak(u);
+        if(myGeneration!==speechGeneration) return;   // superseded; that call owns the gate
+        if(!voiceOn){ endSpeaking(); return; }
+        speakNextChunk(myGeneration);
       },120);
-    }catch(e){}
+    }catch(e){ endSpeaking(); }
   }
+
+  // Android Chrome and iOS Safari ignore speechSynthesis.speak() unless the
+  // *first* call of the page's life happens inside a user-gesture task. Every
+  // narration here is fired from a setTimeout after an async recognition
+  // result, so none of them are — the app is silent on a phone and perfectly
+  // audible on a desktop, which is why this survived to Day 3.13.
+  //
+  // The fix is to spend the page's first gesture on a silent utterance, which
+  // unlocks the queue for everything after it. It deliberately does not go
+  // through say(): it must not touch speechGeneration or open the mic gate,
+  // it is not narration, and nothing should be able to barge in on it.
+  let speechUnlocked=false;
+  function unlockSpeech(){
+    if(speechUnlocked||!('speechSynthesis' in window)) return;
+    speechUnlocked=true;
+    try{
+      const u=new SpeechSynthesisUtterance(' ');
+      u.volume=0; u.rate=speechRate; u.lang='en-US';
+      speechSynthesis.speak(u);
+      micEvent('tts','speech unlocked by first gesture');
+    }catch(e){ /* nothing to do; the platform simply stays locked */ }
+  }
+  // Capture phase, so a handler that stops propagation cannot cost us the
+  // one gesture we need. pointerdown covers mouse and touch in one event.
+  ['pointerdown','touchstart','keydown'].forEach(ev=>
+    document.addEventListener(ev,unlockSpeech,{capture:true,once:true}));
+
+  function speakNextChunk(myGeneration){
+    if(myGeneration!==speechGeneration) return;
+    if(!speechQueue.length){ endSpeaking(); return; }
+    const chunk=speechQueue.shift();
+    const myChunk=++chunkToken;
+    speakingText=chunk;
+    const advance=()=>{
+      // onend and the watchdog below both race to advance the queue; whichever
+      // arrives first claims the chunk and the other becomes a no-op.
+      if(myGeneration!==speechGeneration||myChunk!==chunkToken) return;
+      speakNextChunk(myGeneration);
+    };
+    if(ttsEngine==='kokoro'&&kokoro) speakChunkKokoro(chunk,myGeneration,myChunk,advance);
+    else speakChunkSystem(chunk,myGeneration,myChunk,advance);
+  }
+
+  function speakChunkSystem(chunk,myGeneration,myChunk,advance){
+    const u=new SpeechSynthesisUtterance(chunk);
+    const v=chosenVoice();
+    // Always state the language, even with no voice chosen. Left unset, the
+    // browser picks from every voice installed — 180 of them on this Mac, 18
+    // Chinese — and "whatever the system feels like" is how you end up being
+    // told your knight moved, in Mandarin.
+    u.lang=v?v.lang:'en-US';
+    if(v) u.voice=v;
+    u.rate=speechRate;
+    u.pitch=0.98;
+    u.volume=1;
+    u.onend=advance;
+    u.onerror=advance;
+    speechSynthesis.speak(u);
+    // Backstop: Chrome drops onend often enough that relying on it alone
+    // would eventually strand the mic muted. Poll the queue instead, but
+    // only after it has had time to actually start. Only the system path
+    // needs this — Kokoro's advance is driven by an <audio> element, which
+    // fires reliably.
+    const startedAt=Date.now();
+    if(speechWatchdog) clearInterval(speechWatchdog);
+    speechWatchdog=setInterval(()=>{
+      if(myGeneration!==speechGeneration||myChunk!==chunkToken){ clearInterval(speechWatchdog); speechWatchdog=null; return; }
+      if(Date.now()-startedAt<600) return;
+      if(!speechSynthesis.speaking && !speechSynthesis.pending){
+        clearInterval(speechWatchdog); speechWatchdog=null;
+        advance();
+      }
+    },250);
+  }
+
+  // Telling our own voice from yours without a second audio pipeline. The
+  // recognizer already owns the microphone and opening a competing capture
+  // stream has destabilised it before, so instead: everything heard while we
+  // are speaking is compared against the sentence we are speaking right now,
+  // and if it is mostly our own words coming back it is echo, not you.
+  // Compared phonetically, because what returns is what our voice *sounded*
+  // like through a speaker and a microphone, not what it was.
+  function considerBargeIn(transcript){
+    const heard=speechKey(transcript).split(' ').filter(Boolean);
+    if(heard.length<2) return;          // a syllable of echo is not an interruption
+    const mine={};
+    speechKey(speakingText).split(' ').filter(Boolean).forEach(w=>{ mine[phon(w)]=1; });
+    const overlap=heard.filter(w=>mine[phon(w)]).length/heard.length;
+    if(overlap>=0.5){ micEvent('echo','ignored "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)'); return; }
+    cancelSpeech('voice: "'+transcript.trim().slice(0,40)+'"');
+  }
+
   function speak(text){ lastNarration=text; log('Board',text); say(text); }
   function warn(text){ log('System',text); say(text); }
   // Unlike warn(), does not speak — for messages that just restate example
@@ -570,8 +1075,8 @@
     root.dataset.board=boardThemeSelect.value;
     root.dataset.pieces=pieceThemeSelect.value;
     try{
-      localStorage.setItem('mind-chess-board-theme',boardThemeSelect.value);
-      localStorage.setItem('mind-chess-piece-theme',pieceThemeSelect.value);
+      localStorage.setItem(BOARD_THEME_KEY,boardThemeSelect.value);
+      localStorage.setItem(PIECE_THEME_KEY,pieceThemeSelect.value);
     }catch(e){}
   }
   boardThemeSelect.addEventListener('change',applyTheme);
@@ -581,8 +1086,26 @@
   // Narration
   // ===============================================================
   const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  // Squares are written the way chess writes them — "f6" — and respelled for
+  // the synthesizer only at the moment of speaking. They used to be respelled
+  // at the point of *generation*, which leaked "Knight to eff 6" into the
+  // on-screen transcript and, once Kokoro arrived, into its ears too.
+  function spokenSquare(s){ return s; }
+
+  // The respelling that a plain speechSynthesis voice needs. Kokoro does not:
+  // measured, "f6" phonemizes to ˈɛf sˈɪks ("eff six") which is exactly right,
+  // while "eff 6" becomes ˌiːˌɛfˈɛf ("ee-eff-eff") — it reads the respelling as
+  // spelled-out letters. "ay 4" is wrong there too: ˈaɪ, "eye four". Every file
+  // a–h was checked; plain algebraic is correct for all eight.
   const spokenFile={a:'ay',b:'bee',c:'see',d:'dee',e:'ee',f:'eff',g:'gee',h:'aitch'};
-  function spokenSquare(s){ return spokenFile[s[0]]+' '+s[1]; }
+  function voiceizeSquares(text){
+    // Keyed on what will actually speak, not on what is selected. During the
+    // window where Natural is chosen but the weights are still downloading,
+    // speakNextChunk falls back to speechSynthesis — and that voice still
+    // wants the respelling.
+    if(ttsEngine==='kokoro'&&kokoro) return text;
+    return text.replace(/\b([a-h])([1-8])\b/g,(m,f,r)=>spokenFile[f]+' '+r);
+  }
   function describeMove(m,v){
     const color=m.color==='w'?'White':'Black', piece=PIECE_NAME[m.piece];
     let base;
@@ -592,7 +1115,10 @@
       base=cap(piece)+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
       if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
     }
-    if(v==='terse') return color+' plays. '+base+'.';
+    // These two were byte-identical, so "Terse" and "Standard" have been the
+    // same setting since v1.0. Terse is now actually terse: mid-game you
+    // already know whose move it was.
+    if(v==='terse') return cap(base)+'.';
     if(v==='standard') return color+' plays. '+base+'.';
     let t=color+' plays '+piece+' from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
     if(m.captured) t+=' Captures the '+PIECE_NAME[m.captured]+'.';
@@ -649,7 +1175,7 @@
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
     playMoveSound(!!applied.captured);
-    speak(describeMove(applied,verbosity)+endSuffix());
+    speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied));
     if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); }
     renderAll();
     if(mode==='online') saveOnline();
@@ -743,8 +1269,20 @@
     sfInitPromise.catch(()=>{ sfInitPromise=null; });
     return sfInitPromise;
   }
+  // One worker, one `onmessage` slot, and now two callers: the Master level
+  // playing a move and the coach analysing on demand. Overlap them and the
+  // second handler silently steals the first one's `bestmove`. Everything
+  // that talks to the engine queues here.
+  let sfChain = Promise.resolve();
+  function sfQueue(fn){
+    const run = () => fn();
+    const p = sfChain.then(run, run);
+    sfChain = p.then(()=>{}, ()=>{});
+    return p;
+  }
+
   function stockfishBestMove(fen, movetimeMs){
-    return stockfishInit().then(worker=>new Promise(resolve=>{
+    return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
       worker.onmessage = function(e){
         const line = e.data;
         if(typeof line==='string' && line.indexOf('bestmove')===0){
@@ -754,7 +1292,35 @@
       };
       worker.postMessage('position fen '+fen);
       worker.postMessage('go movetime '+movetimeMs);
-    }));
+    })));
+  }
+
+  // Same search, but keeping the last `info` line — that is where the score
+  // and the principal variation live. Returns the score from the point of
+  // view of whoever is to move in `fen`, which is UCI's convention and the
+  // single easiest thing to get backwards here.
+  function stockfishAnalyse(fen, movetimeMs){
+    return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
+      let best=null;
+      worker.onmessage = function(e){
+        const line = e.data;
+        if(typeof line!=='string') return;
+        if(line.indexOf('info ')===0 && line.indexOf(' pv ')!==-1){
+          const sc=line.match(/ score (cp|mate) (-?\d+)/);
+          if(!sc) return;
+          const d=line.match(/ depth (\d+)/);
+          best={ kind:sc[1], value:+sc[2], depth:d?+d[1]:0,
+                 pv:line.slice(line.indexOf(' pv ')+4).trim().split(/\s+/) };
+        }else if(line.indexOf('bestmove')===0){
+          worker.onmessage = null;
+          const uci=line.split(' ')[1];
+          if(best) best.bestmove=uci;
+          resolve(best);
+        }
+      };
+      worker.postMessage('position fen '+fen);
+      worker.postMessage('go movetime '+movetimeMs);
+    })));
   }
   function uciToMoveSpec(uci){
     return {from:uci.slice(0,2), to:uci.slice(2,4), promotion:uci.length>4?uci[4]:undefined};
@@ -791,6 +1357,12 @@
   function preprocess(t){
     t=t.replace(/([a-h])[-\u2013 ]([1-8])\b/g,'$1$2');
     t=t.replace(/\bbefore\b/g,'b4').replace(/\bbefour\b/g,'b4');
+    // "castle kingside" comes back as "king size" / "King's side" / "King
+    // site" / "kingzide" far more often than as "kingside". Without this the
+    // side never registered, so castling fell through to "kingside or
+    // queenside?" — and then the answer didn't register either.
+    t=t.replace(/\bking'?s?[- ]?(side|size|site|sight|zide|sides)\b/g,'kingside');
+    t=t.replace(/\bqueen'?s?[- ]?(side|size|site|sight|zide|sides)\b/g,'queenside');
     t=t.replace(/\ba\s*for\b/g,'a4');
     // NATO phonetic file + digit OR spoken number word ("echo 4", "echo four")
     t=t.replace(NATO_RE,(_,w,numw,dig)=>NATO[w]+(dig||NUMWORD[numw]));
@@ -804,7 +1376,11 @@
     let t=raw.toLowerCase().trim().replace(/[.,!?]/g,' ');
     t=preprocess(t);
     t=t.replace(/\bplease\b/g,' ').replace(/\bmove\b/g,' ')
-       .replace(/\bcaptures?\b/g,' x ').replace(/\btakes?\b/g,' x ');
+       .replace(/\bcaptures?\b/g,' x ')
+       // "takes" marks a capture — except in "take back", where rewriting it
+       // to "x" hid the command from matchCommand entirely. Documented in the
+       // help text since v1.0 and never actually worked.
+       .replace(/\btakes?\b(?!\s+back\b)/g,' x ');
     return t.replace(/\s+/g,' ').trim();
   }
 
@@ -905,6 +1481,40 @@
     return /^[a-h]$/.test(k)?k:null;
   }
 
+  // Speech errors are sound errors, not spelling errors — "night"/"knight",
+  // "rock"/"rook", "bishup"/"bishop". Comparing letters charges a full
+  // substitution for words that are pronounced identically, which is what
+  // made every piece move tie with the bare pawn move to the same square.
+  // Square tokens (e4, f3) are already canonical and are left untouched, or
+  // they would collapse into each other.
+  const PHON_CACHE={};
+  function phon(w){
+    if(PHON_CACHE[w]!==undefined) return PHON_CACHE[w];
+    let s=w;
+    if(s.length<3||/^[a-h][1-8]$/.test(s)||/^\d+$/.test(s)){ PHON_CACHE[w]=s; return s; }
+    s=s.replace(/^(kn|gn|pn)/,'n').replace(/^wr/,'r').replace(/^ps/,'s');
+    s=s.replace(/ph/g,'f').replace(/gh/g,'').replace(/ck/g,'k').replace(/sch/g,'sk');
+    s=s.replace(/c(?=[eiy])/g,'s').replace(/c/g,'k');
+    s=s.replace(/q/g,'k').replace(/x/g,'ks').replace(/z/g,'s');
+    s=s.replace(/e$/,'');
+    s=s[0]+s.slice(1).replace(/[aeiouy]/g,'');   // keep the leading sound, drop interior vowels
+    s=s.replace(/(.)\1+/g,'$1');
+    PHON_CACHE[w]=s||w;
+    return PHON_CACHE[w];
+  }
+
+  // Which piece the speaker actually named, if any — matched by sound so
+  // "night", "nite" and "knight" all land on the knight.
+  const PHON_PIECE={};
+  Object.keys(PIECE_WORDS).forEach(w=>{ PHON_PIECE[phon(w)]=PIECE_WORDS[w]; });
+  function spokenPiece(heard){
+    for(const tok of heard.split(' ')){
+      const p=PHON_PIECE[phon(tok)];
+      if(p) return p;
+    }
+    return null;
+  }
+
   function tokenDistance(a,b){
     const A=speechKey(a).split(' ').filter(Boolean), B=speechKey(b).split(' ').filter(Boolean);
     const d=Array.from({length:A.length+1},(_,i)=>Array(B.length+1).fill(0));
@@ -912,8 +1522,9 @@
     for(let j=0;j<=B.length;j++) d[0][j]=j;
     for(let i=1;i<=A.length;i++) for(let j=1;j<=B.length;j++){
       const same=A[i-1]===B[j-1];
-      const near=!same && (A[i-1][0]===B[j-1][0] || A[i-1].slice(0,2)===B[j-1].slice(0,2));
-      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(same?0:near?.35:1));
+      const sounds=!same && phon(A[i-1])===phon(B[j-1]);
+      const near=!same && !sounds && (A[i-1][0]===B[j-1][0] || A[i-1].slice(0,2)===B[j-1].slice(0,2));
+      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(same?0:sounds?.1:near?.35:1));
     }
     return d[A.length][B.length];
   }
@@ -932,11 +1543,20 @@
     return applied;
   }
 
+  // Bump on every voice-layer change: a diagnostics log is worthless if we
+  // can't tell which build produced it, and a cached index.html looks
+  // identical to a fix that didn't work.
+  const BUILD='v2-r18 (queen takes f7 is a move, not a question)';
+  const DEBUG=/[?&]debug=1/.test(location.search);
+  const debugLog=[];
+  let debugOut=null, debugCount=null, lastAltMeta=null;
+  let lastScoring=null;                 // diagnostics only, see ?debug=1
   function constrainedMove(text){
     const legal=game.moves({verbose:true});
     if(!legal.length) return null;
     const heard=speechKey(text);
     if(!heard) return null;
+    const said=spokenPiece(heard);
     const scored=legal.map(m=>{
       const phrases=movePhrases(m);
       const distance=Math.min(...phrases.map(p=>tokenDistance(heard,p)));
@@ -944,10 +1564,18 @@
       // Reward exact destination and piece words while keeping the score
       // normalized so short moves such as "e4" are not unfairly penalized.
       const target=heard.includes(speechKey(m.to))?1.2:0;
-      return {m,distance,exact,score:(exact?8:0)+target- distance/Math.max(1,heard.split(' ').length)};
+      // The piece word carries as much information as the destination. Without
+      // weighting it, "knight f3" scored the pawn move f3 exactly as highly as
+      // Nf3 — a dead tie that failed the margin test every single time. Naming
+      // a piece is also evidence *against* the moves of every other piece.
+      const piece = said ? (said===m.piece?1.2:-1.2) : (m.piece==='p'?0.3:0);
+      return {m,distance,exact,score:(exact?8:0)+target+piece- distance/Math.max(1,heard.split(' ').length)};
     }).sort((a,b)=>b.score-a.score);
     const best=scored[0], second=scored[1];
     const margin=best.score-(second?second.score:-10);
+    // Diagnostics only — no effect on the decision below.
+    lastScoring={heard,margin:Math.round(margin*100)/100,
+      top:scored.slice(0,4).map(s=>({san:s.m.san,score:Math.round(s.score*100)/100,exact:s.exact}))};
     // Exact legal destination phrases win immediately. Fuzzy matches need a
     // meaningful margin; otherwise route() will ask the user to repeat.
     if(best.exact || (best.score>=1.05 && margin>=0.7)) return {move:best.m,score:best.score,margin};
@@ -960,11 +1588,42 @@
     const cmd=matchCommand(t);
     if(cmd) return {score:6,type:'command',run:cmd};
 
+    // Questions run ahead of every move parser on purpose: "what's on e4?"
+    // contains a perfectly legal move, and playing it instead of answering it
+    // is the kind of mistake a blindfold player cannot see happen. Given the
+    // raw text, not the normalized one — normalize() rewrites "takes" to "x"
+    // and deletes "move", which guts "what can I take" and "the last move".
+    const q=matchQuestion(text);
+    if(q) return {score:6,type:'command',run:q};
+
+    // "kingside" on its own is only ever a castling request. Heard bare three
+    // times in a row and rejected every time, because it was only ever
+    // understood as the answer to a question the app had already forgotten.
+    if(/^(kingside|queenside)$/.test(t.trim())){
+      const san=t.trim()==='kingside'?'O-O':'O-O-O';
+      const m=game.moves({verbose:true}).find(x=>x.san===san);
+      return m?{score:6,type:'move',move:m}
+              :{score:1,type:'illegal',msg:'Castling isn’t legal right now.'};
+    }
+
     const san=matchSan(text);
     if(san) return {score:8,type:'move',move:san};
 
     const constrained=constrainedMove(text);
-    if(constrained) return {score:constrained.score,type:'move',move:constrained.move};
+    if(constrained){
+      // The fuzzy matcher and the exact parser were scoring on different
+      // scales, and route() compares them directly. A confident phonetic
+      // match came back around 2.4 while the parser resolves any unambiguous
+      // pawn move at a flat 6 — so for "knight to f4" the alternative
+      // "night to F4" (Nf4, margin 1.38) lost to "9th to F4" (pawn f4, 6),
+      // and the wrong piece moved. Map an accepted fuzzy match into the same
+      // band, ranked by how clearly it won, leaving exact phrase matches
+      // (>=8) where they are so they still outrank everything.
+      const s=constrained.score>=8
+        ? constrained.score
+        : 6+Math.min(1.5,Math.max(0,constrained.margin)/2);
+      return {score:s,type:'move',move:constrained.move};
+    }
 
     const req=parseRequest(text);
     if(req.kind==='castle'){
@@ -972,7 +1631,17 @@
       const m=game.moves({verbose:true}).find(x=>x.san===(req.side==='k'?'O-O':'O-O-O'));
       return m?{score:6,type:'move',move:m}:{score:1,type:'illegal',msg:'Castling isn\u2019t legal right now.'};
     }
-    if(req.kind!=='move') return {score:0,type:'none',text};
+    if(req.kind!=='move'){
+      const fz=fuzzyCastleSide(t);
+      if(fz){
+        const m=game.moves({verbose:true}).find(x=>x.san===(fz==='k'?'O-O':'O-O-O'));
+        if(m) return {score:5,type:'move',move:m};
+      }
+      // Carry the near-miss evidence forward so execPlan can ask a question
+      // instead of discarding the utterance (A3).
+      return {score:0,type:'none',text,
+        said:spokenPiece(speechKey(text)), top:lastScoring?lastScoring.top:null};
+    }
 
     let cands=candidates(req);
     if(!cands.length){
@@ -996,11 +1665,640 @@
   }
 
   // ===============================================================
+  // Board questions (A5) — every answer computed, never guessed
+  // ===============================================================
+  // Blindfold play is uniquely hostile to a confident wrong answer: the
+  // player has nothing to check it against. So every answer below is read
+  // straight off chess.js — no engine, no model, no heuristics beyond
+  // counting material on a square.
+  const FILES='abcdefgh';
+  const colorName=c=>c==='w'?'White':'Black';
+  // humanColor tracks the seat in both modes; a spectator has no seat, so
+  // answer as White rather than calling someone else's pieces "yours".
+  function myColor(){ return (mode==='online'&&onlineState&&onlineState.spectating)?'w':humanColor; }
+  function foeColor(){ return myColor()==='w'?'b':'w'; }
+  function sqName(f,r){ return FILES[f]+(r+1); }
+
+  function sentence(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+  function joinAnd(list){
+    if(list.length<2) return list[0]||'';
+    return list.slice(0,-1).join(', ')+' and '+list[list.length-1];
+  }
+  function sqList(list){ return joinAnd(list.map(spokenSquare)); }
+  function owns(c){ return c===myColor()?'your':colorName(c)+'’s'; }
+  function pieceAt(s){ const p=game.get(s); return p?'the '+PIECE_NAME[p.type]+' on '+spokenSquare(s):spokenSquare(s); }
+  function shortMove(m){
+    if(m.flags.indexOf('k')!==-1) return 'castled kingside';
+    if(m.flags.indexOf('q')!==-1) return 'castled queenside';
+    return cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to)
+      +(m.promotion?', promoting to '+PIECE_NAME[m.promotion]:'');
+  }
+  function pieceSquares(color,type){
+    const b=game.board(), out=[];
+    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
+      const c=b[r][f];
+      if(c&&c.color===color&&(!type||c.type===type)) out.push(sqName(f,7-r));
+    }
+    return out;
+  }
+
+  // chess.js 0.10.3 has no attackers(). Reading the board directly beats the
+  // alternatives: a FEN round-trip would have to mutate `game` and restore
+  // it, and using moves() would silently drop pinned attackers — but a
+  // pinned piece still attacks, and telling a blindfold player their queen
+  // is safe when it isn't is the worst failure this app can have.
+  const N_DELTA=[[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]];
+  const K_DELTA=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const R_DELTA=[[1,0],[-1,0],[0,1],[0,-1]];
+  const B_DELTA=[[1,1],[1,-1],[-1,1],[-1,-1]];
+  function attackersOf(square,bySide){
+    const f0=FILES.indexOf(square[0]), r0=+square[1]-1, out=[];
+    if(f0<0||r0<0||r0>7) return out;
+    const at=(f,r)=>(f<0||f>7||r<0||r>7)?null:game.get(sqName(f,r));
+    const hit=(f,r,types)=>{ const p=at(f,r); if(p&&p.color===bySide&&types.indexOf(p.type)!==-1) out.push(sqName(f,r)); };
+    N_DELTA.forEach(d=>hit(f0+d[0],r0+d[1],['n']));
+    K_DELTA.forEach(d=>hit(f0+d[0],r0+d[1],['k']));
+    // A white pawn attacks upward, so one hitting this square sits below it.
+    const pr=bySide==='w'?r0-1:r0+1;
+    [-1,1].forEach(df=>hit(f0+df,pr,['p']));
+    [[R_DELTA,['r','q']],[B_DELTA,['b','q']]].forEach(pair=>{
+      pair[0].forEach(d=>{
+        let f=f0+d[0], r=r0+d[1];
+        while(f>=0&&f<8&&r>=0&&r<8){
+          const p=at(f,r);
+          if(p){ if(p.color===bySide&&pair[1].indexOf(p.type)!==-1) out.push(sqName(f,r)); break; }
+          f+=d[0]; r+=d[1];
+        }
+      });
+    });
+    return out;
+  }
+  function worth(s){ const t=game.get(s).type; return t==='k'?10:PIECE_VALUE[t]; }
+
+  // ---------------------------------------------------------------
+  // Understanding the question
+  // ---------------------------------------------------------------
+  // Question phrasing varies at least as much as move phrasing does. Moves
+  // got phonetic matching in A2 while commands stayed exact-regex, and that
+  // is exactly why "hide board" ("hi board", "Highboy") was rejected for a
+  // whole session — so this matcher compares by sound from the start.
+  function normalizeQuestion(raw){
+    let t=String(raw||'').toLowerCase().trim().replace(/[.,!?;:]/g,' ');
+    t=preprocess(t).replace(/[^a-z0-9’ ]+/g,' ').replace(/’/g,'');
+    return t.replace(/\s+/g,' ').trim();
+  }
+  // Measured by tools/phon-collisions.js, not guessed: these matcher words
+  // collapse onto a piece or a colour under phon(). Sound-matching them reads
+  // a question keyword out of an ordinary content word in the user's sentence,
+  // and it is the *opposite* direction from the one Q_STOP guards — Q_STOP
+  // stops "can" being heard as a piece, and nothing stopped "queen" being
+  // heard as "can".
+  //
+  // Which is exactly what happened: "queen takes f7" satisfied the "can ...
+  // take" rule (phon("can") and phon("queen") are both "kn"), so an advertised
+  // move form was answered as a question about captures instead of played —
+  // a mate on the board, silently turned into a sentence.
+  //
+  // So: content words still match by sound, which is what makes questions
+  // robust; these function words must match literally. That is the A5 rule,
+  // enforced in one place instead of remembered at 31 call sites.
+  // Re-run tools/phon-collisions.js whenever a matcher word is added.
+  const SOUND_LITERAL=new Set(['can','hers','not','look','looks','fine','what','whats',
+                               'many','the','or','here','there','has','three']);
+  function hasSound(words,list){
+    return list.some(w=>{
+      if(SOUND_LITERAL.has(w)) return words.some(tk=>tk===w||tk.replace(/s$/,'')===w);
+      const k=phon(w);
+      return words.some(tk=>tk===w||phon(tk)===k||phon(tk.replace(/s$/,''))===k);
+    });
+  }
+  // "like"/"likes" are knight homophones aggressive enough to be worth it in
+  // a three-word move, but they are ordinary filler in a question ("what
+  // would you like", "what does it look like"), so they sit this one out.
+  const Q_PIECE={};
+  Object.keys(PIECE_WORDS).forEach(w=>{ if(w!=='like'&&w!=='likes') Q_PIECE[phon(w)]=PIECE_WORDS[w]; });
+  // Sound-alike matching is what makes questions robust, and it is also what
+  // makes them read pieces into ordinary words: phon() collapses "can" onto
+  // "queen" (both kn), "hers" onto "horse", and "not" onto "knight". Measured,
+  // not guessed — every word this matcher uses was run against the piece
+  // vocabulary and these three collided. A question word is never a piece.
+  const Q_STOP=new Set(('where wear were ware what whats which who whom is are was am be been can could '
+    +'should would may might will do does did done how many much any anything something nothing everything '
+    +'all some none tell list say show give me my mine i im our ours we us you your yours he she him her '
+    +'hers his their theirs them they it its this that these those the a an of on in at to for from with by '
+    +'and or but not no yes still left right now here there back again just last previous recent next then '
+    +'than about over under up down go goes going move moves moved play played plays take takes taking taken '
+    +'capture captures capturing win wins attack attacks attacking attacked threat threats threaten threatens '
+    +'threatening threatened hitting danger dangerous defend defends defended defending defender defenders '
+    +'protect protects protected protecting covered guard guards guarded guarding supported hanging hangs hang '
+    +'undefended unprotected unguarded loose prise castle castles castling cassel kingside queenside check '
+    +'cheque czech chek empty occupied occupies holds has have free vacant stands sits board state describe '
+    +'read material time clock remaining piece pieces count square squares side sides white black opponent '
+    +'opponents enemy computer locate find get got make made turn one two three four five six seven eight '
+    +'nine ten '
+    // C1's vocabulary. "king" is deliberately absent: it is a real piece word
+    // and "where is my king" has to keep working.
+    +'coach coaching couch doing standing position eval evaluation score winning losing better worse '
+    +'going look looks looking worry worried worrying threaten worrier plan plans planning coming safe '
+    +'safety ok okay fine exposed best should recommend recommends suggest suggests advice hint hints '
+    +'full everything stop quiet on off').split(' '));
+  function questionPiece(words){
+    for(let i=0;i<words.length;i++){
+      if(Q_STOP.has(words[i])) continue;
+      const p=Q_PIECE[phon(words[i])]||Q_PIECE[phon(words[i].replace(/s$/,''))];
+      if(p) return p;
+    }
+    return null;
+  }
+  function squaresIn(t){ return t.match(/\b[a-h][1-8]\b/g)||[]; }
+  const COUNT_WORD={one:1,won:1,two:2,three:3,tree:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+  function countIn(words){
+    for(let i=0;i<words.length;i++){
+      const w=words[i];
+      if(/^\d+$/.test(w)) return Math.min(12,+w);
+      if(COUNT_WORD[w]) return COUNT_WORD[w];
+    }
+    return null;
+  }
+  // Pronouns are matched literally, not by sound. They are one or two
+  // syllables of nothing, so phon() collapses them into each other — "the"
+  // and "they" both reduce to `th`, which read "what were THE last three
+  // moves" as "what did THEY play" and answered with one move instead of
+  // three. Sound-alike matching earns its keep on content words; on function
+  // words it only invents meaning that was never spoken.
+  const OWN_ME=['my','mine','me','i','im','our','ours','we','us'];
+  const OWN_THEM=['his','her','hers','their','theirs','them','they','he','she','him'];
+  const THEM_LONG=['opponent','opponents','enemy','computer'];
+  function hasWord(words,list){ return words.some(w=>list.indexOf(w)!==-1); }
+  // null when the question names no side at all — which "the last three
+  // moves" needs, to mean both sides rather than defaulting to one.
+  function askedOwner(words){
+    // "white" is matched literally for the same reason the pronouns are:
+    // phon() reduces it to `wht`, and so is "what" — which answered every
+    // single "what ...?" question about White regardless of who asked. It
+    // looked correct for a whole test round only because the seat under test
+    // happened to be White.
+    if(hasWord(words,['white','whites'])) return 'w';
+    if(hasWord(words,['black','blacks'])) return 'b';
+    if(hasWord(words,OWN_ME)) return myColor();
+    if(hasWord(words,OWN_THEM)||hasSound(words,THEM_LONG)) return foeColor();
+    return null;
+  }
+  function askedColor(words){ return askedOwner(words)||myColor(); }
+  // "what's attacking my queen" names a piece; "is e5 attacked" names a
+  // square. Both come back as a list of squares to examine.
+  function questionTargets(words,sqs){
+    const out=sqs.length?sqs.slice(0,3):(()=>{
+      const p=questionPiece(words);
+      return p?pieceSquares(askedColor(words),p):[];
+    })();
+    noteAsked(out);
+    return out;
+  }
+
+  // You ask about the same square three times because you keep losing track
+  // of it. Noticing that is free, and remembering it for you is the one bit
+  // of "chatty" that earns its place in blindfold play. Rare on purpose —
+  // three asks, and at most one reminder a minute.
+  const askedAbout={};
+  let lastNudgeAt=0;
+  function noteAsked(sqs){
+    (sqs||[]).forEach(sq=>{ askedAbout[sq]=(askedAbout[sq]||0)+1; });
+  }
+  function recallNudge(m){
+    if(!m||Date.now()-lastNudgeAt<90000) return '';
+    const hit=[m.to,m.from].filter(sq=>(askedAbout[sq]||0)>=3)[0];
+    if(!hit) return '';
+    lastNudgeAt=Date.now();
+    return ' '+pick(['That’s '+spokenSquare(hit)+' — the square you keep checking.',
+                     'You’ve been asking about '+spokenSquare(hit)+'; that’s the one that just changed.']);
+  }
+
+  // ===============================================================
+  // The coach (C1) — Stockfish's judgement, worded coarsely on purpose
+  // ===============================================================
+  // The smartest chess entity available here has been sitting in the repo
+  // since Day 2.3. Asked "how am I doing", a language model produces a
+  // plausible guess; Stockfish produces a number it actually computed. For
+  // the one question where being wrong hurts a blindfold player most, the
+  // free option is also the correct one.
+  //
+  // Which is exactly why it defaults to OFF. This app exists to make you hold
+  // the board in your head, and an engine murmuring "watch f7" removes the
+  // thing you came to practise. Say "coach on" when you want it.
+  const COACH_MS=600;          // judgement, not playing strength
+  let coachGeneration=0;
+
+  // Several phrasings per answer, so it stops sounding like a vending machine
+  // (C2). Never varies a *fact* — only the sentence around it. The last
+  // choice is remembered so the same one doesn't land twice running, which is
+  // the thing that actually reads as robotic.
+  const lastPick={};
+  function pick(list){
+    if(list.length===1) return list[0];
+    const key=list[0];
+    let i=Math.floor(Math.random()*list.length);
+    if(list[i]===lastPick[key]) i=(i+1)%list.length;
+    lastPick[key]=list[i];
+    return list[i];
+  }
+
+  // "What are they threatening?" is "what would they play if it were their
+  // move" — so hand them the move. A null move isn't legal chess, but it is a
+  // legal position as long as the side about to lose the move isn't in check,
+  // which is precisely when the threat is the check and there is nothing to
+  // compute anyway.
+  function nullMoveFen(){
+    if(game.in_check()) return null;
+    const parts=game.fen().split(' ');
+    parts[1]=parts[1]==='w'?'b':'w';
+    parts[3]='-';              // an en-passant square belongs to the move that created it
+    parts[4]='0';
+    const fen=parts.join(' ');
+    const probe=new Chess();
+    return probe.load(fen)?fen:null;
+  }
+
+  function describeUci(fen,uci){
+    if(!uci||uci.length<4) return null;
+    const probe=new Chess();
+    if(!probe.load(fen)) return null;
+    return probe.move({from:uci.slice(0,2),to:uci.slice(2,4),
+                       promotion:uci.length>4?uci[4]:undefined})||null;
+  }
+
+  // Does the side that moves first in this line give check in its first few
+  // moves? Cheaper and more honest than inventing a "king safety score".
+  function pvGivesCheck(fen,pv,plies){
+    const probe=new Chess();
+    if(!probe.load(fen)) return null;
+    for(let i=0;i<Math.min(plies,pv.length);i++){
+      const u=pv[i];
+      const m=probe.move({from:u.slice(0,2),to:u.slice(2,4),promotion:u.length>4?u[4]:undefined});
+      if(!m) return null;
+      if(i%2===0 && probe.in_check()) return m;
+    }
+    return null;
+  }
+
+  // UCI reports from the seat of whoever is to move. Getting this backwards
+  // is the single easiest mistake here, and it would tell a blindfold player
+  // they're winning while they're being mated.
+  function scoreFromMySeat(res,fen){
+    const mover=(fen||game.fen()).split(' ')[1];
+    return res.value*(mover===myColor()?1:-1);
+  }
+
+  function evalSentence(res,fen){
+    if(res.kind==='mate'){
+      const forMe=scoreFromMySeat(res,fen)>0;
+      return forMe?pick(['There’s a forced mate for you.','You have mate here.','That’s a forced mate for you.'])
+                  :pick(['There’s a forced mate against you.','You’re getting mated.','They have a forced mate.']);
+    }
+    const cp=scoreFromMySeat(res,fen), a=Math.abs(cp), mine=cp>0;
+    const exact=coach==='full'?' ('+(cp/100>=0?'+':'')+(cp/100).toFixed(1)+')':'';
+    if(a<30) return pick(['It’s about level.','Dead level.','Roughly balanced.'])+exact;
+    if(a<90) return (mine?pick(['You’re a shade better.','You’re slightly better.','You’re a touch ahead.'])
+                         :pick(['You’re a shade worse.','You’re slightly worse.','They’re a touch ahead.']))+exact;
+    if(a<250) return (mine?pick(['You’re clearly better.','You’re well on top.','You’ve got the better of it.'])
+                          :pick(['You’re clearly worse.','They’re well on top.','They’ve got the better of it.']))+exact;
+    if(a<600) return (mine?pick(['You’re winning.','This should be winning for you.'])
+                          :pick(['You’re losing this.','This is going badly.']))+exact;
+    return (mine?pick(['You’re completely winning.','This is over — in your favour.'])
+                :pick(['You’re completely lost.','This is over, and not in your favour.']))+exact;
+  }
+
+  // Pure computation, but it reads like conversation (C2) — and every clause
+  // is something a sighted player would simply see.
+  function positionNotes(){
+    const notes=[], me=myColor(), rights=game.fen().split(' ')[2];
+    const castled=game.history().some(h=>h==='O-O'||h==='O-O-O'||/^O-O/.test(h));
+    const canCastle=rights.indexOf(me==='w'?'K':'k')!==-1||rights.indexOf(me==='w'?'Q':'q')!==-1;
+    if(!canCastle&&castled) notes.push('you’ve castled');
+    else if(!canCastle) notes.push('you’ve lost the right to castle');
+    const rooks=pieceSquares(me,'r');
+    if(rooks.length===2&&rooks[0][1]===rooks[1][1]){
+      const rank=rooks[0][1], a=FILES.indexOf(rooks[0][0]), b=FILES.indexOf(rooks[1][0]);
+      let clear=true;
+      for(let f=Math.min(a,b)+1;f<Math.max(a,b);f++) if(game.get(FILES[f]+rank)) clear=false;
+      if(clear) notes.push('your rooks are connected');
+    }
+    if(game.in_check()) notes.push('you’re in check');
+    return notes;
+  }
+
+  function coachOffReply(){
+    warn(pick(['The coach is off — say “coach on” if you want the engine’s read.',
+               'Coach is off. Say “coach on” to let the engine answer that.']));
+  }
+
+  // Every coach answer runs through here: it is the only place that has to
+  // know the engine is 7.3MB, lazily loaded, shared with the Master level and
+  // occasionally absent.
+  function askEngine(fen,then){
+    if(coach==='off'){ coachOffReply(); return; }
+    const g=++coachGeneration, gen=generation;
+    note('Thinking…');
+    speak(pick(['Let me look.','One moment.','Checking.']));
+    stockfishAnalyse(fen,COACH_MS).then(res=>{
+      if(g!==coachGeneration||gen!==generation) return;   // superseded, or the game moved on
+      note('');
+      if(!res){ warn('The engine didn’t come back with anything.'); return; }
+      then(res);
+    }).catch(err=>{
+      if(g!==coachGeneration) return;
+      note('');
+      warn('The engine isn’t available — '+((err&&err.message)||'it failed to load')+'.');
+    });
+  }
+
+  // Every rule needs an interrogative cue *and* its own keyword, which is
+  // what keeps an ordinary spoken move from ever falling into one — no move
+  // phrasing contains "where", "what", "can" or "how many".
+  const Q_CUE=['where','wear','were','what','whats','which','who','is','are','was',
+    'can','could','how','do','does','did','am','any','anything','tell','list'];
+
+  function matchQuestion(raw){
+    const t=normalizeQuestion(raw);
+    const words=t.split(' ').filter(Boolean);
+    // Spoken questions are short. The length guard is the same one that stops
+    // "seems to be stuck like a side note" from castling.
+    if(!words.length||words.length>9) return null;
+    if(!hasSound(words,Q_CUE)) return null;
+    const sqs=squaresIn(t);
+
+    // --- how am I doing? ---
+    if((hasSound(words,['doing','standing','position','eval','evaluation','score','winning','losing','better','worse'])
+        &&hasSound(words,['how','who','what','am','is','are','i','my','doing']))
+       ||(hasSound(words,['how'])&&hasSound(words,['doing','going','look','looks','looking']))){
+      return ()=>{
+        if(coach==='off'){ coachOffReply(); return; }
+        askEngine(game.fen(),res=>{
+          const notes=positionNotes();
+          speak(evalSentence(res)+(notes.length&&verbosity!=='terse'?' '+cap(joinAnd(notes))+'.':''));
+        });
+      };
+    }
+
+    // --- what should I worry about? / what are they threatening? ---
+    if(hasSound(words,['worry','worried','threat','threats','threatening','threaten','threatens','danger','plan','planning','coming'])){
+      return ()=>{
+        if(coach==='off'){ coachOffReply(); return; }
+        if(game.in_check()){
+          const ksq=pieceSquares(myColor(),'k')[0];
+          const by=ksq?attackersOf(ksq,foeColor()):[];
+          speak('You’re in check'+(by.length?', from '+joinAnd(by.map(pieceAt)):'')+'. That first.');
+          return;
+        }
+        // If it's already their move, the threat is just their best move.
+        const theirTurn=game.turn()!==myColor();
+        const fen=theirTurn?game.fen():nullMoveFen();
+        if(!fen){ speak('Can’t work that one out from here.'); return; }
+        askEngine(fen,res=>{
+          const m=res.pv&&res.pv.length?describeUci(fen,res.pv[0]):null;
+          if(!m){ speak('Nothing obvious.'); return; }
+          const what=m.captured?pick(['they want to take '+pieceAt(m.to)+'.',
+                                      'they’re after '+pieceAt(m.to)+'.'])
+                    :pick(['their '+PIECE_NAME[m.piece]+' is eyeing '+spokenSquare(m.to)+'.',
+                           'watch their '+PIECE_NAME[m.piece]+' coming to '+spokenSquare(m.to)+'.',
+                           'they’d like the '+PIECE_NAME[m.piece]+' on '+spokenSquare(m.to)+'.']);
+          speak(cap(what));
+        });
+      };
+    }
+
+    // --- is my king safe? ---
+    if(hasSound(words,['king','kings'])&&hasSound(words,['safe','safety','ok','okay','fine','exposed','danger','dangerous'])){
+      return ()=>{
+        if(coach==='off'){ coachOffReply(); return; }
+        if(game.in_check()){ speak('No — you’re in check right now.'); return; }
+        const theirTurn=game.turn()!==myColor();
+        const fen=theirTurn?game.fen():nullMoveFen();
+        if(!fen){ speak('Can’t work that one out from here.'); return; }
+        askEngine(fen,res=>{
+          const chk=res.pv?pvGivesCheck(fen,res.pv,5):null;
+          if(chk){ speak(pick(['Not entirely — they have a check with the '+PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to)+'.',
+                               'There’s a check coming: '+PIECE_NAME[chk.piece]+' to '+spokenSquare(chk.to)+'.'])); return; }
+          speak(pick(['No immediate threats to your king.','Your king looks fine for now.','Nothing at your king right now.']));
+        });
+      };
+    }
+
+    // --- what should I play? (deliberately gated behind Coach: full) ---
+    if(hasSound(words,['best','should','recommend','suggest','advice'])
+       &&hasSound(words,['move','moves','play','do'])){
+      return ()=>{
+        if(coach!=='full'){
+          warn(coach==='off'
+            ? 'The coach is off. Even on, I’ll only name a move at “coach full”.'
+            : 'Not at this setting — say “coach full” if you really want the move.');
+          return;
+        }
+        askEngine(game.fen(),res=>{
+          const m=res.bestmove?describeUci(game.fen(),res.bestmove):null;
+          speak(m?'Engine likes '+cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to)+'.'
+                 :'No move came back.');
+        });
+      };
+    }
+
+    // --- am I in check? ---
+    if(hasSound(words,['check','cheque','czech','chek'])&&hasSound(words,['am','is','are','was','in','i','we'])){
+      return ()=>{
+        if(game.in_checkmate()){ speak('Checkmate. '+colorName(game.turn())+' is mated.'); return; }
+        if(!game.in_check()){ speak(pick(['No — nobody is in check.','No check.','No, you’re fine.'])); return; }
+        const side=game.turn(), ksq=pieceSquares(side,'k')[0];
+        const by=ksq?attackersOf(ksq,side==='w'?'b':'w'):[];
+        speak('Yes — '+(side===myColor()?'you are':colorName(side)+' is')+' in check'
+          +(by.length?', from '+joinAnd(by.map(pieceAt)):'')+'.');
+      };
+    }
+
+    // --- can I still castle? (never swallow an actual castling move) ---
+    if(hasSound(words,['castle','castles','castling','cassel'])
+       &&hasSound(words,['can','could','still','may','able','allowed','am','do','is'])
+       &&!/\b(kingside|queenside)\b/.test(t)){
+      return ()=>{
+        const c=askedColor(words), rights=game.fen().split(' ')[2];
+        const who=c===myColor()?'You':colorName(c), verb=c===myColor()?' can':' can';
+        const sides=[];
+        if(rights.indexOf(c==='w'?'K':'k')!==-1) sides.push('kingside');
+        if(rights.indexOf(c==='w'?'Q':'q')!==-1) sides.push('queenside');
+        if(!sides.length){ speak(who+verb+' no longer castle.'); return; }
+        let msg=who+verb+' still castle '+joinAnd(sides)+'.';
+        if(game.turn()===c){
+          const now=game.moves().map(s=>s.replace(/[+#]/g,'')).filter(s=>s==='O-O'||s==='O-O-O');
+          if(!now.length) msg+=' Not this move, though.';
+          else if(now.length<sides.length) msg+=' Right now, only '+(now[0]==='O-O'?'kingside':'queenside')+'.';
+        }
+        speak(msg);
+      };
+    }
+
+    // --- where is X? / where can X go? ---
+    if(hasSound(words,['where','wear','were','ware','locate','find'])){
+      const piece=questionPiece(words);
+      if(piece){
+        const wantMoves=hasSound(words,['go','goes','going','move','moves','play']);
+        const c=askedColor(words);
+        return ()=>{
+          const at=pieceSquares(c,piece), name=PIECE_NAME[piece], mine=c===myColor();
+          noteAsked(at);
+          if(!at.length){ speak((mine?'You have':colorName(c)+' has')+' no '+name+' left.'); return; }
+          if(!wantMoves){
+            speak(cap(owns(c))+' '+(at.length>1?name+'s are on ':name+' is on ')+sqList(at)+'.');
+            return;
+          }
+          if(game.turn()!==c){ speak('It’s '+(mine?colorName(foeColor()):colorName(myColor()))+' to move.'); return; }
+          const byFrom={};
+          game.moves({verbose:true}).forEach(m=>{
+            if(m.piece!==piece) return;
+            (byFrom[m.from]=byFrom[m.from]||[]).push(m.to);
+          });
+          const froms=Object.keys(byFrom);
+          if(!froms.length){ speak('No '+name+' moves right now.'); return; }
+          speak(froms.map(f=>'The '+name+' on '+spokenSquare(f)+' can go to '
+            +sqList(byFrom[f].filter((v,i,a)=>a.indexOf(v)===i))).join('. ')+'.');
+        };
+      }
+    }
+
+    // --- what's attacking X? / is X attacked? ---
+    if(hasSound(words,['attacking','attacked','attack','attacks','threatening','threatened',
+                       'threatens','threat','threats','hitting','danger','dangerous'])){
+      return ()=>{
+        const tg=questionTargets(words,sqs);
+        if(!tg.length){ askAboutWhat(); return; }
+        speak(tg.map(s=>{
+          const p=game.get(s), side=p?p.color:myColor();
+          const by=attackersOf(s,side==='w'?'b':'w');
+          const subject=p?cap(owns(p.color))+' '+PIECE_NAME[p.type]+' on '+spokenSquare(s):cap(spokenSquare(s));
+          return by.length?subject+' is attacked by '+joinAnd(by.map(pieceAt))
+                         :subject+pick([' is not attacked',' isn’t under attack',' has nothing hitting it']);
+        }).join('. ')+'.');
+      };
+    }
+
+    // --- is X defended? ---
+    if(hasSound(words,['defended','defend','defends','defending','defender','defenders',
+                       'protected','protecting','protects','protect','covered','guarded','guarding','supported'])){
+      return ()=>{
+        const tg=questionTargets(words,sqs);
+        if(!tg.length){ askAboutWhat(); return; }
+        speak(tg.map(s=>{
+          const p=game.get(s), side=p?p.color:myColor();
+          const by=attackersOf(s,side).filter(a=>a!==s);
+          const subject=p?cap(owns(p.color))+' '+PIECE_NAME[p.type]+' on '+spokenSquare(s):cap(spokenSquare(s));
+          return by.length?subject+' is defended by '+joinAnd(by.map(pieceAt))
+                         :subject+pick([' is undefended',' has nothing defending it',' is on its own']);
+        }).join('. ')+'.');
+      };
+    }
+
+    // --- anything hanging? ---
+    // Still just counting: a piece is loose if it's attacked and either
+    // undefended or attacked by something cheaper than itself. No search,
+    // no evaluation — that judgement belongs to the engine work in Phase C.
+    if(hasSound(words,['hanging','hangs','hang','undefended','unprotected','unguarded','loose','prise'])){
+      return ()=>{
+        const c=askedColor(words), foe=c==='w'?'b':'w';
+        const loose=pieceSquares(c).filter(s=>{
+          const p=game.get(s);
+          if(p.type==='k') return false;
+          const att=attackersOf(s,foe);
+          if(!att.length) return false;
+          if(!attackersOf(s,c).length) return true;
+          return Math.min.apply(null,att.map(worth))<PIECE_VALUE[p.type];
+        });
+        const who=c===myColor()?'yours':colorName(c)+'’s';
+        speak(loose.length?sentence(joinAnd(loose.map(pieceAt)))+(loose.length>1?' are':' is')+' loose.'
+                         :'Nothing of '+who+' is hanging.');
+      };
+    }
+
+    // --- what did I just play? / what were the last three moves? ---
+    const histCue=hasSound(words,['last','previous','recent','just'])
+      ||(hasSound(words,['did'])&&hasSound(words,['play','played','move','moved']));
+    if(histCue&&hasSound(words,['move','moves','moved','play','played','plays','did','was','were'])){
+      return ()=>{
+        const h=game.history({verbose:true});
+        if(!h.length){ speak('No moves yet.'); return; }
+        const owner=askedOwner(words);
+        if(owner){
+          let m=null;
+          for(let i=h.length-1;i>=0;i--) if(h[i].color===owner){ m=h[i]; break; }
+          speak(m?(owner===myColor()?'You played ':colorName(owner)+' played ')+shortMove(m)+'.'
+                 :'No moves by '+(owner===myColor()?'you':colorName(owner))+' yet.');
+          return;
+        }
+        const want=countIn(words)||(hasSound(words,['moves'])?3:1);
+        speak(h.slice(-Math.min(want,h.length))
+          .map(m=>colorName(m.color)+' '+shortMove(m).charAt(0).toLowerCase()+shortMove(m).slice(1))
+          .join(', then ')+'.');
+      };
+    }
+
+    // --- how many pieces do I have left? ---
+    if(hasSound(words,['how'])&&hasSound(words,['many','much'])){
+      const p=questionPiece(words);
+      return ()=>{
+        const c=askedColor(words), who=c===myColor()?'You have ':colorName(c)+' has ';
+        if(p){
+          const at=pieceSquares(c,p), n=at.length;
+          speak(who+(n?n+' '+PIECE_NAME[p]+(n===1?'':'s')+', on '+sqList(at):'no '+PIECE_NAME[p]+' left')+'.');
+          return;
+        }
+        const parts=['q','r','b','n','p'].map(tp=>{
+          const n=pieceSquares(c,tp).length;
+          return n?(n===1?'a '+PIECE_NAME[tp]:n+' '+PIECE_NAME[tp]+'s'):null;
+        }).filter(Boolean);
+        speak(who+pieceSquares(c).length+' pieces: the king'+(parts.length?', '+joinAnd(parts):'')+'.');
+      };
+    }
+
+    // --- what can I take? ---
+    if(hasSound(words,['can','any','anything','what','whats','which'])
+       &&hasSound(words,['take','takes','capture','captures','taking','capturing','win'])){
+      return ()=>{
+        if(game.turn()!==myColor()){ speak('It’s not your move.'); return; }
+        // Sorted by what's being won, because the list is cut at six: the
+        // free queen must never be the entry that got trimmed.
+        const caps=game.moves({verbose:true}).filter(m=>m.captured)
+          .sort((a,b)=>PIECE_VALUE[b.captured]-PIECE_VALUE[a.captured]);
+        if(!caps.length){ speak(pick(['No captures available.','Nothing to take right now.','There’s nothing hanging for you.'])); return; }
+        speak('You can take '+joinAnd(caps.slice(0,6).map(m=>
+          'the '+PIECE_NAME[m.captured]+' on '+spokenSquare(m.to)+' with the '+PIECE_NAME[m.piece]+' from '+spokenSquare(m.from)))
+          +(caps.length>6?', and more':'')+'.');
+      };
+    }
+
+    // --- what's on e4? / is d5 empty? (last: the loosest rule) ---
+    if(sqs.length&&hasSound(words,['on','empty','occupied','occupies','there','what','whats',
+                                   'anything','holds','has','free','vacant','stands','sits'])){
+      return ()=>{
+        noteAsked(sqs.slice(0,3));
+        speak(sentence(joinAnd(sqs.slice(0,3).map(s=>{
+          const p=game.get(s);
+          return p?spokenSquare(s)+' has '+owns(p.color)+' '+PIECE_NAME[p.type]
+                 :spokenSquare(s)+' is empty';
+        })))+'.');
+      };
+    }
+
+    return null;
+  }
+  function askAboutWhat(){ warn('Which piece or square?'); }
+
+  // ===============================================================
   // Commands — returned as closures so planFor() stays pure
   // ===============================================================
   function matchCommand(t){
-    if(/\b(show|reveal|unhide)\b.*\bboard\b/.test(t)) return ()=>{ setBoardHidden(false); log('Board','Board revealed.'); };
-    if(/\bhide\b.*\bboard\b/.test(t)) return ()=>{ setBoardHidden(true); log('Board','Board hidden.'); };
+    // Moves get phonetic matching but commands were exact-regex only, so
+    // "hide board" came back as "hi board" / "High board" / "Highboy" and was
+    // rejected outright. These variants are all observed recognizer output.
+    if(/\b(show|reveal|unhide|revealed|review|rebuild)\b.*\bboard\b/.test(t)) return ()=>{ setBoardHidden(false); log('Board','Board revealed.'); };
+    if(/\b(hide|hid|high|hi|hyde)\b.*\b(board|bored|boy)\b/.test(t)||/\b(hiboard|highboy|whiteboard|cardboard)\b/.test(t))
+      return ()=>{ setBoardHidden(true); log('Board','Board hidden.'); };
     if(/what.{0,3}s on the board|board state|describe the board|read the board/.test(t)) return announceBoard;
     if(/\bmaterial\b|who.{0,3}s ahead/.test(t)) return announceMaterial;
     if(/how (much )?time|time left|clock|time remaining/.test(t)) return announceClock;
@@ -1008,15 +2306,37 @@
     if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
     if(/new game|restart|reset/.test(t)) return startNewGame;
     if(/take back|takeback|undo/.test(t)) return takeBack;
-    return null;
+    // "coach on" is a command, not a question. It was in matchQuestion at
+    // first and never fired once — every rule there is gated on an
+    // interrogative cue, and "coach on" hasn't got one. Matched by sound
+    // because "coach" comes back as "couch" often enough to matter.
+    return matchCoachCommand(t);
   }
+
+  function matchCoachCommand(t){
+    const words=t.split(/\s+/).filter(Boolean);
+    if(words.length>4||!hasSound(words,['coach','coaching','couch'])) return null;
+    return ()=>{
+      const want=hasWord(words,['off','stop','quiet','no'])?'off'
+                :hasSound(words,['full','everything','numbers'])?'full'
+                :hasWord(words,['on','yes'])||hasSound(words,['hints','hint','help'])?'hints':null;
+      if(!want){ speak('The coach is '+coach+'.'); return; }
+      coach=want; coachSelect.value=coach; saveState();
+      speak(coach==='off'?'Coach off. Board facts only.'
+           :coach==='full'?'Coach on, full — numbers, and the best move if you ask for it.'
+           :'Coach on. I’ll keep it vague on purpose.');
+    };
+  }
+  // Reading all 32 pieces out one at a time is unusable mid-game, which is
+  // exactly what this did. Group them by piece type and lead with the side
+  // the player is sitting on.
   function announceBoard(){
-    const b=game.board(), out={w:[],b:[]};
-    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
-      const c=b[r][f]; if(!c) continue;
-      out[c.color].push(PIECE_NAME[c.type]+' '+String.fromCharCode(97+f)+(8-r));
-    }
-    speak('White: '+out.w.join(', ')+'. Black: '+out.b.join(', ')+'.');
+    const roster=c=>joinAnd(['k','q','r','b','n','p'].map(tp=>{
+      const at=pieceSquares(c,tp);
+      return at.length?PIECE_NAME[tp]+(at.length>1?'s ':' ')+sqList(at):null;
+    }).filter(Boolean));
+    const me=myColor(), them=me==='w'?'b':'w';
+    speak(colorName(me)+': '+roster(me)+'. '+colorName(them)+': '+roster(them)+'.');
   }
   function announceMaterial(){
     const b=game.board(); let w=0,bl=0;
@@ -1075,6 +2395,67 @@
   }
   function askCastleSide(){ pendingAction={type:'castle'}; warn('Kingside or queenside?'); updateStatus(); }
 
+  // "castle kingside" degrades badly and in ways no word list can enumerate:
+  // observed as "cats looking side", "cats looking inside", "cats looking
+  // site". Match the *shape* instead — something that sounds like "king"
+  // (phon "kng", which "looking" ends with) next to something that sounds
+  // like "side". Restricted to short utterances so ordinary speech
+  // containing those sounds can't trigger a castle.
+  function fuzzyCastleSide(t){
+    const toks=t.split(/\s+/).filter(Boolean);
+    if(!toks.length||toks.length>4) return null;
+    const P=toks.map(phon);
+    const side=P.some(p=>/sd$|st$|sz$/.test(p));
+    if(!side) return null;
+    if(P.some(p=>p.includes('kng'))) return 'k';
+    if(P.some(p=>p.includes('kn')&&!p.includes('kng'))) return 'q';
+    return null;
+  }
+
+  // A3 — a near miss is worth a question, not a rejection.
+  // Measured against real speech: "rook g1" came back as "Rock Jeep" / "Rook
+  // Jeet" / "Rock Ji". The piece was unmistakable and the square was gone, yet
+  // the whole utterance was thrown away and the move had to be repeated from
+  // scratch. Asking for just the missing half turns that into one syllable.
+  // Safe to speak the candidate aloud only because A4 mutes the mic while we
+  // talk; without that gate this would be a fresh OUR-58 feedback loop.
+  function askForSquare(piece){
+    const cands=game.moves({verbose:true}).filter(m=>m.piece===piece);
+    if(!cands.length) return false;
+    pendingAction={type:'square',piece,cands};
+    log('System',cap(PIECE_NAME[piece])+' to where? Say the square.');
+    say(cap(PIECE_NAME[piece])+' to where?');
+    updateStatus();
+    return true;
+  }
+  function askConfirm(m){
+    pendingAction={type:'confirm',san:m.san};
+    log('System','Did you mean '+m.san+'? Say yes or no.');
+    say(cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to)+'?');
+    updateStatus();
+    return true;
+  }
+  function askIfPlausible(plan){
+    // Spoken moves are short. "nice"/"light"/"like" are listed as knight
+    // because that is overwhelmingly what they are in a three-word utterance,
+    // but in a full sentence of ordinary speech they are just words — and
+    // "seems to be stuck like a side note" was triggering "Knight to where?".
+    // Length is the cheapest reliable separator between the two.
+    if((plan.text||'').trim().split(/\s+/).length>5) return false;
+    const top=plan.top&&plan.top.length?plan.top:null;
+    // The piece came through clearly but the square did not. We only reach
+    // here when nothing was accepted, so the candidate scores don't matter —
+    // "queen drive6" ranked Qd4 at 1.02 and was thrown away rather than
+    // asked about, purely because of a threshold that served no purpose.
+    if(plan.said) return askForSquare(plan.said);
+    // One candidate leads, but not by enough to play it unasked.
+    if(top && top[0].score>=0.9 && (top[0].score-(top[1]?top[1].score:-10))>=0.25){
+      const m=game.moves({verbose:true}).find(x=>x.san===top[0].san);
+      if(m) return askConfirm(m);
+    }
+    return false;
+  }
+
   function resolvePending(texts){
     const pa=pendingAction;
     for(const raw of texts){
@@ -1095,6 +2476,39 @@
       if(pa.type==='castle'){
         if(/kingside|short/.test(t)){ pendingAction=null; updateStatus(); execPlan(planFor('castle kingside')); return true; }
         if(/queenside|long/.test(t)){ pendingAction=null; updateStatus(); execPlan(planFor('castle queenside')); return true; }
+      }
+      if(pa.type==='square'){
+        // Don't swallow a complete move that happens to contain a square.
+        // With "Knight to where?" open, "bishop to c4" was being read as the
+        // answer "c4" and answered with "no knight can reach c4", losing a
+        // perfectly good move. Naming a different piece means this is a new
+        // utterance, not a reply.
+        const other=spokenPiece(speechKey(raw));
+        if(other&&other!==pa.piece) continue;
+        const sq=(t.match(/\b([a-h][1-8])\b/)||[])[1];
+        if(sq){
+          const m=pa.cands.find(c=>c.to===sq);
+          pendingAction=null; updateStatus();
+          if(m){ execPlan(planForMove(m)); return true; }
+          warn('No '+PIECE_NAME[pa.piece]+' can reach '+sq+'.');
+          return true;
+        }
+      }
+      if(pa.type==='confirm'){
+        // Only yes/no resolves this. Anything else falls through and is
+        // treated as a fresh utterance, so a misheard "no" costs one repeat
+        // rather than playing a move nobody asked for.
+        if(/\b(yes|yeah|yep|yup|correct|right|okay|ok|sure|do it)\b/.test(t)){
+          const m=game.moves({verbose:true}).find(x=>x.san===pa.san);
+          pendingAction=null; updateStatus();
+          if(m) execPlan(planForMove(m)); else warn('That move isn’t available any more.');
+          return true;
+        }
+        if(/\b(no|nope|nah|cancel|wrong|never mind)\b/.test(t)){
+          pendingAction=null; updateStatus();
+          warnSilent('Okay — say the move again.');
+          return true;
+        }
       }
     }
     return false;
@@ -1118,6 +2532,8 @@
         // short utterance as noise, not a parsing gap, so point at what
         // actually helps instead of repeating the generic example moves.
         const raw=(plan.text||'').trim();
+        // Ask about a near miss before giving up on the utterance entirely.
+        if(askIfPlausible(plan)) break;
         warnSilent(raw&&!/[a-z]/i.test(raw)
           ? 'That didn\u2019t sound like a chess move \u2014 try spelling it out, like "alpha three" instead of "a three", or type it in the box below.'
           : 'I didn\u2019t catch a move. Try "knight to f3", "e4", or "castle kingside".');
@@ -1128,26 +2544,102 @@
   // ===============================================================
   // Routing — accepts a RANKED LIST of speech alternatives
   // ===============================================================
-  function route(alternatives){
-    const list=(Array.isArray(alternatives)?alternatives:[alternatives])
-      .map(s=>String(s||'').trim()).filter(Boolean);
-    if(!list.length) return;
-
-    if(pendingAction){
-      log('You',list[0],list.length>1?'also heard: '+list.slice(1,3).join(' / '):null);
-      if(resolvePending(list)) return;
-      pendingAction=null; updateStatus();   // treat as a fresh utterance instead
-    }
-
-    // Score every alternative; the one producing a legal move / command wins.
+  // Score every alternative; the one producing a legal move / command wins.
+  // The old cutoff of 6 stopped at the first merely-plausible reading, and
+  // the recognizer orders alternatives by its own confidence, not ours: for
+  // "knight to d4" it offered "Nike D4" first, which parses as an
+  // unambiguous pawn move and scored exactly 6 — so the loop stopped and
+  // never reached "Knight to D4" sitting two places later at 10.4, and the
+  // wrong piece moved. Only an exact phrase match (>=9) is worth stopping
+  // for; anything less has to be compared against the whole list.
+  function scoreAlternatives(list){
     let best=null,bestText=list[0];
+    const scorings={};
     for(const text of list){
       const plan=planFor(text);
+      scorings[text]=lastScoring;
       if(!best||plan.score>best.score){ best=plan; bestText=text; }
-      if(best.score>=6) break;
+      if(best.score>=9) break;
     }
+    // When nothing parsed at all, prefer an alternative that at least names a
+    // piece. "like to wear" and "night to wear" both score 0 and the first
+    // one wins by position — but only the second lets us ask "Knight to
+    // where?" instead of throwing the whole utterance away.
+    if(best&&best.type==='none'&&!best.said){
+      for(const text of list){
+        if(text.trim().split(/\s+/).length>5) continue;   // see askIfPlausible
+        const said=spokenPiece(speechKey(text));
+        if(said){ best.said=said; best.text=text; bestText=text; break; }
+      }
+    }
+    lastScoring=scorings[bestText]||lastScoring;   // report the winner, not the last tried
+    return {best,bestText};
+  }
+
+  function pendingPrompt(){
+    const pa=pendingAction;
+    if(!pa) return '';
+    if(pa.type==='castle') return 'kingside or queenside?';
+    if(pa.type==='square') return cap(PIECE_NAME[pa.piece])+' to where?';
+    if(pa.type==='confirm') return 'did you mean '+pa.san+'? Say yes or no.';
+    if(pa.type==='promotion') return 'promote to queen, rook, bishop, or knight?';
+    if(pa.type==='piece') return 'which one?';
+    return '';
+  }
+
+  // The recognizer writes a spoken file letter as a digit constantly: "a6"
+  // and "h6" both come back as "86", which parses as nothing at all — seen
+  // three times in a row, rejected every time, until the move was rephrased.
+  // Guessing which letter was meant would be wrong half the time, so offer
+  // both readings as extra alternatives and let the legal-move scorer pick.
+  function expandAlternatives(list){
+    const dests=new Set(game.moves({verbose:true}).map(m=>m.to));
+    const extra=[];
+    for(const t of list){
+      const m=t.match(/\b8([1-8])\b/);
+      if(!m) continue;
+      const reachable=['a'+m[1],'h'+m[1]].filter(sq=>dests.has(sq));
+      // If both readings are legal it's a coin flip, and silently playing the
+      // wrong move is far worse than asking again — a blindfold player can't
+      // see it happen. Expand only when the position makes it unambiguous.
+      if(reachable.length!==1) continue;
+      extra.push(t.replace(/\b8([1-8])\b/g,reachable[0]));
+    }
+    return extra.length ? list.concat(extra.filter(x=>list.indexOf(x)===-1)) : list;
+  }
+
+  function route(alternatives){
+    let list=(Array.isArray(alternatives)?alternatives:[alternatives])
+      .map(s=>String(s||'').trim()).filter(Boolean);
+    if(!list.length) return;
+    list=expandAlternatives(list);
+
+    let scored=null, alreadyLogged=false;
+    if(pendingAction){
+      log('You',list[0],list.length>1?'also heard: '+list.slice(1,3).join(' / '):null);
+      alreadyLogged=true;
+      if(resolvePending(list)) return;
+      // A single misheard answer used to discard the question outright, so
+      // answering correctly on the next attempt did nothing — there was no
+      // longer anything waiting for it. Seen live: "kingside" spoken three
+      // times and rejected three times, because the first attempt came back
+      // as "inside". Hold the question open unless this utterance clearly is
+      // something else.
+      scored=scoreAlternatives(list);
+      if(!scored.best||scored.best.score<6){
+        warnSilent('Didn’t catch that — '+pendingPrompt());
+        say('Sorry?');       // deliberately contains no phrase worth echoing
+        return;
+      }
+      pendingAction=null; updateStatus();
+    }
+
+    if(!scored) scored=scoreAlternatives(list);
+    const best=scored.best, bestText=scored.bestText;
     const others=list.filter(x=>x!==bestText).slice(0,2);
-    log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
+    if(!alreadyLogged) log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
+    if(DEBUG) recordDiagnostic(list,best,bestText);
+    setMicState('thinking','routing "'+bestText.slice(0,32)+'"');
 
     // Commands are always allowed, even after game over / while computer thinks.
     if(best.type!=='command'){
@@ -1161,6 +2653,11 @@
       }
     }
     execPlan(best);
+    // execPlan usually ends in say(), which takes the state to SPEAKING. When
+    // it doesn't — a silent warning, a command that only logs — nothing else
+    // would ever move us off THINKING, and the timeline would read as if the
+    // app had hung.
+    if(!speaking) setMicState(listening?'listening':(wantLoop&&handsFree?'restarting':'idle'),'nothing to narrate');
   }
 
   textForm.addEventListener('submit',e=>{
@@ -1170,11 +2667,351 @@
   });
 
   // ===============================================================
+  // D2. Local speech recognition — and the only route to voice on iPhone.
+  //
+  // Every iOS browser is WebKit, and WebKit has no SpeechRecognition at all,
+  // so "use Chrome" is not a fix there. A model running in the page is the
+  // only way an iPhone ever hears a move.
+  //
+  // The shape of this is the whole design decision: LocalRecognition presents
+  // the *same* interface the app already drives — lang/continuous/
+  // interimResults/maxAlternatives, start/stop/abort, onstart/onspeechstart/
+  // onresult/onerror/onend. Everything downstream is untouched: Phase A's
+  // constrained matcher, Phase B's "nothing heard while speaking can reach
+  // route()" invariant, the restart backoff, the stale-session watchdog and
+  // the ?debug=1 timeline all keep working without knowing which recogniser
+  // is underneath. A parallel pipeline would have had to re-earn all of it.
+  //
+  // What Web Speech gave us for free and we now owe ourselves:
+  //   - endpointing (when did the utterance end?)  -> the VAD below
+  //   - alternatives (maxAlternatives=10)          -> we get exactly one
+  // The second is a real loss. Phase A's scorer discriminates between
+  // candidates, and with one candidate it has nothing to choose between —
+  // which is precisely why A1-A3's fuzzy matching stays essential. A better
+  // STT is not a substitute for the constrained matcher; it feeds it.
+  // ===============================================================
+  const STT_SR=16000;             // what Moonshine and Whisper both expect
+  const VAD_FRAME=512;            // 32ms at 16kHz — see the worklet below
+  const VAD_OPEN_MS=120;          // speech this long opens an utterance
+  const VAD_CLOSE_MS=700;         // silence this long ends one
+  const VAD_PREROLL_MS=350;       // audio kept from *before* the trigger
+  const VAD_MAX_MS=15000;         // hard cap on a single utterance
+  const VAD_MIN_MS=200;           // shorter than this is a cough, not a move
+
+  // Frames arrive from an AudioWorklet rather than a ScriptProcessorNode.
+  // Blob URL because a worklet module must be same-origin, and this keeps it
+  // in one file with everything else.
+  // A processor is handed 128 samples per call — 8ms at 16kHz, and 125
+  // postMessages a second if each one is forwarded on its own. Batching to
+  // VAD_FRAME first cuts that to about 31 while losing nothing: the VAD's
+  // thresholds are in milliseconds and derive their frame size from the
+  // buffer they are given, so the only thing that changes is the traffic.
+  const WORKLET_SRC=`
+    const N=${VAD_FRAME};
+    class Tap extends AudioWorkletProcessor {
+      constructor(){ super(); this.buf=new Float32Array(N); this.n=0; }
+      process(inputs){
+        const ch=inputs[0] && inputs[0][0];
+        if(!ch) return true;
+        for(let i=0;i<ch.length;i++){
+          this.buf[this.n++]=ch[i];
+          if(this.n===N){ this.port.postMessage(this.buf.slice()); this.n=0; }
+        }
+        return true;
+      }
+    }
+    registerProcessor('tap', Tap);
+  `;
+
+  // The AudioContext and its worklet module are reused across sessions; the
+  // microphone stream is not. In hands-free play a session restarts every few
+  // seconds, and rebuilding the context each time pays for addModule() over
+  // and over. The *stream* still gets stopped every time, so the browser's
+  // recording indicator goes out whenever we are not listening — guardrail 5
+  // is about the microphone, not about the audio graph that sits behind it.
+  let sttCtx=null, sttWorkletReady=false;
+  async function sttAudioContext(){
+    if(!sttCtx||sttCtx.state==='closed'){
+      sttCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:STT_SR});
+      sttWorkletReady=false;
+    }
+    if(sttCtx.state==='suspended') await sttCtx.resume();
+    if(!sttWorkletReady){
+      const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'text/javascript'}));
+      await sttCtx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      sttWorkletReady=true;
+    }
+    return sttCtx;
+  }
+
+  let sttWorker=null, sttWorkerReady=false, sttLoadPromise=null;
+  let sttSeq=0, sttPending={};
+
+  function sttPost(msg,transfer){ if(sttWorker) sttWorker.postMessage(msg,transfer||[]); }
+
+  function loadStt(){
+    if(sttLoadPromise) return sttLoadPromise;
+    sttLoadPromise=new Promise((resolve,reject)=>{
+      let w;
+      // Same-origin worker, constructed from a local file — the Stockfish
+      // pattern. A cross-origin Worker URL fails outright in some browsers.
+      try{ w=new Worker('stt-worker.js',{type:'module'}); }
+      catch(err){ reject(err); return; }
+      sttWorker=w;
+      w.onerror=err=>{ micEvent('stt','worker error: '+(err&&err.message)); reject(err); };
+      w.onmessage=e=>{
+        const m=e.data;
+        if(m.type==='ready'){
+          sttWorkerReady=true; note('');
+          micEvent('stt','model ready in '+m.ms+'ms ('+m.device+')');
+          resolve(true);
+        } else if(m.type==='progress'){
+          const pct=Math.round(m.loaded/m.total*100);
+          note('Downloading recogniser… '+pct+'%');
+        } else if(m.type==='result'){
+          const p=sttPending[m.id]; delete sttPending[m.id];
+          micEvent('stt',m.ms+'ms for '+m.audioMs+'ms audio — "'+m.text.slice(0,40)+'"');
+          if(p) p(m.text);
+        } else if(m.type==='error'){
+          micEvent('stt','error: '+m.message);
+          if(m.id!==undefined){ const p=sttPending[m.id]; delete sttPending[m.id]; if(p) p(''); }
+          else reject(new Error(m.message));
+        }
+      };
+      // WebGPU where it exists, WASM everywhere else. Guardrail 6: every
+      // enhancement degrades rather than failing. iOS Safari only got WebGPU
+      // recently, so the fallback is the common path on the device this
+      // whole phase exists for.
+      hasWebGPU().then(gpu=>{
+        sttDevice=gpu?'webgpu':'wasm';
+        // fp32 either way, and not for the reason you would guess. q8 does not
+        // merely run slowly here, it refuses to load at all in Transformers.js
+        // 4.2.0 ("MatMulNBits missing scale") — for Whisper as well as
+        // Moonshine, so it is the runtime, not the model. Of the dtypes that
+        // do load, fp32 measured ~194ms median against q4's ~406ms: twice the
+        // download and half the latency. That is the same inversion D1 found
+        // in Kokoro, and it is now the second time quantisation has been
+        // slower here rather than faster. Measure it; never assume it.
+        sttDtype='fp32';
+        micEvent('stt','loading '+sttModel+' ('+sttDevice+'/'+sttDtype+')');
+        note('Downloading recogniser\u2026');
+        sttPost({type:'load',model:sttModel,device:sttDevice,dtype:sttDtype,remote:sttRemote});
+      });
+    });
+    sttLoadPromise.catch(()=>{ sttLoadPromise=null; sttWorker=null; });
+    return sttLoadPromise;
+  }
+
+  function transcribe(pcm){
+    return new Promise(resolve=>{
+      const id=++sttSeq;
+      sttPending[id]=resolve;
+      const buf=pcm.buffer;
+      sttPost({type:'transcribe',id:id,pcm:buf,rate:STT_SR},[buf]);
+    });
+  }
+
+  function LocalRecognition(){
+    this.lang='en-US';
+    this.continuous=false;
+    this.interimResults=false;
+    this.maxAlternatives=1;
+    this.onstart=this.onspeechstart=this.onresult=this.onerror=this.onend=null;
+    this._started=false;
+    this._stream=null; this._ctx=null; this._node=null; this._src=null;
+    // The same generation trick the speech queue uses. Transcription is async,
+    // so a result can land after the session it belongs to was torn down.
+    // Without this, audio the user aborted still reaches route() and plays a
+    // move they cancelled — the one failure this project refuses to allow.
+    this._gen=0;
+    this._flush=null;
+    this._reset();
+  }
+
+  LocalRecognition.prototype._reset=function(){
+    this._speech=[];        // frames of the utterance being collected
+    this._pre=[];           // rolling pre-roll, kept even while silent
+    this._preLen=0;
+    this._voiced=0; this._quiet=0;
+    this._open=false;
+    this._floor=0.0025;     // adaptive noise floor, seeded low
+  };
+
+  LocalRecognition.prototype._emit=function(text,isFinal){
+    if(!this.onresult) return;
+    const res={length:1,isFinal:isFinal,0:{transcript:text,confidence:0.9}};
+    const results={length:1,0:res};
+    this.onresult({resultIndex:0,results:results});
+  };
+
+  // Deliberately NOT an async function. Web Speech's start() throws
+  // synchronously when a session is already open, and startListening()
+  // catches exactly that in a plain try/catch. An async function turns the
+  // same throw into a rejected promise that sails straight past the catch
+  // and lands as an unhandled rejection — the adapter has to match the
+  // contract it is impersonating, not just the method names.
+  LocalRecognition.prototype.start=function(){
+    if(this._started) throw new Error('already started');
+    this._started=true;
+    this._reset();
+    this._open_().catch(()=>{});
+  };
+
+  LocalRecognition.prototype._open_=async function(){
+    try{
+      // Asking for 16kHz directly lets the browser resample for us, which is
+      // both faster and less code than doing it here. iOS suspends a context
+      // created outside a gesture; the mic button is that gesture, but a
+      // resume() is still needed after any interruption.
+      this._ctx=await sttAudioContext();
+      this._stream=await navigator.mediaDevices.getUserMedia({audio:{
+        channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true
+      }});
+      if(!this._started){ this._teardown(); return; }   // stopped while awaiting
+      this._src=this._ctx.createMediaStreamSource(this._stream);
+      this._node=new AudioWorkletNode(this._ctx,'tap');
+      this._node.port.onmessage=e=>this._frame(e.data);
+      this._src.connect(this._node);
+      // A worklet with no downstream connection is not guaranteed to be
+      // pulled. Route it to a muted gain so it always runs, without the mic
+      // being played back into the room.
+      const mute=this._ctx.createGain(); mute.gain.value=0;
+      this._node.connect(mute); mute.connect(this._ctx.destination);
+      if(this.onstart) this.onstart();
+    }catch(err){
+      this._started=false;
+      this._teardown();
+      const name=err&&err.name;
+      const code=(name==='NotAllowedError'||name==='SecurityError')?'not-allowed'
+                :(name==='NotFoundError')?'audio-capture':'audio-capture';
+      if(this.onerror) this.onerror({error:code});
+      if(this.onend) this.onend();
+    }
+  };
+
+  // One 32ms frame. Everything about endpointing happens here.
+  LocalRecognition.prototype._frame=function(buf){
+    if(!this._started) return;
+    let sum=0;
+    for(let i=0;i<buf.length;i++) sum+=buf[i]*buf[i];
+    const rms=Math.sqrt(sum/buf.length);
+
+    // An absolute threshold works in a quiet room and nowhere else. Track the
+    // floor from the quiet frames only, so a fan or a room tone raises the bar
+    // instead of being transcribed. Rising fast and falling slow means a burst
+    // of noise stops being "speech" quickly, while genuine quiet takes a
+    // while to convince us the room got quieter than it is.
+    const speech=rms>Math.max(this._floor*3.5,0.006);
+    if(!speech) this._floor=this._floor*0.995+rms*0.005;
+
+    const frameMs=buf.length/STT_SR*1000;
+
+    if(!this._open){
+      // Pre-roll. Web Speech's per-utterance sessions clipped the opening
+      // audio and "knight to f3" arrived as "to f3" — the word that
+      // identifies the piece, gone. Owning the mic means we can simply keep
+      // the audio from before the trigger and never have that failure.
+      this._pre.push(buf); this._preLen+=frameMs;
+      while(this._preLen>VAD_PREROLL_MS&&this._pre.length>1){
+        this._preLen-=this._pre[0].length/STT_SR*1000; this._pre.shift();
+      }
+      if(speech){
+        this._voiced+=frameMs;
+        if(this._voiced>=VAD_OPEN_MS){
+          this._open=true; this._quiet=0;
+          this._speech=this._pre.slice(); this._pre=[]; this._preLen=0;
+          if(this.onspeechstart) this.onspeechstart();
+          if(this.interimResults) this._emit('…',false);
+        }
+      } else this._voiced=0;
+      return;
+    }
+
+    this._speech.push(buf);
+    if(speech) this._quiet=0; else this._quiet+=frameMs;
+    const lenMs=this._speech.length*frameMs;
+    if(this._quiet>=VAD_CLOSE_MS||lenMs>=VAD_MAX_MS) this._endUtterance();
+  };
+
+  LocalRecognition.prototype._endUtterance=function(){
+    const frames=this._speech;
+    this._speech=[]; this._open=false; this._voiced=0; this._quiet=0;
+    this._pre=[]; this._preLen=0;
+    let total=0; frames.forEach(f=>total+=f.length);
+    if(total/STT_SR*1000<VAD_MIN_MS) return;
+
+    const pcm=new Float32Array(total);
+    let o=0; frames.forEach(f=>{ pcm.set(f,o); o+=f.length; });
+
+    const self=this;
+    const myGen=this._gen;
+    this._flush=transcribe(pcm).then(text=>{
+      if(myGen!==self._gen){
+        micEvent('stt','dropped a result from an ended session');
+        return;
+      }
+      if(!text) return;
+      // Filler the model emits for near-silence. Routing these would fire the
+      // matcher on nothing and, worse, count as a barge-in mid-narration.
+      if(/^[\s.,!?]*$/.test(text)) return;
+      if(/^\(?\s*(blank_audio|silence|inaudible|music)\s*\)?$/i.test(text.replace(/[\[\]()]/g,''))) return;
+      self._emit(text,true);
+      // Push-to-talk: one utterance, then the session closes, mirroring what
+      // a non-continuous Web Speech session does.
+      if(!self.continuous) self.stop();
+    });
+  };
+
+  LocalRecognition.prototype._teardown=function(){
+    try{ if(this._node){ this._node.port.onmessage=null; this._node.disconnect(); } }catch(e){}
+    try{ if(this._src) this._src.disconnect(); }catch(e){}
+    // Stopping the tracks is what actually releases the microphone and puts
+    // out the browser's recording indicator. The shared context stays.
+    try{ if(this._stream) this._stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+    this._node=this._src=this._stream=null;
+    this._ctx=null;
+  };
+
+  LocalRecognition.prototype.stop=function(){
+    if(!this._started) return;
+    // Flush whatever was mid-sentence rather than discarding it: stop() means
+    // "that's my move", abort() means "forget it".
+    if(this._open) this._endUtterance();
+    this._started=false;
+    this._teardown();
+    // Web Speech delivers its final result and *then* onend. Firing onend
+    // first would have the app schedule a restart and only afterwards hear
+    // the move that closed the session, so wait for the flush just started.
+    // onend still always fires: a failed transcription resolves too.
+    const self=this, fin=()=>{ if(self.onend) self.onend(); };
+    if(this._flush) this._flush.then(fin,fin); else fin();
+  };
+
+  LocalRecognition.prototype.abort=function(){
+    if(!this._started) return;
+    // Everything in flight belongs to a session that no longer exists.
+    // Bumping the generation is what makes that true, rather than hoping the
+    // result happens to arrive before the next start().
+    this._gen++;
+    this._flush=null;
+    this._started=false;
+    this._reset();
+    this._teardown();
+    if(this.onend) this.onend();
+  };
+
+  // ===============================================================
   // Speech input
   // ===============================================================
   let recognition=null,listening=false,wantLoop=false;
 
-  function setListening(v){ listening=v; micWrap.classList.toggle('listening',v); }
+  function setListening(v){
+    listening=v; micWrap.classList.toggle('listening',v);
+    lastMicActivity=Date.now();
+    if(v) setMicState('listening','session open');
+    else if(!speaking) setMicState(wantLoop&&handsFree?'restarting':'idle','session closed');
+  }
 
   async function primeMic(){
     // SpeechRecognition owns the microphone. Do not open a second getUserMedia
@@ -1182,33 +3019,87 @@
     return true;
   }
 
+  // Can this browser capture audio for the local recogniser at all? A page on
+  // file:// or plain http:// has no getUserMedia, and offering a download that
+  // cannot possibly work is worse than saying so up front.
+  function localSttPossible(){
+    return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.AudioWorkletNode);
+  }
+
   function setupRecognition(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){
+
+    // Every iOS browser (Safari, Chrome, Edge) runs on WebKit, which has no
+    // SpeechRecognition — "switch browsers" is not a fix there like it is on
+    // desktop. Until D2 that was the end of the conversation. Now it isn't:
+    // with no system recogniser, local is not a preference, it is the only
+    // way this device ever hears a move, so select it rather than offering
+    // a choice that has one option.
+    if(!SR&&sttEngine!=='local'&&localSttPossible()) sttEngine='local';
+
+    if(sttEngine==='local'&&localSttPossible()){
+      recognition=new LocalRecognition();
+      // The weights are big enough that waiting for a first move to trigger
+      // the download would look like a hang. Start it now; the app is fully
+      // playable meanwhile and the mic button reports progress.
+      loadStt().catch(err=>{
+        micEvent('stt','load failed: '+(err&&err.message));
+        note('On-device hearing failed to load. Switch Hearing to Browser, or use the text box.','err');
+      });
+    } else if(SR){
+      recognition=new SR();
+    } else {
       micBtn.disabled=true;
-      // Every iOS browser (Safari, Chrome, Edge) runs on WebKit, which has no
-      // SpeechRecognition — "switch browsers" is not a fix there like it is on desktop.
       const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
       note(isIOS
-        ? 'iOS doesn’t support voice input in any browser (Apple limitation). Use the text box below.'
-        : 'Speech recognition needs Chrome or Edge. Use the text box.','err');
+        ? 'Voice needs a secure (https) page on iOS. Open the https link, or use the text box below.'
+        : 'Speech recognition needs Chrome or Edge, or switch Hearing to On-device. Use the text box.','err');
       return;
     }
-    recognition=new SR();
     recognition.lang='en-US';
     recognition.interimResults=true;
-    recognition.maxAlternatives=10;     // constrained matcher scores all returned candidates
-    recognition.continuous=false;
+    // The constrained matcher scores every candidate it is given, so ask Web
+    // Speech for as many as it will produce. The local recogniser decodes one
+    // sequence and has no second opinion to offer; say so rather than
+    // claiming ten, because "how many candidates did the scorer get" is the
+    // first question to ask when a move is misheard, and the diagnostics
+    // header is where it gets answered.
+    recognition.maxAlternatives=(recognition instanceof LocalRecognition)?1:10;
+    // One long-lived session instead of one per utterance. A fresh session
+    // costs a cold start: Chrome clips the opening audio, and the gap between
+    // sessions captures nothing at all — so "knight to f3" routinely arrived
+    // as "to f3", losing exactly the word that identifies the piece.
+    recognition.continuous=true;
 
     recognition.onstart=()=>note('Listening\u2026');
-    recognition.onspeechstart=()=>note('Hearing you\u2026');
+    recognition.onspeechstart=()=>{ lastMicActivity=Date.now(); note('Hearing you\u2026'); };
     recognition.onresult=e=>{
+      lastMicActivity=Date.now();
       for(let i=e.resultIndex;i<e.results.length;i++){
         const res=e.results[i];
+        // THE invariant that makes an open mic during narration safe: anything
+        // captured while we are speaking is barge-in evidence and nothing else.
+        // There is deliberately no path from here to route(), so no move can
+        // ever be played from audio recorded while the app was talking —
+        // including the app's own voice. Interim results count, because
+        // interrupting has to feel immediate.
+        if(speaking){ considerBargeIn(res[0]?res[0].transcript:''); continue; }
         if(res.isFinal){
+          // A session that produced a result was healthy, whatever happened
+          // before it; otherwise a few short sessions early in a long game
+          // would still be counted against it an hour later.
+          shortSessions=0;
           const alts=[];
-          for(let a=0;a<res.length;a++) alts.push(res[a].transcript);
+          lastAltMeta=[];
+          for(let a=0;a<res.length;a++){
+            alts.push(res[a].transcript);
+            lastAltMeta.push({t:res[a].transcript,c:res[a].confidence});
+          }
           note('');
+          // With "Keep listening" off the mic is a push-to-talk button, and a
+          // continuous session would otherwise stay open indefinitely — the
+          // per-utterance session used to end it for us.
+          if(!handsFree){ wantLoop=false; try{recognition.stop();}catch(e){} }
           route(alts);
         }else{
           note('\u201C'+res[0].transcript.trim()+'\u201D');
@@ -1217,6 +3108,17 @@
     };
     recognition.onerror=e=>{
       setListening(false);
+      // In hands-free mode Chrome ends the session with `no-speech` after any
+      // quiet stretch. That is normal operation between moves, not a fault —
+      // reporting it would fill the mic line with noise every few seconds.
+      if(e.error==='no-speech'&&wantLoop&&handsFree){ note(''); return; }
+      micEvent('error',e.error);
+      // A network blip is not a broken microphone. Counting it toward the
+      // give-up threshold meant a few seconds of bad wifi could end listening
+      // for the rest of the game, which is exactly when you least want to
+      // discover the mic quietly stopped.
+      if(e.error==='network'){ lastErrorWasNetwork=true; shortSessions=0; }
+      else lastErrorWasNetwork=false;
       const map={
         'not-allowed': location.protocol==='file:'
           ? 'Microphone permission is temporary on file://. Open this page through http://localhost.'
@@ -1234,21 +3136,82 @@
     recognition.onend=()=>{
       setListening(false);
       if(micNote.textContent==='Listening\u2026'||micNote.textContent==='Hearing you\u2026') note('');
-      if(wantLoop&&handsFree){
-        setTimeout(()=>{ if(wantLoop&&handsFree) startListening(); },250);
-      }
+      // The session we just lost was aborted by beginSpeaking(). endSpeaking()
+      // owns the restart; reopening here would point the mic at our own voice.
+      if(speaking) return;
+      if(wantLoop&&handsFree) scheduleRestart();
     };
   }
 
+  // Chrome ends a continuous session on its own — after silence, or on a
+  // network hiccup — so staying "always on" means restarting it repeatedly.
+  // A session that dies immediately means something is actually wrong
+  // (revoked permission, no input device), and retrying at full speed would
+  // spin forever, so back off and then stop visibly rather than silently.
+  let sessionStartedAt=0, shortSessions=0, lastErrorWasNetwork=false;
+  function scheduleRestart(){
+    if(Date.now()-sessionStartedAt<1200) shortSessions++; else shortSessions=0;
+    if(shortSessions>=5){
+      shortSessions=0; wantLoop=false;
+      micEvent('gave-up','5 sessions died immediately');
+      note('Listening stopped — tap the mic to start again.','err');
+      return;
+    }
+    const delay=lastErrorWasNetwork?2500:(shortSessions>=3?800:200);
+    micEvent('restart','in '+delay+'ms'+(lastErrorWasNetwork?' (network backoff)':''));
+    setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },delay);
+  }
+
+  // Staying on for a 30-minute game means every restart path has to survive
+  // being dropped — a lost onend, a swallowed timeout, a backgrounded tab.
+  // The failure mode is silent: the app just stops hearing you, and nothing
+  // says so. This is the only thing that would ever notice.
+  const STALE_SESSION_MS=90000;
+  setInterval(()=>{
+    if(!wantLoop||!handsFree||speaking) return;
+    const idle=Date.now()-lastMicActivity;
+    if(listening){
+      // The nastier failure: onend never arrives, so `listening` stays true,
+      // and both restart paths are gated on it being false. The app is deaf
+      // and every mechanism designed to notice is itself waiting on the event
+      // that got lost. A session that has claimed to be listening this long
+      // without hearing anything is not a patient one, it is a dead one.
+      if(idle<STALE_SESSION_MS) return;
+      micEvent('watchdog','session stale for '+Math.round(idle/1000)+'s — forcing a new one');
+      lastMicActivity=Date.now();
+      const wasListening=listening;
+      try{ recognition.abort(); }catch(e){}
+      // If abort delivered onend, the normal restart path already owns this.
+      // Only step in when it didn't — which is the case this whole branch
+      // exists for. Two restart paths racing is how you get a session that
+      // opens twice and a log nobody can read.
+      if(listening===wasListening){ setListening(false); scheduleRestart(); }
+      return;
+    }
+    if(idle<4000) return;
+    micEvent('watchdog','no session for '+Math.round(idle/1000)+'s — restarting');
+    startListening();
+  },5000);
+
   async function startListening(){
-    if(!recognition||listening) return;
+    if(!recognition||listening||speaking) return;
     const ok=await primeMic();
     if(!ok) return;
-    try{ recognition.start(); setListening(true); }
+    try{
+      recognition.start(); sessionStartedAt=Date.now();
+      // One bad moment of wifi should not slow every restart for the rest of
+      // the game. Clearing this on a session that actually opened keeps the
+      // backoff attached to the problem instead of to the session count.
+      lastErrorWasNetwork=false;
+      setListening(true);
+    }
     catch(err){ /* already started — ignore */ }
   }
 
   micBtn.addEventListener('click',async()=>{
+    // While it's talking, the mic button is an interrupt — you reached for it
+    // to make it stop, not to toggle a session that is already muted.
+    if(speaking){ cancelSpeech('mic button'); return; }
     if(listening){ wantLoop=false; try{recognition.stop();}catch(e){} return; }
     wantLoop=handsFree;
     await startListening();
@@ -1258,7 +3221,23 @@
     handsFree=handsFreeToggle.checked;
     if(!handsFree){ wantLoop=false; }
     else if(listening){ wantLoop=true; }
+    saveState();
   });
+
+  bargeInToggle.addEventListener('change',()=>{
+    bargeIn=bargeInToggle.checked;
+    micEvent('setting','talk-over '+(bargeIn?'on':'off'));
+    saveState();
+  });
+
+  // Barge-in without a microphone: Escape always works, and works everywhere,
+  // including on the machines where acoustic echo cancellation is too weak
+  // for the voice route to be trustworthy (OUR-58 was reported on exactly
+  // such a setup).
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape') cancelSpeech('escape key');
+  });
+  textInput.addEventListener('input',()=>{ cancelSpeech('typing'); });
 
   // ===============================================================
   // Online multiplayer — ported from Giga Chess's Supabase realtime
@@ -1438,7 +3417,7 @@
   }
 
   async function createOnline(){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     createOnlineBtn.disabled=true;
     try{
       onlineNote('Creating online game…');
@@ -1470,7 +3449,7 @@
   }
 
   async function joinOnline(gameId){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     try{
       onlineNote('Joining online game…');
       const user=await onlineUser();
@@ -1547,7 +3526,7 @@
   // spectator from moving — this function never lets input reach that point
   // anyway, since it doesn't touch humanColor/onlineState.color at all.
   async function spectateOnline(gameId){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     try{
       onlineNote('Loading game…');
       const r=await db.from('mind_chess_games').select('*').eq('id',gameId).single();
@@ -1614,7 +3593,7 @@
     }).join('');
   }
   async function openLobby(){
-    if(!db){ onlineNote('Online play needs supabase-config.js set up (see README).'); return; }
+    if(!db){ onlineNote('Online play is unavailable \u2014 either you\u2019re offline, or supabase-config.js isn\u2019t set up (see README).'); return; }
     lobbyPanel.classList.add('show');
     lobbyList.innerHTML='<p class="lobby-empty">Loading…</p>';
     await refreshLobby();
@@ -1675,7 +3654,73 @@
     saveState();
   });
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
-  voiceToggle.addEventListener('change',()=>{ voiceOn=voiceToggle.checked; if(!voiceOn&&'speechSynthesis' in window) speechSynthesis.cancel(); saveState(); });
+  coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
+  rateSelect.addEventListener('change',()=>{ speechRate=parseFloat(rateSelect.value)||0.9; saveState(); sampleVoice(); });
+  voiceSelect.addEventListener('change',()=>{
+    if(ttsEngine==='kokoro') kokoroVoice=voiceSelect.value; else voiceURI=voiceSelect.value;
+    saveState(); sampleVoice();
+  });
+
+  engineSelect.addEventListener('change',async()=>{
+    if(engineSelect.value==='system'){
+      ttsEngine='system'; refreshVoices(); saveState(); sampleVoice(); return;
+    }
+    engineSelect.disabled=true;
+    try{
+      await loadKokoro();
+      ttsEngine='kokoro'; refreshVoices(); saveState(); sampleVoice();
+    }catch(err){
+      // Falling back is the whole contract: no WebGPU, no network, no model —
+      // the game keeps talking, just not as nicely.
+      ttsEngine='system'; engineSelect.value='system'; refreshVoices(); note('');
+      warn('Natural voice unavailable — '+((err&&err.message)||'it failed to load')+'. Staying on the system voice.');
+    }finally{ engineSelect.disabled=false; }
+  });
+  // Swapping recogniser mid-game means the old one still owns the microphone.
+  // Tear it down before building the new one, or two capture sessions overlap
+  // and Chrome gets unstable — the exact reason primeMic() refuses to open a
+  // second getUserMedia stream.
+  sttSelect.addEventListener('change',async()=>{
+    const want=sttSelect.value;
+    const wasLooping=wantLoop;
+    if(recognition){ wantLoop=false; try{ recognition.abort(); }catch(e){} }
+    recognition=null; setListening(false);
+
+    if(want==='local'&&!localSttPossible()){
+      sttSelect.value='system'; sttEngine='system';
+      warn('On-device hearing needs microphone access on a secure page. Staying on the browser recogniser.');
+      setupRecognition(); return;
+    }
+    sttEngine=want; saveState();
+    setupRecognition();
+    if(want==='local'){
+      sttSelect.disabled=true;
+      try{ await loadStt(); note('On-device hearing ready.'); }
+      catch(err){
+        // Same contract as the voice: every enhancement degrades. No model,
+        // no network, no WebGPU — fall back to what already worked.
+        const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+        sttEngine=SR?'system':'local'; sttSelect.value=sttEngine;
+        recognition=null; setupRecognition();
+        warn('On-device hearing unavailable — '+((err&&err.message)||'it failed to load')
+             +(SR?'. Staying on the browser recogniser.':'. Use the text box.'));
+      }finally{ sttSelect.disabled=false; }
+    }
+    if(wasLooping&&handsFree){ wantLoop=true; startListening(); }
+  });
+
+  // Changing a voice you can't hear is guesswork, so say something in it.
+  function sampleVoice(){
+    if(!voiceOn) return;
+    say(pick(['Knight to eff 3.','Bishop takes see 4.','Pawn to ee 4. Your move.']));
+  }
+  voiceToggle.addEventListener('change',()=>{
+    voiceOn=voiceToggle.checked;
+    // Cancelling mid-utterance means onend never fires, so release the
+    // speaking gate by hand or the mic stays muted for good.
+    if(!voiceOn&&'speechSynthesis' in window){ speechSynthesis.cancel(); endSpeaking(); }
+    saveState();
+  });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
     startNewGame();
@@ -1697,11 +3742,17 @@
   // game in progress. Giga Chess only persists preferences, not game
   // state, so this pattern is Mind Chess's own.
   // ===============================================================
-  const SAVE_KEY='mind-chess-save-v1';
+  // 2.0 is served from /v2/ while v1.0 stays live at / and /v1/ — same origin,
+  // therefore the same localStorage. Sharing these keys would mean playing one
+  // version corrupts the other's saved game and themes, so 2.0 namespaces all
+  // of them. Do not reuse a v1 key here.
+  const SAVE_KEY='mind-chess-v2-save';
+  const BOARD_THEME_KEY='mind-chess-v2-board-theme';
+  const PIECE_THEME_KEY='mind-chess-v2-piece-theme';
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,voiceOn,handsFree,humanColor,boardHidden,
+        pgn:game.pgn(),mode,searchDepth,masterLevel,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -1721,8 +3772,25 @@
       searchDepth=saved.searchDepth||2; masterLevel=!!saved.masterLevel;
       levelSelect.value=masterLevel?'master':String(searchDepth);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
+      coach=saved.coach||'off'; coachSelect.value=coach;
+      speechRate=saved.speechRate||0.9; rateSelect.value=String(speechRate);
+      voiceURI=saved.voiceURI||''; refreshVoices();
+      kokoroVoice=saved.kokoroVoice||'af_heart';
+      if(saved.ttsEngine==='kokoro'){
+        // Remember the choice without acting on it up front. The weights are
+        // browser-cached so this is usually instant, but if they aren't, the
+        // game stays fully playable on the system voice and simply improves
+        // when the download lands — never a blank app waiting on 326 MB.
+        engineSelect.value='kokoro';
+        loadKokoro().then(()=>{ ttsEngine='kokoro'; refreshVoices(); })
+                    .catch(()=>{ engineSelect.value='system'; note(''); });
+      }
+      // Unlike the voice, the recogniser is chosen before setupRecognition()
+      // runs, so it only has to be remembered here — not acted on.
+      if(saved.sttEngine==='local'){ sttEngine='local'; sttSelect.value='local'; }
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
+      bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
       clockPreset=saved.clockPreset||0; syncClockUI();
       whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
@@ -1747,15 +3815,114 @@
     }catch(e){ return false; }
   }
 
+  // ===============================================================
+  // Voice diagnostics — open with ?debug=1
+  // ===============================================================
+  // A1 didn't move the needle, so stop theorising about where accuracy is
+  // lost and record it: what the recognizer actually returned, what the
+  // normaliser reduced it to, and how the legal-move scorer ranked it.
+  function setupDebug(){
+    if(!DEBUG) return;
+    // body is a flex ROW, and this panel is appended as a direct child of it,
+    // so it becomes a flex *sibling* of the app column. On a wide screen that
+    // is the nice side-by-side layout it was built for. On a phone the two
+    // items fight over 375px: the app column gets pushed to a negative left
+    // offset and the panel hangs off the right edge, so ?debug=1 breaks the
+    // app itself and not just the diagnostics. Letting the row wrap fixes it
+    // — wide screens still fit both on one line, narrow ones stack — and the
+    // wrap is set here rather than in the stylesheet so a build without
+    // ?debug=1 is completely untouched.
+    document.body.style.flexWrap='wrap';
+    const p=document.createElement('div');
+    p.style.cssText='flex:1 1 420px;min-width:0;max-width:960px;margin:18px auto;padding:12px 14px;border:1px solid #5d6b7a;border-radius:10px;background:#141821;color:#e8e4da;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace';
+    p.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:9px">'
+      +'<b style="font:600 13px/1 system-ui,sans-serif">Voice diagnostics</b>'
+      +'<span id="dbgCount" style="opacity:.55"></span>'
+      +'<button id="dbgCopy" type="button" style="margin-left:auto;cursor:pointer;font:inherit;padding:3px 9px">Copy all</button>'
+      +'<button id="dbgClear" type="button" style="cursor:pointer;font:inherit;padding:3px 9px">Clear</button></div>'
+      +'<textarea id="dbgOut" readonly spellcheck="false" style="width:100%;max-width:100%;box-sizing:border-box;height:300px;resize:vertical;background:#0e1117;color:#d9e2ec;border:1px solid #2b3440;border-radius:6px;padding:9px;font:inherit"></textarea>';
+    document.body.appendChild(p);
+    debugOut=p.querySelector('#dbgOut');
+    debugCount=p.querySelector('#dbgCount');
+    p.querySelector('#dbgClear').addEventListener('click',()=>{ debugLog.length=0; renderDebug(); });
+    p.querySelector('#dbgCopy').addEventListener('click',()=>{
+      debugOut.select();
+      let ok=false;
+      try{ ok=document.execCommand('copy'); }catch(e){}
+      if(!ok&&navigator.clipboard) navigator.clipboard.writeText(debugOut.value).catch(()=>{});
+      const b=p.querySelector('#dbgCopy'); b.textContent='Copied'; setTimeout(()=>b.textContent='Copy all',1200);
+    });
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    debugLog.push('=== Mind Chess voice diagnostics ==='
+      +'\nbuild: '+BUILD+'  ·  continuous='+(recognition?recognition.continuous:'n-a')
+      +'  maxAlternatives='+(recognition?recognition.maxAlternatives:'n-a')
+      +'\nengine: '+(SR?'present':'MISSING')+'  ·  '+navigator.userAgent+'\n');
+    renderDebug();
+    // Mic events arrive without any utterance to hang them off, so the panel
+    // has to refresh on its own or a 30-minute idle stretch shows nothing.
+    setInterval(renderDebug,1000);
+  }
+  // Phase B's "done when" is a 30-minute game that never talks to itself and
+  // can always be interrupted — none of which any amount of clicking in this
+  // harness can demonstrate, because there is no microphone in it. So the
+  // deliverable is this: play one real game with ?debug=1 and the timeline
+  // below says whether it held. Same move that made A2–A5 tractable.
+  function micTimeline(){
+    if(!micLog.length) return '';
+    const t0=micLog[0].t;
+    const count=k=>micLog.filter(m=>m.kind===k).length;
+    const sessions=micLog.filter(m=>m.kind==='state'&&/→ listening/.test(m.detail)).length;
+    const head='\n--- mic timeline · state='+micState
+      +' · '+sessions+' sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
+      +' · '+count('restart')+' restarts · '+count('watchdog')+' watchdog saves · '+count('error')+' errors'
+      +' · span '+Math.round((micLog[micLog.length-1].t-t0)/1000)+'s ---';
+    return head+'\n'+micLog.slice(-80).map(m=>
+      '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');
+  }
+  function renderDebug(){
+    if(!debugOut) return;
+    // Only follow the tail if the reader was already at it — this now
+    // refreshes on a timer, and yanking the scroll position out from under
+    // someone reading the middle of a log is its own small betrayal.
+    const atBottom=debugOut.scrollHeight-debugOut.scrollTop-debugOut.clientHeight<40;
+    debugOut.value=debugLog.join('\n')+micTimeline();
+    if(atBottom) debugOut.scrollTop=debugOut.scrollHeight;
+    const n=debugLog.filter(l=>l.startsWith('#')).length;
+    debugCount.textContent=(n?n+' utterance'+(n===1?'':'s'):'speak a move…')+'  ·  '+micState;
+  }
+  function recordDiagnostic(list,best,bestText){
+    const n=debugLog.filter(l=>l.startsWith('#')).length+1;
+    const src=lastAltMeta&&lastAltMeta.length?'voice':'typed';
+    const lines=['#'+n+'  ['+src+']  chose: "'+bestText+'"'];
+    if(src==='voice'){
+      lines.push('   heard: '+lastAltMeta.map(a=>
+        '"'+a.t.trim()+'"'+(typeof a.c==='number'&&a.c?' ('+a.c.toFixed(2)+')':'')).join('  |  '));
+    }
+    lines.push('   normalised: "'+speechKey(bestText)+'"');
+    lines.push('   result: '+best.type+(best.type==='move'&&best.move?' → '+best.move.san:'')
+      +'  (score '+(Math.round(best.score*100)/100)+')'
+      +(best.type==='none'?'   ← REJECTED':''));
+    if(lastScoring){
+      lines.push('   ranked: '+lastScoring.top.map(t=>t.san+' '+t.score+(t.exact?'*':'')).join('  |  ')
+        +'   margin '+lastScoring.margin);
+    }
+    lines.push('   turn: '+(game.turn()==='w'?'white':'black')+'  legal: '+game.moves().length+'\n');
+    debugLog.push(lines.join('\n'));
+    lastScoring=null; lastAltMeta=null;
+    renderDebug();
+  }
+
   if(location.protocol==='file:') originBanner.classList.add('show');
 
   try{
-    boardThemeSelect.value=localStorage.getItem('mind-chess-board-theme')||'wood';
-    pieceThemeSelect.value=localStorage.getItem('mind-chess-piece-theme')||'classic';
+    boardThemeSelect.value=localStorage.getItem(BOARD_THEME_KEY)||'wood';
+    pieceThemeSelect.value=localStorage.getItem(PIECE_THEME_KEY)||'classic';
   }catch(e){}
   applyTheme();
 
-  setupRecognition();
+  refreshVoices();
+  if('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged',refreshVoices);
+
   const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
   const spectateMatch=location.hash.match(/^#spectate=([0-9a-fA-F-]{36})$/);
   if(inviteMatch){
@@ -1766,6 +3933,14 @@
   }else if(!loadState()){
     startNewGame();
   }
+  // After loadState, not before: which recogniser to build is a saved setting,
+  // and building the wrong one first would open the microphone twice.
+  setupRecognition();
+  // And setupDebug after *that*: its header reports the recogniser's
+  // continuous/maxAlternatives settings, which read "n-a" if the panel is
+  // built first. Nothing is lost by waiting — mic events accumulate in
+  // micLog from the start and the panel renders them when it appears.
+  setupDebug();
 })();
 </script>
 </body>

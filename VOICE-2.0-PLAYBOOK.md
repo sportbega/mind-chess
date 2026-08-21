@@ -4,7 +4,7 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phases A, B, C1/C2 and D1 are built.** Next session: **D2** (local STT — and the only route to voice on iPhone). **C3 is effectively dead**: its only job was phrasing, C2 covered it, and D1 delivered the thing that actually changed the experience.
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r15`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phases A, B, C1/C2, D1 and D2 are built — the plan is complete.** The one thing left is not a phase: **play a game on an actual iPhone**, which is what D2 exists for and the only claim here no desktop test can settle. **C3 is dead**: its only job was phrasing, C2 covered it, and D1 delivered the thing that actually changed the experience.
 >
 > **Phase A is complete.** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers · A6 chess.js vendored, so a game against the computer needs no network at all.
 >
@@ -274,17 +274,40 @@ Kokoro is the whole answer here: it's the one place where free and best-quality 
 - **Grade the voices.** 12 of Kokoro's 28 are D or F (`am_adam` is F+), and a D-grade voice at low precision mangles English badly enough to be reported as *"the voices speak Chinese"*. It doesn't — `kokoro-js` refuses the Mandarin ids outright.
 - **Test the fallback by removing WebGPU:** `node tools/voice-harness.js --no-gpu`.
 
-#### D2. Local STT — and the iOS unlock
+#### D2. Local STT — and the iOS unlock ✅ **shipped Day 3.12 (`v2-r15`)**
+
+> **Shipped as:** `moonshine-base`, **fp32**, HF CDN, opt-in, **247 MB**, behind
+> a "Hearing" picker that selects itself when there is no `SpeechRecognition`.
+> Built as `LocalRecognition`, an adapter presenting the Web Speech interface,
+> so Phase A's matcher, Phase B's invariant, the restart logic and the debug
+> timeline all carry over untouched.
+>
+> **Three things below were costed wrong and are corrected by measurement:**
+> - **"~120 MB WASM" was priced on a build that cannot run.** q8 does not load
+>   at all in Transformers.js 4.2.0 (`MatMulNBits missing scale`) — and fails
+>   identically for Whisper, so it is the runtime, not Moonshine.
+> - **fp32 beat q4 by 2× on latency at 2× the download.** Second time
+>   quantisation has been slower here, after Kokoro. It is not a size/speed
+>   trade; measure it.
+> - **tiny is not "best fit" — base is.** tiny returned *nothing at all* for
+>   "knight to f3" and "e7 e5" in every configuration tried. Whisper-tiny was
+>   accurate and took 3.7 s an utterance.
+>
+> **Still unproven:** an actual iPhone. Everything in the path (`getUserMedia`,
+> `AudioWorklet`, WASM/WebGPU) exists in iOS Safari, but nobody has played a
+> move on one yet.
+
 Replacing Web Speech with an in-browser model buys three things: no Google round-trip, offline operation, and — the big one — **voice on iPhone**. iOS WebKit has no `SpeechRecognition` *at all* ([index.html:1191](index.html) currently just apologises for this). A local model is the *only* path to voice on iOS.
 
 - [**Moonshine**](https://huggingface.co/posts/Xenova/486935205804807) via Transformers.js — purpose-built for real-time, ~150 MB (WebGPU) / ~120 MB (WASM). Best fit.
 - **Whisper tiny/base** via Transformers.js — better known, slower for streaming.
 
 ⚠️ **Two real constraints:**
-- **Don't commit models to the repo** — GitHub has a hard **100 MB per-file** limit and Pages has repo-size limits. Load from the Hugging Face CDN at runtime (Transformers.js default) and cache. This makes it a *progressive enhancement*, not a hard dependency.
+- **Don't commit models to the repo** — GitHub has a hard **100 MB per-file** limit and Pages has repo-size limits. Load from the Hugging Face CDN at runtime (Transformers.js default) and cache. This makes it a *progressive enhancement*, not a hard dependency. *(Day 3.12: for once this was a real choice — every Moonshine file is under 100 MB, tiny is only 28 MB total. Self-hosting was still wrong, for D1's reason: hosting is decided by speed, not size, and storage was never the binding constraint.)*
 - These models are **also** general-purpose — they don't know chess either. Phase A's constrained matcher stays essential regardless. Swapping the STT is not a substitute for A1–A3.
 
-**Done when:** voice works on your iPhone.
+**Done when:** voice works on your iPhone. *(Built and working on desktop
+Chrome; the phone itself is the one step left.)*
 
 ---
 
@@ -345,7 +368,7 @@ v1.0 is frozen and permanently online at **`/v1/`** (byte-identical to the `v1.0
 **→ B** (the continuous loop, safely)
 **→ C1 + C2** (engine-backed answers, well worded — still zero downloads)
 **→ D1** (Kokoro: the natural voice)
-**→ D2** (local recognition — and voice on iPhone)
+**→ D2** ✅ (local recognition — and voice on iPhone)
 **→ C3** (optional local model, only if C2 still feels mechanical)
 
 Note what that ordering means: **everything through C2 requires no downloads at all.** That's better recognition, always-on listening, exact board answers, and engine-backed position judgement — the whole substance of your three asks — with nothing bigger shipped than the Stockfish you already have.
