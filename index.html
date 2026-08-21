@@ -1217,7 +1217,31 @@
   }
 
   function speak(text){ lastNarration=text; log('Board',text); say(text); }
-  function warn(text){ log('System',text); say(text); }
+
+  // Some system messages can trigger themselves. "The computer is thinking."
+  // is the answer to input arriving out of turn — so if the microphone hears
+  // us say it, routes it, and it is still not your turn, the answer is to say
+  // it again. Observed six times in one real game before this guard: the app
+  // talking to itself at three-second intervals.
+  //
+  // Echo detection is the first line and now catches those phrases, but a
+  // message whose own text re-triggers it needs a second, independent stop —
+  // one escape through the echo filter is enough to restart a loop that never
+  // ends on its own. So an identical warning is never *spoken* twice in quick
+  // succession. It is still written every time, because suppressing the record
+  // would hide the very repetition worth seeing in a report.
+  const WARN_REPEAT_MS=6000;
+  let lastWarnText='', lastWarnAt=0;
+  function warn(text){
+    log('System',text);
+    const now=Date.now();
+    if(text===lastWarnText&&now-lastWarnAt<WARN_REPEAT_MS){
+      micEvent('tts','repeat warning not spoken: "'+text.slice(0,40)+'"');
+      return;
+    }
+    lastWarnText=text; lastWarnAt=now;
+    say(text);
+  }
   // Unlike warn(), does not speak — for messages that just restate example
   // commands the user can already read, which in hands-free mode would
   // otherwise get picked up by the mic as new (unrecognized) speech and loop.
@@ -2021,7 +2045,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r27 (the app stops talking to itself)';
+  const BUILD='v2-r28 (and stops answering itself in a loop)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

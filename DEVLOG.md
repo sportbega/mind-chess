@@ -1896,3 +1896,49 @@ there, so it is not from this change, and the real browser's own timeline shows
 clean `speaking → listening` transitions throughout. It is harness rot of the
 Day 3.12 kind and it made this session's end-to-end checks harder than they
 should have been. Worth its own pass.
+
+## 2026-08-22 — Day 4.8: a message that answered itself (r28)
+
+A second report, from a game played on r26 — before the previous fix reached
+the preview — showing the same defect in a worse form:
+
+```
++1701.8s  echo  ignored "computer is thinking" (100% ours)
++1702.6s  routing "the computer is thinking"     <- this one got through
++1702.6s  narration started                       <- which says it again
++1705.0s  echo  ignored "computer is thinking" (100% ours)
++1705.9s  routing "the computer is thinking"     <- and again
+```
+
+Six times, at roughly three-second intervals. Reported, fairly, as "voice keeps
+repeating the computer is thinking".
+
+**"The computer is thinking." is the reply to input arriving out of turn.** So
+if the microphone hears the app say it, routes it, and it is still not your
+turn — the reply is to say it again. The message is its own trigger. Nothing
+about it is a chess bug or a recognition bug; it is a closed loop that runs
+until the position changes.
+
+Notice what the timeline already shows: the fragments *were* caught as echo,
+100% ours, every time. What escaped was the final result landing after
+narration ended, when `speaking` was already false — precisely the hole r27
+closed. Checked against the real timing: narration ended around +1701 s and the
+escaping result routed at +1702.6 s, so r27's 2.5 s tail catches it. Added all
+four phrases, including the misrecognition "the computer is stinking", to
+`tools/echo-threshold.js`; all are caught at the shipped 0.6.
+
+**But a message that re-triggers itself needs a second, independent stop.**
+Echo detection is a filter, and one escape through a filter is enough to
+restart a loop that has no other end. So an identical warning is now never
+*spoken* twice within six seconds. It is still written to the transcript every
+time — suppressing the record would hide exactly the repetition a report needs
+to show.
+
+The two guards fail differently, which is the point of having both: echo
+detection can be defeated by a misrecognition, and the dedupe can be defeated
+by a message whose wording varies. Neither defeats both.
+
+This is the same family as guardrail 4. That rule says never *speak* a phrase
+that suggests something to say back; the general form is that anything the app
+says can come back through the microphone, so no spoken message may be capable
+of causing itself.

@@ -61,6 +61,10 @@ const SOLVED = ['That’s mate. Solved.'];
 const MOVES  = ['Pawn to e4.', 'Knight to f3. Check.'];
 const BOARD  = ['White: king e1, queen d1, rooks a1 and h1, bishops c1 and f1, knights b1 and g1, pawns a2 b2 c2 d2 e2 f2 g2 and h2.'];
 const TIPS   = ['Bishop takes e7. Both queens are off the board now.', 'Rook to f8. 40 moves now with no capture and no pawn move.'];
+// Self-triggering messages: saying this while it is still the computer's turn
+// is answered by saying it again, so an echo that reaches route() becomes an
+// infinite loop. Observed six times in one real game on r26.
+const SELF   = ['The computer is thinking.'];
 
 // Things the app said, heard back through the microphone. Must read as echo.
 const ECHOES = [
@@ -75,6 +79,10 @@ const ECHOES = [
   ['rooks a1 and h1', BOARD],
   ['both queens are off the board now', TIPS],
   ['no capture and no pawn move', TIPS],
+  ['the computer is thinking', SELF],
+  ['computer is thinking', SELF],
+  ['is thinking', SELF],
+  ['the computer is stinking', SELF],
 ];
 
 // Things a player says while the app is talking. Must read as an interruption.
