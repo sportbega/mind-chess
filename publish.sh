@@ -30,7 +30,7 @@ esac
 
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "run this on main"; exit 1; }
 
-FILES="index.html chess-0.10.3.js stockfish-18-lite-single.js stockfish-18-lite-single.wasm supabase-config.js stt-worker.js"
+FILES="index.html chess-0.10.3.js stockfish-18-lite-single.js stockfish-18-lite-single.wasm supabase-config.js stt-worker.js puzzles.json"
 
 # Forgetting to add a new file here ships a build that is broken live and
 # perfect locally, and it has caught us before. The list stays explicit — we

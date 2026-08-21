@@ -251,6 +251,7 @@
         <option value="computer" selected>Vs. computer</option>
         <option value="two-player">Pass &amp; play</option>
         <option value="online">Play online</option>
+        <option value="puzzle">Puzzles</option>
       </select>
     </div>
     <div class="field">
@@ -296,6 +297,13 @@
         <option value="off">Off</option>
         <option value="hints" selected>Hints</option>
         <option value="full">Full</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="tipsSelect">Tips</label>
+      <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
+        <option value="on" selected>On</option>
+        <option value="off">Off</option>
       </select>
     </div>
     <div class="field">
@@ -383,6 +391,13 @@
       <li><b>Ask the engine</b> (<b>Coach</b>, on by default — say <code>coach off</code> to silence it) — <code>how am I doing</code>,
         <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
         number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
+      <li><b>Puzzles</b> — set <b>Opponent</b> to <i>Puzzles</i>. Mate in one or two, four to seven pieces so the
+        position fits in your head, read out loud when it starts. Say <code>next puzzle</code>,
+        <code>solution</code>, or <code>say the position again</code>. Every puzzle has exactly one key move,
+        so a rejection means it really wasn't the move. No engine and no network needed.</li>
+      <li><b>Tips</b> (on by default — say <code>tips off</code>) — occasional spoken facts you'd have seen with a
+        board in front of you: both queens coming off, a piece type disappearing, a repeated position, the
+        fifty-move count. Never advice, and never a move — that's what the coach is for.</li>
       <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
         (then it's cached and works offline), needs WebGPU, and falls back to the system voice if anything is
         missing. Nothing downloads until you pick it.</li>
@@ -424,6 +439,7 @@
   let searchDepth = 1;        // the local engine's depth, and the SF fallback's
   let verbosity = 'terse';
   let coach = 'hints';     // off | hints | full — engine-backed answers (C1)
+  let tips = 'on';         // off | on — unprompted, computed, never advice
   // rate 0.7 was never a preference — it was a workaround for whatever voice
   // the browser happened to default to being hard to follow. Now that the
   // voice is choosable, the workaround's premise is weaker, so the default
@@ -502,7 +518,7 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
-        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'),
+        verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), tipsSelect=$('tipsSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'),
@@ -836,7 +852,11 @@
   }
 
   function requestReserve(text){
-    if(ttsEngine!=='kokoro'||!kokoro||!text) return;
+    // Same guard primeAhead() states for itself: rendering a clip nobody will
+    // play is pure waste, and here it is a second or two of a model that has
+    // other work. "Speak aloud" off is exactly that case, and the reserve was
+    // rendering right through it.
+    if(!voiceOn||ttsEngine!=='kokoro'||!kokoro||!text) return;
     if(kokoroReserve&&kokoroReserve.text===text) return;
     if(kokoroReserveWant===text) return;
     dropReserve();
@@ -1393,17 +1413,27 @@
   // Applying moves
   // ===============================================================
   function applyMove(spec){
+    // Checked before the board is touched: a wrong answer must leave the
+    // position exactly as it was, or the player is retrying a different puzzle
+    // than the one they were given.
+    if(mode==='puzzle'&&!puzzleAccepts(spec)) return;
     const applied=game.move({from:spec.from,to:spec.to,promotion:spec.promotion});
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
     playMoveSound(!!applied.captured);
-    speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied));
+    // Tips go last, after the nudge, and like the nudge they are excluded from
+    // predictNarration() — both mutate "what have I already said" state, and
+    // predicting would spend the tip on a sentence nobody hears. Both append a
+    // separate sentence, so the reserved first chunk still matches.
+    speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied)+tipFor());
     if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); }
     renderAll();
     if(mode==='online') saveOnline();
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
       const g=generation;
       setTimeout(()=>{ if(g===generation && !gameOver) triggerComputerMove(); },650);
+    }else if(mode==='puzzle'){
+      puzzleAdvance();
     }
   }
   // The fallback engine — alpha-beta minimax over material + pawn
@@ -1933,7 +1963,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r23 (Casual costs nothing to start)';
+  const BUILD='v2-r25 (puzzles sized for a head)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2266,6 +2296,316 @@
     lastNudgeAt=Date.now();
     return ' '+pick(['That’s '+spokenSquare(hit)+' — the square you keep checking.',
                      'You’ve been asking about '+spokenSquare(hit)+'; that’s the one that just changed.']);
+  }
+
+  // ===============================================================
+  // Puzzles — mate in one and mate in two, sized for a head
+  // ===============================================================
+  // The Lichess database is CC0 and would have been the obvious source. It is
+  // also positions from real games, which means twenty-odd pieces — fine when
+  // you can see the board and close to useless when you cannot. A blindfold
+  // player has to *hold* the position, so the binding constraint is not
+  // licensing or file size, it is how much board fits in a head. Ours are
+  // generated instead (tools/make-puzzles.js), four to seven pieces, and every
+  // one has a *unique* key move — which is what earns the app the right to say
+  // "no, not that one" when the player answers.
+  //
+  // Because every defence was enumerated when the file was built, the solution
+  // is a small tree rather than a line: whatever the defender plays, the app
+  // knows the mate without consulting an engine. Puzzles need no Stockfish and
+  // no network.
+  const PUZZLES_URL='puzzles.json';
+  const PUZZLE_KEY='mind-chess-v2-puzzles';
+  let puzzles=null, puzzlesLoading=null;
+  let puzzle=null, puzzleStage=0, puzzleWrong=0, puzzleDone={};
+
+  function loadPuzzles(){
+    if(puzzles) return Promise.resolve(puzzles);
+    if(puzzlesLoading) return puzzlesLoading;
+    puzzlesLoading=fetch(PUZZLES_URL).then(r=>{
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r.json();
+    }).then(list=>{ puzzles=list; return list; });
+    puzzlesLoading.catch(()=>{ puzzlesLoading=null; });
+    return puzzlesLoading;
+  }
+
+  function loadPuzzleProgress(){
+    try{ puzzleDone=JSON.parse(localStorage.getItem(PUZZLE_KEY)||'{}')||{}; }catch(e){ puzzleDone={}; }
+  }
+  function savePuzzleProgress(){
+    try{ localStorage.setItem(PUZZLE_KEY,JSON.stringify(puzzleDone)); }catch(e){}
+  }
+
+  // The first unsolved one, so progress is linear and a returning player picks
+  // up where they stopped rather than being dropped somewhere arbitrary.
+  function nextPuzzle(){
+    if(!puzzles||!puzzles.length) return null;
+    return puzzles.find(p=>!puzzleDone[p.id])||puzzles[0];
+  }
+
+  function puzzleMoveUci(spec){
+    return spec.from+spec.to+(spec.promotion||'');
+  }
+  function puzzleExpected(){
+    if(!puzzle) return null;
+    if(puzzleStage===0) return puzzle.key;
+    return puzzle.pendingAnswer||null;
+  }
+
+  function describePuzzle(){
+    const side=game.turn()==='w'?'White':'Black';
+    return 'Puzzle '+puzzle.id+'. '+side+' to play and mate in '
+      +(puzzle.mateIn===1?'one':'two')+'.';
+  }
+
+  function startPuzzle(p){
+    if(!p){ warn('No puzzles available.'); return; }
+    generation++;
+    dropReserve(); resetTips();
+    puzzle=p; puzzleStage=0; puzzleWrong=0; puzzle.pendingAnswer=null;
+    game.load(p.fen);
+    humanColor=game.turn();
+    lastMove=null; pendingAction=null; gameOver=false; lastComputerMove=null;
+    stopClock();
+    setBoardHidden(true);
+    transcript.innerHTML='';
+    renderAll();
+    saveState();
+    // The position has to be *said*, not just set: this is the one mode where
+    // the player has never seen the board at all, so the roster *is* the
+    // puzzle. speak() rather than say(), so it lands in the transcript too —
+    // with say() the roster was spoken and then gone, leaving anyone playing
+    // by text, or re-reading, with a puzzle they could not see at all.
+    speak(describePuzzle()+' '+puzzleRoster());
+  }
+
+  function puzzleRoster(){
+    const roster=c=>joinAnd(['k','q','r','b','n','p'].map(tp=>{
+      const at=pieceSquares(c,tp);
+      return at.length?PIECE_NAME[tp]+(at.length>1?'s ':' ')+sqList(at):null;
+    }).filter(Boolean));
+    return 'White: '+roster('w')+'. Black: '+roster('b')+'.';
+  }
+
+  // Called before the move is applied, so a wrong answer never touches the
+  // board — the position must still be the puzzle when the player tries again.
+  function puzzleAccepts(spec){
+    // Only the *player's* moves are answers to be judged. The defender's reply
+    // is played by the app through this same applyMove(), and validating it
+    // against the mating move it is supposed to provoke made the puzzle reject
+    // its own move and stall on the player's turn — with the board left on the
+    // defender's move, so the next thing the player said was illegal too.
+    if(game.turn()!==humanColor) return true;
+    const want=puzzleExpected();
+    if(!want) return true;
+    if(puzzleMoveUci(spec)===want) return true;
+    puzzleWrong++;
+    // Guardrail 4: the spoken half must never contain a phrase to say back,
+    // or the mic hears the app's own suggestion and OUR-58 comes round again.
+    // The way out is written, not spoken — warnSilent() exists for exactly
+    // this split and it applies to a nudge as much as to a prompt.
+    warn(pick(['Not that one.','No — try another move.','That’s not the one.']));
+    if(puzzleWrong>=3) warnSilent('Stuck? Say “solution” to be shown it, or “next puzzle” to move on.');
+    return false;
+  }
+
+  // After a correct move: either it was mate, or the defender replies and the
+  // player is on move again. The reply waits for the narration exactly as the
+  // computer's does — same reason, same mechanism.
+  function puzzleAdvance(){
+    if(game.in_checkmate()){
+      puzzleDone[puzzle.id]=true; savePuzzleProgress();
+      gameOver=true;
+      const solved=Object.keys(puzzleDone).length;
+      warnSilent('Solved '+solved+' of '+puzzles.length+'. Say “next puzzle” for another.');
+      say(pick(['That’s mate. Solved.','Mate. That’s the one.','That’s it — mate.']));
+      return;
+    }
+    if(puzzleStage!==0) return;                 // shouldn't happen: stage 1 must mate
+    const replies=puzzle.replies||{};
+    const legal=game.moves({verbose:true}).map(puzzleMoveUci);
+    const choice=legal.find(u=>replies[u]);
+    if(!choice){
+      // The file promised a mate for every defence and one is missing. Say so
+      // rather than leaving the player pushing at a puzzle that cannot be
+      // solved — and it is a build error, not a player error.
+      warn('This puzzle looks wrong — I have no answer stored for that defence.');
+      warnSilent('Say “next puzzle” to move on. This is a fault in the puzzle file, not in your move.');
+      return;
+    }
+    puzzle.pendingAnswer=replies[choice];
+    puzzleStage=1;
+    const g=generation, move={from:choice.slice(0,2),to:choice.slice(2,4),promotion:choice[4]};
+    const text=predictNarration(move);
+    if(text) requestReserve(splitForSpeech(voiceizeSquares(text))[0]);
+    whenSpeechIdle(()=>{
+      if(g!==generation||gameOver) return;
+      applyMove(move);
+    },REPLY_WAIT_MAX_MS);
+  }
+
+  function puzzleSolution(){
+    if(!puzzle){ warn('No puzzle loaded.'); return; }
+    const want=puzzleExpected();
+    if(!want){ warn('Nothing left to show.'); return; }
+    const probe=new Chess();
+    probe.load(game.fen());
+    const m=probe.move({from:want.slice(0,2),to:want.slice(2,4),promotion:want[4]});
+    speak(m?('The move is '+describeMove(m,'terse')):('The move is '+want+'.'));
+  }
+
+  // ===============================================================
+  // Tips — the bookkeeping a sighted player gets for free
+  // ===============================================================
+  // Deliberately not a small coach. The coach answers "how am I doing" with
+  // Stockfish's judgement, and it only speaks when asked. Tips speak without
+  // being asked, which is a much higher bar, so they are restricted to things
+  // that are *countable* rather than judged: what is on the board, how often a
+  // position has occurred, how long since anything was captured.
+  //
+  // The distinction is the whole design. "Watch your f7" is advice, and it
+  // does the work the player came here to do. "Queens are off" is a fact they
+  // would have seen instantly with a board in front of them, and losing track
+  // of it is an artifact of playing blind rather than a chess weakness. Tips
+  // restore the second kind and never touch the first — nothing here consults
+  // the engine, and nothing names a move.
+  //
+  // Three rules keep them from becoming chatter:
+  //   - they ride along on a move narration and never interrupt, the same
+  //     shape recallNudge() already proved;
+  //   - each one fires on a *change* of state and then never repeats itself,
+  //     so nothing is said twice;
+  //   - and one tip per narration at most, with a gap of several plies.
+  //
+  // Guardrail 4 applies as it does everywhere: not one of these suggests a
+  // phrase to say back.
+  // Material has to *settle* before it is worth saying. Announced the instant
+  // it changes, a queen trade reads "White is a queen up." and then, one ply
+  // later, "Material is level again." — two sentences describing one exchange,
+  // the first of them briefly untrue in spirit. Waiting a few plies for the
+  // recapture means a trade that comes out even is never mentioned at all,
+  // which is the correct amount to say about it.
+  const TIP_MATERIAL_SETTLE=3;
+  let tipSaid={material:0};    // which tips have already been given, so none repeats
+  let tipPendingBucket=0, tipPendingSince=-99;
+  // material starts known and level, so the first real swing is the first
+  // thing said rather than being swallowed as the baseline.
+  function resetTips(){ tipSaid={material:0}; tipPendingBucket=0; tipPendingSince=-99; }
+
+  // A position key ignoring the clocks, which is what repetition means.
+  function positionKey(g){ return g.fen().split(' ').slice(0,4).join(' '); }
+  function currentPositionCount(){
+    const probe=new Chess(), here=positionKey(game);
+    let n=positionKey(probe)===here?1:0;
+    const hist=game.history();
+    for(let i=0;i<hist.length;i++){
+      if(!probe.move(hist[i])) return 0;    // shouldn't happen; refuse rather than miscount
+      if(positionKey(probe)===here) n++;
+    }
+    return n;
+  }
+
+  function materialFor(color){
+    return game.board().reduce((sum,row)=>sum+row.reduce((a,c)=>
+      a+(c&&c.color===color?PIECE_VALUE[c.type]:0),0),0);
+  }
+  // Coarse on purpose: the point is "something changed by about this much",
+  // not a number. A number is what the coach gives you at `full`.
+  function materialBucket(diff){
+    const a=Math.abs(diff);
+    if(a<1) return 0;
+    const size=a<3?1:a<5?3:a<9?5:9;
+    return diff>0?size:-size;
+  }
+  const BUCKET_WORD={1:'a pawn',3:'a piece',5:'a rook',9:'a queen'};
+
+  // "You" only means something when one side is yours.
+  function tipSeat(){ return mode==='two-player'?null:myColor(); }
+
+  function tipMaterial(){
+    const seat=tipSeat();
+    const me=seat||'w';
+    const diff=materialFor(me)-materialFor(me==='w'?'b':'w');
+    const bucket=materialBucket(diff), ply=game.history().length;
+    if(bucket===tipSaid.material){ tipPendingBucket=bucket; return null; }   // nothing new
+    if(bucket!==tipPendingBucket){ tipPendingBucket=bucket; tipPendingSince=ply; return null; }
+    if(ply-tipPendingSince<TIP_MATERIAL_SETTLE) return null;                 // mid-exchange
+    tipSaid.material=bucket;
+    if(bucket===0) return 'Material is level again.';
+    const word=BUCKET_WORD[Math.abs(bucket)];
+    if(seat) return bucket>0?'That puts you '+word+' up.':'That puts you '+word+' down.';
+    return (bucket>0?'White':'Black')+' is '+word+' up.';
+  }
+
+  function tipQueens(){
+    if(tipSaid.queens) return null;
+    if(pieceSquares('w','q').length||pieceSquares('b','q').length) return null;
+    tipSaid.queens=true;
+    return 'Both queens are off the board now.';
+  }
+
+  // Losing track of the roster is the characteristic blindfold difficulty, and
+  // the moment a whole piece type disappears is the cheapest time to re-anchor.
+  const TIP_PIECE_WORD={n:'knights',b:'bishops',r:'rooks'};
+  function tipLastOfType(){
+    const seat=tipSeat();
+    for(const type of ['r','b','n']){
+      for(const color of ['w','b']){
+        const key='gone-'+color+type;
+        if(tipSaid[key]) continue;
+        if(pieceSquares(color,type).length) continue;
+        tipSaid[key]=true;
+        const word=TIP_PIECE_WORD[type];
+        if(seat) return color===seat?'Your '+word+' are both gone now.'
+                                    :'Their '+word+' are both gone now.';
+        return (color==='w'?'White':'Black')+'’s '+word+' are both gone now.';
+      }
+    }
+    return null;
+  }
+
+  // Neither of these is visible even with a board in front of you, and both
+  // decide games.
+  function tipRepetition(){
+    const n=currentPositionCount();
+    if(n<2||tipSaid.repetition===n) return null;
+    tipSaid.repetition=n;
+    return n>=3?'That position has now come up three times — that’s a draw if claimed.'
+               :'That position has come up twice now.';
+  }
+  function tipFiftyMove(){
+    const half=+game.fen().split(' ')[4]||0;
+    const moves=Math.floor(half/2);
+    if(moves<40||tipSaid.fifty===moves) return null;
+    if(tipSaid.fifty&&moves<tipSaid.fifty+5) return null;   // don't count out loud every move
+    tipSaid.fifty=moves;
+    return moves+' moves now with no capture and no pawn move.';
+  }
+
+  // Order matters: the rarest and most consequential first, because only one
+  // is ever spoken.
+  function tipFor(){
+    // Not in puzzles. Every tip here is bookkeeping for a game you have been
+    // tracking move by move; a puzzle position was read out whole ten seconds
+    // ago, so there is nothing to have lost track of. Left on, the very first
+    // puzzle announced "both queens are off the board now" about a position
+    // that never had queens in it.
+    if(tips!=='on'||mode==='puzzle') return '';
+    // No global cooldown, because it isn't what keeps these rare — every tip
+    // above fires on a state change and then never repeats, and the landmarks
+    // can each happen only once in a game. A cooldown on top of that would
+    // only ever delay a true statement until the moment it stopped being
+    // interesting: "both queens are off" five plies after they came off.
+    // Material is the one that can chatter, and it has its own settle above.
+    let text=null;
+    for(const fn of [tipRepetition,tipFiftyMove,tipQueens,tipLastOfType,tipMaterial]){
+      text=fn();
+      if(text) break;
+    }
+    if(!text) return '';
+    micEvent('tts','tip: '+text);
+    return ' '+text;
   }
 
   // ===============================================================
@@ -2705,13 +3045,36 @@
     if(/how (much )?time|time left|clock|time remaining/.test(t)) return announceClock;
     if(/whose turn|who.{0,3}s turn|who moves/.test(t)) return ()=>speak((game.turn()==='w'?'White':'Black')+' to move.');
     if(/^repeat$|say (that )?again/.test(t)) return ()=>speak(lastNarration||'Nothing to repeat yet.');
+    if(mode==='puzzle'){
+      if(/next puzzle|another puzzle|next one|skip/.test(t))
+        return ()=>{ if(puzzle&&gameOver) puzzleDone[puzzle.id]=true; savePuzzleProgress(); startPuzzle(nextPuzzle()); };
+      if(/solution|give up|show me|what.{0,3}s the move|tell me/.test(t)) return puzzleSolution;
+      if(/repeat the position|say the position|the position again/.test(t))
+        return ()=>speak(describePuzzle()+' '+puzzleRoster());
+    }
     if(/new game|restart|reset/.test(t)) return startNewGame;
     if(/take back|takeback|undo/.test(t)) return takeBack;
     // "coach on" is a command, not a question. It was in matchQuestion at
     // first and never fired once — every rule there is gated on an
     // interrogative cue, and "coach on" hasn't got one. Matched by sound
     // because "coach" comes back as "couch" often enough to matter.
-    return matchCoachCommand(t);
+    return matchCoachCommand(t)||matchTipsCommand(t);
+  }
+
+  // Same shape as the coach command, and for the same reason: "tips off" has
+  // no interrogative cue, so matchQuestion would never see it. "tips" is a
+  // content word and matches by sound; on/off are function words and match
+  // literally — the A5 rule, because phon() invents meaning over short words.
+  function matchTipsCommand(t){
+    const words=t.split(/\s+/).filter(Boolean);
+    if(words.length>3||!hasSound(words,['tips','tip'])) return null;
+    return ()=>{
+      const want=hasWord(words,['off','stop','quiet','no'])?'off'
+                :hasWord(words,['on','yes'])?'on':null;
+      if(!want){ speak('Tips are '+tips+'.'); return; }
+      tips=want; tipsSelect.value=tips; saveState();
+      speak(tips==='off'?'Tips off.':'Tips on. Only things you could have seen.');
+    };
   }
 
   function matchCoachCommand(t){
@@ -4041,9 +4404,24 @@
     const prevMode=mode;
     mode=modeSelect.value;
     if(prevMode==='online'&&mode!=='online') leaveOnline();
-    if(mode==='online') showOnlinePanel();
-    else{ hideOnlinePanel(); startNewGame(); warmEngine(); }
+    if(mode==='online'){ showOnlinePanel(); return; }
+    hideOnlinePanel();
+    if(mode==='puzzle'){ enterPuzzles(); return; }
+    startNewGame(); warmEngine();
   });
+
+  function enterPuzzles(){
+    loadPuzzleProgress();
+    note('Loading puzzles…');
+    loadPuzzles().then(()=>{
+      note('');
+      startPuzzle(nextPuzzle());
+    }).catch(err=>{
+      note('');
+      warn('Couldn’t load the puzzles — '+((err&&err.message)||'fetch failed')+'.');
+      mode='computer'; modeSelect.value='computer'; startNewGame();
+    });
+  }
   levelSelect.addEventListener('change',()=>{
     levelKey = levelSelect.value;
     searchDepth = levelKey==='master'?3:(+levelKey||2);   // the fallback engine's depth
@@ -4071,6 +4449,7 @@
   }
   verbositySelect.addEventListener('change',()=>{ verbosity=verbositySelect.value; saveState(); });
   coachSelect.addEventListener('change',()=>{ coach=coachSelect.value; saveState(); });
+  tipsSelect.addEventListener('change',()=>{ tips=tipsSelect.value; saveState(); });
   // A reserved clip was rendered at the old voice and the old speed. Keeping
   // it would make the computer's next move arrive in a voice the player just
   // changed away from.
@@ -4203,12 +4582,14 @@
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
+    if(mode==='puzzle'){ startPuzzle(nextPuzzle()); return; }
     startNewGame();
   });
 
   function startNewGame(){
     generation++;
     dropReserve();
+    resetTips();
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
     lastComputerMove=null;
     resetClock();
@@ -4233,7 +4614,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -4261,6 +4642,7 @@
       // A save written by 2.0 stores 'off' explicitly, so an existing player
       // keeps the setting they had; only a fresh install gets the new default.
       coach=saved.coach||'hints'; coachSelect.value=coach;
+      tips=saved.tips||'on'; tipsSelect.value=tips;
       speechRate=saved.speechRate||0.9; rateSelect.value=String(speechRate);
       voiceURI=saved.voiceURI||''; refreshVoices();
       kokoroVoice=saved.kokoroVoice||'af_heart';
@@ -4288,6 +4670,10 @@
       }
       if(saved.pgn) game.load_pgn(saved.pgn);
       mode=(saved.mode==='online')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
+      // A puzzle isn't a game, so restoring its PGN would restore a half-solved
+      // position with no puzzle attached to it. Re-enter the mode properly and
+      // let it serve the next unsolved one.
+      if(mode==='puzzle'){ enterPuzzles(); return true; }
       humanColor=saved.humanColor||'w';
       lastMove=game.history({verbose:true}).slice(-1)[0]||null;
       gameOver=game.game_over();
@@ -4520,6 +4906,7 @@
   // continuous/maxAlternatives settings, which read "n-a" if the panel is
   // built first. Nothing is lost by waiting — mic events accumulate in
   // micLog from the start and the panel renders them when it appears.
+  resetTips();
   warmEngine();
   initDiagnostics();
   setupDebug();
