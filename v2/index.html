@@ -518,6 +518,7 @@
   // nothing (the gate still closes once for the whole narration) and gives a
   // clean cancellation point every couple of seconds instead of one at the end.
   const SPEECH_CHUNK_MAX=140;
+  const FIRST_CHUNK_MAX=60;      // Kokoro only — see splitForSpeech
   function splitForSpeech(text){
     const out=[];
     String(text).split(/(?<=[.!?])\s+/).forEach(sentence=>{
@@ -534,6 +535,17 @@
       });
       if(buf) out.push(buf);
     });
+    // Only the first chunk's generation is ever heard as a wait — every one
+    // after it is rendered while the previous plays. Kokoro's cost scales with
+    // text length, and a 139-character opener measured 3.1s on the live site
+    // against ~0.5s for a short line. So give the natural voice a small first
+    // bite and let it catch up behind the sound of its own speech.
+    if(ttsEngine==='kokoro'&&out.length&&out[0].length>FIRST_CHUNK_MAX){
+      const head=out[0];
+      let cut=head.lastIndexOf(', ',FIRST_CHUNK_MAX);
+      if(cut<20) cut=head.lastIndexOf(' ',FIRST_CHUNK_MAX);
+      if(cut>20) out.splice(0,1,head.slice(0,cut+1).trim(),head.slice(cut+1).trim());
+    }
     return out.length?out:[String(text)];
   }
 
@@ -1466,7 +1478,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r12 (D1: natural voice)';
+  const BUILD='v2-r13 (D1: short first bite)';
   const DEBUG=/[?&]debug=1/.test(location.search);
   const debugLog=[];
   let debugOut=null, debugCount=null, lastAltMeta=null;
