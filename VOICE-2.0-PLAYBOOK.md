@@ -4,7 +4,7 @@
 >
 > **A complete game of blindfold chess played entirely by voice, ending in `Qh5#`.**
 >
-> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phase A and B are built and both played in real games. Next session: C1/C2.**
+> Live at **https://sportbega.github.io/mind-chess/v2/** (branch `v2`, build `v2-r8`, `?debug=1` for diagnostics). v1.0 untouched at `/`, frozen at `/v1/`. Linear: [OUR-63](https://linear.app/bega-workspace/issue/OUR-63), [OUR-64](https://linear.app/bega-workspace/issue/OUR-64), [OUR-65](https://linear.app/bega-workspace/issue/OUR-65), [OUR-66](https://linear.app/bega-workspace/issue/OUR-66). **Phases A, B and C1/C2 are built.** Next session: **C3** (a local model for phrasing only — try C2 first and decide if it's still needed) or **D1** (Kokoro, the natural voice).
 >
 > **Phase A is complete.** A1 continuous recognition · A2 phonetic matching + piece-word scoring · A3 ask-back instead of rejecting · A4 hard speaking gate · A5 thirteen computed board answers · A6 chess.js vendored, so a game against the computer needs no network at all.
 >
@@ -198,7 +198,7 @@ And it answers them **better than a language model would.** An LLM asked to eval
 
 So Phase C isn't "add an AI." It's **connect the engine you already have to the conversation, and word its answers well.**
 
-#### C1. Engine-backed position questions
+#### C1. Engine-backed position questions  ✅ **Done — Day 3.8, `v2-r9`**
 Run a short, shallow analysis (a few hundred milliseconds — not full playing strength) on demand, and translate the result:
 
 | You ask | Comes from | Answer |
@@ -208,9 +208,15 @@ Run a short, shallow analysis (a few hundred milliseconds — not full playing s
 | "Am I hanging anything?" | opponent captures, scored | "Your bishop on b5 is undefended." |
 | "Is my king safe?" | eval delta + checks in the top lines | "No immediate threats to your king." |
 
-⚠️ **Design care:** this is powerful enough to become cheating-by-accident. Analysis-backed answers should be **coarse and opt-in** — "slightly better," not "+0.43," and never the actual best move unless explicitly asked. Recommendation: a **Coach setting** with off / hints / full, defaulting to off, so blindfold training stays training.
+✅ **Built as recommended: a Coach setting, off / hints / full, defaulting to off.** `hints` gives words and never a number; `full` gives numbers and will name the best move. "Coach on" flips it in one utterance, and the off-reply says so instead of being a dead end.
 
-#### C2. Natural phrasing without a model
+**Two things worth carrying forward:**
+
+- **The sign convention is the easiest thing here to get catastrophically wrong.** UCI reports from the seat of whoever is to move, so a naive read tells a player they're *winning* while they're being *mated*. Test it by loading one lopsided position from **both seats** — Day 3.8 read −5.6 as White and +5.7 as Black on the same board. That test is worth more than the code it checks.
+- **The null-move trick for threats.** "What are they threatening" is "what would they play if it were their move" — flip the side-to-move in the FEN and analyse that. Not legal chess, but a legal *position*, as long as the side losing the move isn't already in check (which is exactly when the threat is the check and there's nothing to compute).
+- **One worker, one `onmessage` slot, two callers.** The Master level and the coach share the engine; `stockfishBestMove` installs a handler and nulls it, so overlapping calls silently steal each other's `bestmove`. Everything queues now.
+
+#### C2. Natural phrasing without a model  ✅ **Done — Day 3.8, `v2-r9`**
 "Chatty" is mostly a writing problem, not a model problem. A well-built response layer gets you most of the way:
 
 - **Vary the wording.** Several phrasings per answer type, chosen at random, so it doesn't sound like a vending machine. This alone is most of the difference between "robotic" and "friendly."
@@ -219,6 +225,13 @@ Run a short, shallow analysis (a few hundred milliseconds — not full playing s
 - **Track what you keep forgetting** — ask twice about the same square and it can bring that piece up unprompted later. Free, memorable, and genuinely useful in blindfold play.
 
 Combined with A5's exact answers and C1's engine answers, this covers essentially every question you'd actually ask mid-game.
+
+✅ **All four built.** Notes from doing it:
+
+- **"Terse" and "Standard" were byte-identical** in `describeMove` and had been since v1.0 — two settings, one behaviour. Worth checking the other enum-shaped settings for the same thing.
+- **`pick()` varies the sentence around a fact, never the fact**, and won't repeat a choice twice running — repetition is what actually reads as robotic.
+- **The "what you keep forgetting" tracker counted almost nothing at first.** It was wired into `questionTargets()`, which the attack/defence rules use — and not into the two rules that ask about a square most often. If a feature depends on a counter, check which code paths actually increment it.
+- **`coach on` is a command, not a question**, and spent its first version in `matchQuestion` never firing: every rule there is gated on an interrogative cue and "coach on" hasn't got one.
 
 #### C3. Optional: a local model for phrasing only
 If C2 still feels mechanical, run a small model **in the browser** — [WebLLM](https://github.com/mlc-ai/web-llm) with a 0.5–3B model (Qwen, Llama 3.2, Gemma). No key, no server, no quota, no data leaving the device, cached after first download.
@@ -326,6 +339,6 @@ Ship A before C. A working matcher makes everything above it optional rather tha
 ## Open decisions
 
 - [x] **chess.js 0.10.3 → 1.x?** ~~Needed for clean `attackers()` in A5.~~ **Closed Day 3.5: staying on 0.10.3**, with a hand-rolled `attackersOf()` that is pseudo-legal on purpose. A6 (self-hosting) is unaffected either way.
-- [ ] **Coach setting default.** Recommendation: off. Engine-backed answers are strong enough to become accidental cheating, and unsolicited hints undermine blindfold training.
-- [ ] **How coarse should evaluations be?** "Slightly better" vs "+0.43" — recommendation: words, not numbers, unless you ask for precision.
+- [x] **Coach setting default.** ~~Recommendation: off.~~ **Closed Day 3.8: built off / hints / full, defaulting to off**, with "coach on" as a one-word override and naming a move gated behind `full`.
+- [x] **How coarse should evaluations be?** **Closed Day 3.8: words at `hints`, numbers only at `full`.** Five buckets — level / a shade / clearly / winning / completely.
 - [ ] **Is C3 worth it at all?** Try C2 first. A 0.5–2 GB download to make phrasing nicer may not earn its place.
