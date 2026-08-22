@@ -2060,3 +2060,104 @@ Open, and deliberately not done:
 - Elo anchoring exists but its answer was "don't ship a number"; redoing it
   properly needs ~20 games an anchor at a realistic time control.
 - On-device recognition has still never run on an iPhone.
+
+## 2026-08-22 — Day 5.0: the harness had stopped modelling a browser
+
+The one thing left over from last session that was mine rather than the app's:
+`tools/fake-recognizer.js` could not complete a narration once the mic was
+open. Reported symptom was `micState` stuck at `speaking` forever.
+
+**The measured symptom was almost right and the diagnosis was wrong.** Driving
+the roster answer through r29 with "Talk over it" on, all four chunks spoke and
+**every utterance's `onend` fired**, including the last — so `endSpeaking()`
+was reached, and `speaking` really did go false. Proof it went false: a move
+spoken afterwards routed normally and was answered. What was stuck was the mic
+*state*, not the speech gate.
+
+The chain, once you follow it:
+
+```
+endSpeaking()      with wantLoop && handsFree, sets no mic state itself —
+                   it schedules startListening() and lets that repaint
+startListening()   if(!recognition || listening || speaking) return;
+                   with "Talk over it" on the session was never closed,
+                   so `listening` is still true, so this returns
+setListening()     the only other caller of setMicState('listening') —
+                   never runs
+```
+
+So the label sits at `speaking` until the session actually closes and reopens.
+
+**And that is the harness rot: the fake session never closed.** The app says so
+about itself, in two comments written long before this bug: *"Chrome ends the
+session with `no-speech` after any quiet stretch. That is normal operation
+between moves"*, and *"Chrome ends a continuous session on its own — so staying
+always on means restarting it repeatedly."* The entire restart machine —
+`onend`, `scheduleRestart()`, the backoff, `shortSessions`, `STALE_SESSION_MS`
+— exists to service an event the fake had never once delivered. The fake
+modelled a session that lives forever, which is a state a real browser does not
+sustain, and then parked the app in it.
+
+Fixed by giving the recognizer a silence timeout: `autoEndMs`, default 7000,
+firing `no-speech` and then `onend` exactly as Chrome does, reset by every
+`hear()`, and settable to 0 to hold a session open deliberately. 7s is roughly
+Chrome's window and well clear of the 1200ms below which the app counts a
+session as "short" and starts backing off. Plus `endSession()` as an explicit
+control for *the browser closed it on us*, which is a different event from the
+app calling `stop()` or `abort()`.
+
+Two more gaps found while in there, both the same shape — the fake had drifted
+from an interface that moved on without it:
+
+- **`onstart` was never fired.** The app hangs `lastAudioStartAt` off exactly
+  that event, and r20's **"Test voice" button polls `lastAudioStartAt`** —
+  because `speak()` returning cleanly is precisely what Day 3.13's mute phone
+  looked like. So the one instrument built to prove audio reached a speaker
+  could only ever *fail* under the harness. Measured before the fix: the button
+  hung at "Testing the voice…" and then reported failure. After: *"Voice
+  started — you should have heard a move."*
+- **`speechSynthesis` was a counter and one shared timer handle, not a queue.**
+  Anything speaking out of band — `unlockSpeech()` spends the page's first
+  gesture on a silent utterance — ran in parallel with a narration chunk and
+  orphaned its timer. Replaying the old logic verbatim in a sandbox: two
+  outstanding utterances, one `cancel()`, and the counter reaches **-1**; the
+  next `speak()` then leaves `speaking === false` **while an utterance is
+  playing**. That is the direction that matters, because `whenSpeechIdle()`
+  fires straight through and the chunk watchdog advances early — r21's "wait
+  for narration to end" would have looked tested and fine while not being
+  exercised at all. Now a real serial queue, with `speaking`/`pending` derived
+  from it.
+
+`cancel()` still deliberately fires no `onend`. The spec says it should; Chrome
+routinely drops it; the app is written against Chrome (*"Cancelling
+mid-utterance means onend never fires, so release the speaking gate by hand"*)
+and its chunk watchdog exists for that. Model the browser the app ships
+against, not the paragraph it was supposed to implement.
+
+**Verified end to end on r29, unchanged app:** six moves by voice into a fresh
+game — `1.e4 Nc6 2.Nf3 Nf6 3.Bc4 Nxe4 4.d3 Nxf2 5.Nc3 Nxd1 6.O-O Nxc3` —
+every move heard, played, answered by the computer, castling by voice included,
+and a tip firing on cue. Mic state returns to `listening` after each narration.
+Sessions cycle: `no-speech` at 7s, restart 200ms later. The other instruments
+re-run clean: `phon-collisions` 15 collisions all neutralised and no command
+word colliding with a piece, `make-puzzles --audit` 200/200, `echo-threshold`
+still clean at the shipped 0.6.
+
+**What is left, and it is the app's, not the harness's:** with "Talk over it"
+on, `micState` reads `speaking` from the end of a narration until the next time
+the session closes — so the mic label lies for up to one silence timeout after
+every narration. It self-heals, it is cosmetic (input routes correctly
+throughout — measured), and "Talk over it" ships **off**, so it is nowhere near
+the default beta path. But it is real, and the honest fix is one line:
+`endSpeaking()` should *state* the mic state rather than delegate it to a
+restart that may not happen. **Not done here, deliberately** — r29 is a release
+candidate waiting on a verification game, and quietly minting r30 to fix a
+label would throw that away.
+
+**The lesson is the Day 3.12 one for the third time, and it now has a sharper
+edge.** A fake does not only rot by throwing on load. It rots by continuing to
+run while quietly modelling a world the real thing left behind — no session
+ever ending, no `onstart` ever firing — and the failure that produces is not an
+error. It is a *plausible wrong answer*. `tools/fake-recognizer.js` is the only
+instrument in this repo not generated from `index.html`, which is exactly why
+it is the only one that can drift this way.
