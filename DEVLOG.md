@@ -3572,3 +3572,66 @@ threshold; replay confirms r42 scores all 45 recorded utterances exactly as r41
 did — this lives in the microphone path and touches no scoring.
 
 r42 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.6: refusing a coin flip should mean asking (r43)
+
+The third finding from the r40 game, and the cheapest one to be annoyed by:
+
+```
+#4  chose: "83"    → REJECTED
+#5  chose: "83"    → REJECTED
+#6  chose: "83"    → REJECTED
+#7  chose: ".283"  → REJECTED
+#8  chose: "Pawn to A3"  → a3
+```
+
+He wanted `a3`. Chrome writes a spoken file letter as a digit — `"a3"` comes
+back as `"83"` — and `expandAlternatives()` has handled that shape since Day 3:
+try `a3` and `h3`, and expand only when exactly one of them is legal.
+
+```js
+// If both readings are legal it's a coin flip, and silently playing the
+// wrong move is far worse than asking again — a blindfold player can't
+// see it happen. Expand only when the position makes it unambiguous.
+if(reachable.length!==1) continue;
+```
+
+The reasoning is right and the comment says the correct thing — *asking again*.
+But the code does not ask. It refuses, and the generic rejection then advises
+him to spell it out, four times, while the app knew the whole time that the
+only two readings on the board were a3 and h3.
+
+**Refusing was half a decision.** `pendingAction` has existed for questions
+since Day 3; this one just never got wired to it.
+
+```
+You     83
+System  Did you mean a3 or h3?
+You     alpha
+Board   White plays pawn a2 to a3.
+```
+
+The answer is re-planned from the square rather than from a stored move, so it
+behaves exactly as if the square had been said outright — including any *piece*
+ambiguity, which is a different question and gets asked in its own turn.
+
+Verified, with both controls:
+
+- answering with a full square instead of a file — `"83"` then `"h3"` — plays
+  h3;
+- and where only one reading is legal, `"86"` still resolves **silently** to a6
+  with no question at all. The old path is untouched; only the coin flip
+  changed.
+
+The check sits after the turn and game-over guards in `route()`, so it can
+never ask a question on a turn the player is not allowed to move in.
+
+`.283` (utterance #7) is still refused — the digits are glued together and the
+`\b8([1-8])\b` shape does not match. Left alone deliberately: widening that
+regex to chase one sample is how a normaliser starts guessing.
+
+Replay: r43 scores all 45 recorded utterances exactly as r42 did. It would —
+this adds a question on the path where scoring has already given up, which is
+also why the replay cannot see it and the harness had to.
+
+r43 is on the preview only. `/` still serves r31.
