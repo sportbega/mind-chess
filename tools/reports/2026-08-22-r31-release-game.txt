@@ -59,3 +59,12 @@ url:   https://sportbega.github.io/mind-chess/
   +142.7s  state  listening → thinking  (routing "King")
   +142.7s  state  thinking → speaking  (narration started)
   +144.1s  state  speaking → listening  (narration ended)
+
+--- verified labels ---
+# Adni, 2026-08-22, asked directly: "no i didnt say king, that was the app".
+# The alternatives list for this utterance included "King for me one to", which
+# is what the then-current narration "king from e1 to g1" mangles into. The two
+# barge-ins immediately before it ("King for", "King for me") are the same
+# narration coming back, so the whole 141-143s stretch is the app talking to
+# itself: it cut its own sentence twice and then routed the remainder.
+  +142.7s  ECHO

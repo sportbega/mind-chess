@@ -27,8 +27,17 @@
 // Labelling rule, stated so it can be argued with: a routed transcript counts
 // as ECHO if it OPENS with a colour word. Every reply the app speaks starts
 // "Black plays…" or "White plays…", and a player never begins a turn that way.
-// Everything else is treated as human. If that rule is ever wrong for a new
-// report, change it here rather than quietly reclassifying by hand.
+// Everything else is treated as human.
+//
+// That rule is a heuristic and it has already been wrong once. In the r31 game
+// a bare "King" at 1500ms was labelled human; Adni confirmed he never said it —
+// it was the app's own castling line coming back. Relabelling it moved the
+// answer from 1000ms to 2000ms, so the label matters more than the arithmetic.
+//
+// Hence: a report may carry a "--- verified labels ---" block naming a
+// timestamp and the truth, and a human label always beats the heuristic. Add
+// one whenever the player tells you what they did or did not say — that is the
+// only source here that actually knows.
 // Widened after the r31 release game: the app's own voice does not always come
 // back as one word. "black plays Bishop" and "black Place Pawn" were both
 // routed there — three-word fragments of "Black plays bishop from …". What is
@@ -53,7 +62,15 @@ const ROUTING = /^\s*\+([\d.]+)s\s+state\s+.*\(routing "(.*)"\)/;
 
 const samples = [];
 for (const file of files) {
-  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  const body = fs.readFileSync(file, 'utf8');
+  const lines = body.split('\n');
+  // Human-confirmed labels, e.g.  "+142.7s  ECHO   # Adni: I didn't say this"
+  const verified = {};
+  const block = body.split('--- verified labels ---')[1];
+  if (block) block.split('\n').forEach(l => {
+    const v = /^\s*\+([\d.]+)s\s+(ECHO|HUMAN)\b/.exec(l);
+    if (v) verified[v[1]] = v[2];
+  });
   let lastEnd = null;
   for (const line of lines) {
     const e = ENDED.exec(line);
@@ -65,8 +82,11 @@ for (const file of files) {
     if (gapMs < 0) continue;
     const text = r[2];
     const words = text.trim().split(/\s+/).filter(Boolean);
-    const isEcho = words.length > 0 && ECHO_OPENERS.includes(words[0].toLowerCase());
-    samples.push({ file: path.basename(file), gapMs, text, words: words.length, isEcho });
+    let isEcho = words.length > 0 && ECHO_OPENERS.includes(words[0].toLowerCase());
+    const verdict = verified[r[1]];               // keyed by the "+NNN.Ns" stamp
+    if (verdict) isEcho = verdict === 'ECHO';
+    samples.push({ file: path.basename(file), gapMs, text, words: words.length,
+                   isEcho, confirmed: !!verdict });
   }
 }
 
@@ -76,10 +96,10 @@ const humans = samples.filter(s => !s.isEcho);
 console.log('=== echo timing ===');
 console.log(files.length + ' report(s), ' + samples.length + ' routed utterances after a narration\n');
 
-console.log('  gap      words  kind    transcript');
+console.log('  gap      words  kind    transcript          (* = human-confirmed)');
 samples.sort((a, b) => a.gapMs - b.gapMs).forEach(s => {
   console.log('  ' + String(s.gapMs + 'ms').padEnd(9) + String(s.words).padEnd(6) +
-    ' ' + (s.isEcho ? 'ECHO  ' : 'human ') + '  "' + s.text.slice(0, 44) + '"');
+    ' ' + (s.isEcho ? 'ECHO  ' : 'human ') + (s.confirmed ? '*' : ' ') + ' "' + s.text.slice(0, 44) + '"');
 });
 
 if (!echoes.length || !humans.length) {

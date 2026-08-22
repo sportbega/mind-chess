@@ -2438,3 +2438,63 @@ r33 is on the preview branch only. `/` still serves r31.
 castling narration, its alternatives include `"King for me one to"`, and
 *"king from e1 to g1"* mangles into exactly that. If it was echo, the fastest
 genuine reply is 2800ms and the window could go wider. **Ask before assuming.**
+
+## 2026-08-22 — Day 5.4: only the player knows what the player said (r34)
+
+One question, one answer, and the number doubled.
+
+`tools/echo-timing.js` had labelled a bare `"King"` at 1500ms as a human
+utterance, on the heuristic that echoes open with a colour word. Asked directly,
+Adni said: *"no i didnt say king, that was the app."*
+
+Relabelling that one sample:
+
+```
+  700ms   ECHO    "black"
+  700ms   ECHO    "black plays Bishop"
+  800ms   ECHO    "black Place Pawn"
+ 1500ms   ECHO  * "King"                 (* human-confirmed)
+ 2800ms   human   "C3"
+clean range: 1500–2500ms    midpoint: 2000ms
+```
+
+**The window has now been wrong twice, in opposite directions:**
+
+| | value | why it was wrong |
+|---|---|---|
+| r32 | 1500ms | picked from one echo sample |
+| r33 | 1000ms | a second report produced a "King" at 1500ms the heuristic called human |
+| r34 | 2000ms | it wasn't human — and 1000ms had been catching only **3 of 4** echoes |
+
+The lesson is not the value, and it is not really "measure first" either — the
+measuring was done correctly each time. **The labelling mattered more than the
+arithmetic, and only the player knew it.** A heuristic sat between the data and
+the truth and quietly got one sample backwards, which was enough to halve the
+answer and leave a real echo escaping.
+
+So reports can now carry a `--- verified labels ---` block naming a timestamp
+and the truth, and a human label always beats the heuristic. The r31 report has
+one, with the reasoning written next to it.
+
+That stretch of the game is worth reading as a whole, because it is three
+self-inflicted events in three seconds:
+
+```
++141.2s  barge-in  voice: "King for"  cut: "White castles kingside: king from e1 to g1, "
++141.2s  barge-in  voice: "King for me"
++142.7s  routing "King"
+```
+
+The app cut its own sentence, cut the next one, and then took dictation from the
+remainder — all from one narration. r33 removed the word that produced
+`"King for"`; r34 catches the `"King"` that followed it.
+
+Verified in the harness by firing the echo from inside the app's own `onend`,
+so no timer sits between the narration ending and the echo arriving:
+
+```
++100.3s  state  speaking → listening  (narration ended)
++100.3s  echo   ignored one-word echo "King" (5ms after speaking)
+```
+
+r34 is on the preview branch only. `/` still serves r31.

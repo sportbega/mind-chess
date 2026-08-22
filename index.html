@@ -1225,15 +1225,23 @@
   // How long a ONE-WORD echo can still arrive. Measured, not picked:
   // tools/echo-timing.js mines problem reports for the gap between "narration
   // ended" and the next routed utterance. In the r30 verification game the
-  // app's own voice came back at 700, 700 and 800ms across two games, while the
-  // fastest utterance that might be human was 1500ms. Clean range 800–1200ms.
+  // Across two games the app's own voice came back at 700, 700, 800 and 1500ms,
+  // against a fastest genuine reply of 2800ms. Clean range 1500–2500ms.
   //
-  // ⚠ This started at 1500ms off ONE report, and the second report moved it:
-  // a "King" arrived at 1500ms, so the old value would have swallowed it. That
-  // is the whole argument for the instrument — a threshold picked from one
-  // sample was already wrong by the next game. Re-run tools/echo-timing.js
-  // whenever a report lands; do not hand-pick this number.
-  const ECHO_SINGLE_TAIL_MS=1000;
+  // ⚠ This number has now been wrong twice, in opposite directions, and both
+  // corrections came from outside the code:
+  //   1500ms  picked from ONE echo sample
+  //   1000ms  after a second report produced a "King" at 1500ms that the
+  //           tool's heuristic labelled human
+  //   2000ms  after Adni was asked and said he never said "King" — it was the
+  //           app's own castling line. Relabelling one sample doubled the
+  //           answer, and 1000ms had been catching only 3 of 4 echoes.
+  //
+  // The lesson is not the value. It is that the labelling mattered more than
+  // the arithmetic, and only the player knew it. Re-run tools/echo-timing.js
+  // when a report lands, and ask about anything ambiguous rather than letting
+  // a heuristic decide. Never hand-pick this.
+  const ECHO_SINGLE_TAIL_MS=2000;
   function considerBargeIn(transcript){
     const overlap=echoOverlap(transcript);
     if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2) return;
@@ -2126,7 +2134,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r33 (the word that cost us a sentence)';
+  const BUILD='v2-r34 (only the player knows what the player said)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
