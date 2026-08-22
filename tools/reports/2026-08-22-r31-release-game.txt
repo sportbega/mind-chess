@@ -1,0 +1,61 @@
+=== Mind Chess problem report ===
+build: v2-r31 (castling keeps its rook, and squares are spoken as written)
+when:  2026-08-22T15:35:23.292Z
+url:   https://sportbega.github.io/mind-chess/
+
+--- settings ---
+  mode=computer · level=2 · speech=system · hearing=system · voice=Google US English · rate=0.9 · coach=hints · tips=on · narration=verbose · speak=true · keep-listening=true · talk-over=true · seat=white · board=shown
+
+--- mic timeline · state=listening · 21 sessions · 2 barge-ins · 0 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · span 144s ---
+  +0.0s  tts  speech unlocked by first gesture
+  +2.8s  state  idle → listening  (session open)
+  +7.3s  state  listening → thinking  (routing "reveal board")
+  +7.3s  state  thinking → listening  (nothing to narrate)
+  +15.0s  state  listening → thinking  (routing "E4")
+  +15.0s  state  thinking → speaking  (narration started)
+  +18.2s  state  speaking → listening  (narration ended)
+  +18.2s  state  listening → speaking  (narration started)
+  +21.8s  state  speaking → listening  (narration ended)
+  +22.6s  state  listening → thinking  (routing "black Place Pawn")
+  +22.6s  state  thinking → speaking  (narration started)
+  +24.1s  state  speaking → listening  (narration ended)
+  +25.8s  state  listening → speaking  (narration started)
+  +29.1s  state  speaking → listening  (narration ended)
+  +29.1s  state  listening → speaking  (narration started)
+  +32.7s  state  speaking → listening  (narration ended)
+  +58.9s  state  listening → thinking  (routing "Knights of three")
+  +58.9s  state  thinking → speaking  (narration started)
+  +60.4s  state  speaking → listening  (narration ended)
+  +62.6s  state  listening → speaking  (narration started)
+  +65.9s  state  speaking → listening  (narration ended)
+  +65.9s  state  listening → speaking  (narration started)
+  +69.5s  state  speaking → listening  (narration ended)
+  +70.2s  state  listening → thinking  (routing "black plays Bishop")
+  +70.2s  state  thinking → speaking  (narration started)
+  +71.7s  state  speaking → listening  (narration ended)
+  +74.7s  state  listening → speaking  (narration started)
+  +78.1s  state  speaking → listening  (narration ended)
+  +78.2s  state  listening → speaking  (narration started)
+  +81.6s  state  speaking → listening  (narration ended)
+  +98.8s  state  listening → thinking  (routing "D5")
+  +98.8s  state  thinking → speaking  (narration started)
+  +103.8s  state  speaking → listening  (narration ended)
+  +103.8s  state  listening → speaking  (narration started)
+  +107.5s  state  speaking → listening  (narration ended)
+  +116.3s  state  listening → thinking  (routing "night")
+  +116.3s  state  thinking → speaking  (narration started)
+  +117.7s  state  speaking → listening  (narration ended)
+  +119.0s  state  listening → speaking  (narration started)
+  +122.2s  state  speaking → listening  (narration ended)
+  +122.2s  state  listening → speaking  (narration started)
+  +127.1s  state  speaking → listening  (narration ended)
+  +137.8s  state  listening → thinking  (routing "Castle kingside")
+  +137.8s  state  thinking → speaking  (narration started)
+  +141.2s  barge-in  voice: "King for"  cut: "White castles kingside: king from e1 to g1, "
+  +141.2s  state  speaking → listening  (narration ended)
+  +141.2s  state  listening → speaking  (narration started)
+  +141.2s  barge-in  voice: "King for me"
+  +141.2s  state  speaking → listening  (narration ended)
+  +142.7s  state  listening → thinking  (routing "King")
+  +142.7s  state  thinking → speaking  (narration started)
+  +144.1s  state  speaking → listening  (narration ended)

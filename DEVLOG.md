@@ -2360,3 +2360,81 @@ read the app's *own* timeline for what `since` it actually measured, and use
 the real wall-clock gap **between tool calls** instead of a timer inside one.
 
 r32 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 5.3: the word that cost us a sentence (r33)
+
+The r31 release game. **The castling fix works** — the report shows *"White
+castles kingside: king from e1 to g1, rook from h1 to f1."* — and the same line
+then caused two new findings, one of which corrected yesterday's fix.
+
+### The window was wrong, and the second report is what said so
+
+`tools/echo-timing.js` over both games now:
+
+```
+  700ms   1 word  ECHO   "black"
+  700ms   3 words ECHO   "black plays Bishop"
+  800ms   3 words ECHO   "black Place Pawn"
+ 1500ms   1 word  human  "King"
+ 2800ms   1 word  human  "C3"
+ ...
+clean range: 800–1200ms   midpoint: 1000ms
+```
+
+r32 shipped **1500ms** off a single echo sample. The next game produced a
+`"King"` at exactly 1500ms — so the value I picked would have swallowed it.
+Corrected to **1000ms**. That is the argument for the instrument in one line: a
+threshold chosen from one sample was already wrong by the next game. This
+number is not to be hand-picked again.
+
+**And r32's fix is vindicated by data it was not built from.** `#3` and `#5`
+were `"black Place Pawn"` and `"black plays Bishop"` — multi-word, so they look
+like the overlap scorer's job. They are not: `isTrailingEcho()` is handed
+`res[0].transcript`, the *first* alternative, and in both cases alternative 0
+was the single word `"black"`. r32 catches both.
+
+### No threshold separated the castling echo. The phrase had to change.
+
+Twice at +141.2s the app **cut off its own castling narration**:
+
+```
++141.2s  barge-in  voice: "King for"  cut: "White castles kingside: king from e1 to g1, "
++141.2s  barge-in  voice: "King for me"
+```
+
+`phon("for") ≠ phon("from")`, so `"king for"` scores 1/2 = 0.5 against the
+narration — under `ECHO_MIN` 0.6, which reads as an interruption. **The player
+never heard the rook**, in the very build that added it.
+
+The obvious move was to lower the threshold for short fragments. The instrument
+refused it: adding these three to `tools/echo-threshold.js` produced
+
+```
+No threshold separates them — the phrases themselves need attention, not the number.
+```
+
+At 0.5 all three are caught and **five real interruptions die**, `"coach off"`
+and `"tips off"` among them — both two words, both scoring 0.5 against a tips
+narration containing "off". Lowering the number would have traded a cut
+sentence for eaten commands.
+
+So the phrase changed instead. **Verbose narration no longer says "from".**
+*"White plays pawn e2 to e4."* and *"White castles kingside: king e1 to g1,
+rook h1 to f1."* — the word carried no information and was the one the
+recogniser reliably mangled. Same family as Day 3.11's spellings and Day 3.14's
+function words: the failure was in a word that did no work.
+
+Sweep is clean again at the shipped 0.6 — **18/18 echoes caught, 15/15
+interruptions preserved** — with the threshold untouched. The old wording stays
+in the tool as `CASTLE_OLD`, a regression witness: if "from" creeps back, it
+fails again.
+
+r33 is on the preview branch only. `/` still serves r31.
+
+### Open question for the next session
+
+`"King"` at 1500ms is labelled *human* by `echo-timing.js`, and the whole
+1000ms figure rests on that label. It may be wrong: it arrived 1.5s after a
+castling narration, its alternatives include `"King for me one to"`, and
+*"king from e1 to g1"* mangles into exactly that. If it was echo, the fastest
+genuine reply is 2800ms and the window could go wider. **Ask before assuming.**

@@ -1225,16 +1225,15 @@
   // How long a ONE-WORD echo can still arrive. Measured, not picked:
   // tools/echo-timing.js mines problem reports for the gap between "narration
   // ended" and the next routed utterance. In the r30 verification game the
-  // app's own "black" came back at 700ms while the fastest genuine reply — a
-  // recapture on the square just announced — was 2800ms. Any window from 800
-  // to 2500ms separates them; 1500 sits mid, with 800ms of margin under the
-  // echo and 1300ms over the human.
+  // app's own voice came back at 700, 700 and 800ms across two games, while the
+  // fastest utterance that might be human was 1500ms. Clean range 800–1200ms.
   //
-  // The data is THIN (one echo sample). It is shipped anyway because the two
-  // failure directions are not symmetrical: too long costs one repeated word,
-  // too short costs the app playing a move in its own voice. Re-run the tool
-  // as reports accumulate.
-  const ECHO_SINGLE_TAIL_MS=1500;
+  // ⚠ This started at 1500ms off ONE report, and the second report moved it:
+  // a "King" arrived at 1500ms, so the old value would have swallowed it. That
+  // is the whole argument for the instrument — a threshold picked from one
+  // sample was already wrong by the next game. Re-run tools/echo-timing.js
+  // whenever a report lands; do not hand-pick this number.
+  const ECHO_SINGLE_TAIL_MS=1000;
   function considerBargeIn(transcript){
     const overlap=echoOverlap(transcript);
     if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2) return;
@@ -1515,11 +1514,18 @@
     // Verbose should be the most complete, so it names both pieces' squares.
     if(m.flags.indexOf('k')!==-1||m.flags.indexOf('q')!==-1){
       const kingside=m.flags.indexOf('k')!==-1, rank=m.color==='w'?'1':'8';
-      return color+' '+base+': king from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)
-        +', rook from '+spokenSquare((kingside?'h':'a')+rank)
+      return color+' '+base+': king '+spokenSquare(m.from)+' to '+spokenSquare(m.to)
+        +', rook '+spokenSquare((kingside?'h':'a')+rank)
         +' to '+spokenSquare((kingside?'f':'d')+rank)+'.';
     }
-    let t=color+' plays '+piece+' from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
+    // No "from". The word carries nothing — "pawn e2 to e4" is unambiguous —
+    // and it is the word that cost us a sentence: the recogniser hears our own
+    // "king from e1" back as "King for" / "King for me", which scores 1/2 = 0.5
+    // against the narration and reads as an interruption at ECHO_MIN 0.6. The
+    // app cut off its own castling line twice in the r31 game, and the player
+    // never heard the rook. tools/echo-threshold.js says no threshold separates
+    // those two classes, so the phrase had to change rather than the number.
+    let t=color+' plays '+piece+' '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
     if(m.captured) t+=' Captures the '+PIECE_NAME[m.captured]+'.';
     if(m.promotion) t+=' Promotes to '+PIECE_NAME[m.promotion]+'.';
     return t;
@@ -2120,7 +2126,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r32 (a one-word echo is still our own voice)';
+  const BUILD='v2-r33 (the word that cost us a sentence)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

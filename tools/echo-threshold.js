@@ -65,6 +65,17 @@ const TIPS   = ['Bishop takes e7. Both queens are off the board now.', 'Rook to 
 // is answered by saying it again, so an echo that reaches route() becomes an
 // infinite loop. Observed six times in one real game on r26.
 const SELF   = ['The computer is thinking.'];
+// Added after the r31 release game, where the app cut off its OWN castling
+// narration twice. Verbose castling says "king from e1 to g1"; what came back
+// was "King for" and "King for me". phon("for") and phon("from") differ, so a
+// two-word fragment scores 1/2 = 0.5 — under the shipped 0.6, which reads as
+// an interruption. The player never heard the rook.
+// r33 dropped the word "from" from verbose narration precisely because of the
+// three entries below: no threshold separated them from real interruptions, so
+// the phrase changed instead of the number. Kept here with the OLD wording as a
+// regression witness — if "from" ever creeps back, this fails again.
+const CASTLE_OLD = ['White castles kingside: king from e1 to g1, rook from h1 to f1.'];
+const CASTLE = ['White castles kingside: king e1 to g1, rook h1 to f1.'];
 
 // Things the app said, heard back through the microphone. Must read as echo.
 const ECHOES = [
@@ -83,6 +94,9 @@ const ECHOES = [
   ['computer is thinking', SELF],
   ['is thinking', SELF],
   ['the computer is stinking', SELF],
+  ['king e1 to g1', CASTLE],
+  ['rook h1 to f1', CASTLE],
+  ['castles kingside king e1 to g1', CASTLE],
 ];
 
 // Things a player says while the app is talking. Must read as an interruption.

@@ -25,11 +25,17 @@
 // the real recognizer. This reads them back out.
 //
 // Labelling rule, stated so it can be argued with: a routed transcript counts
-// as ECHO if it is a single word the app says in its own narration but a player
-// would never utter alone as a whole turn — the colour words. Everything else
-// is treated as a human utterance. If that rule is ever wrong for a new report,
-// change it here rather than quietly reclassifying by hand.
-const ECHO_WORDS = ['black', 'white'];
+// as ECHO if it OPENS with a colour word. Every reply the app speaks starts
+// "Black plays…" or "White plays…", and a player never begins a turn that way.
+// Everything else is treated as human. If that rule is ever wrong for a new
+// report, change it here rather than quietly reclassifying by hand.
+// Widened after the r31 release game: the app's own voice does not always come
+// back as one word. "black plays Bishop" and "black Place Pawn" were both
+// routed there — three-word fragments of "Black plays bishop from …". What is
+// constant is the OPENING: every reply the app speaks starts with a colour, and
+// a player never begins an utterance that way. So the rule is the first word,
+// not the length.
+const ECHO_OPENERS = ['black', 'white'];
 
 const fs = require('fs');
 const path = require('path');
@@ -59,7 +65,7 @@ for (const file of files) {
     if (gapMs < 0) continue;
     const text = r[2];
     const words = text.trim().split(/\s+/).filter(Boolean);
-    const isEcho = words.length === 1 && ECHO_WORDS.includes(words[0].toLowerCase());
+    const isEcho = words.length > 0 && ECHO_OPENERS.includes(words[0].toLowerCase());
     samples.push({ file: path.basename(file), gapMs, text, words: words.length, isEcho });
   }
 }
