@@ -1,0 +1,153 @@
+=== Mind Chess problem report ===
+build: v2-r46 (a player never starts a sentence with a colour)
+when:  2026-08-22T22:44:41.363Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=kokoro  ·  hearing=system  ·  voice=bf_emma  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: r3k2r/ppp1ppbp/n4np1/3q4/5Pb1/2PP2Q1/PP4PP/RNB1KBNR w KQkq - 0 8
+  pgn: 1. d3 g6 2. e4 Bg7 3. f4 d5 4. exd5 Nf6 5. Qf3 Bg4 6. Qg3 Na6 7. c3 Qxd5
+
+--- last said ---
+  You    queen to G3
+           heard: also heard: cream to G3 / cream 2G 3
+  Board  White plays queen f3 to g3.
+  Board  Black plays knight b8 to a6.
+  You    83
+           heard: also heard: 8-3 / 8-83
+  System Did you mean a3 or h3?
+  You    83
+  System Didn’t catch that — a3 or h3?
+  You    the first one
+  System Didn’t catch that — a3 or h3?
+  You    Pawn C3
+           heard: also heard: on C3 / Pond C3
+  Board  White plays pawn c2 to c3.
+  Board  Black plays queen d8 to d5. Captures the pawn.
+
+--- what was heard (8) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r46 (a player never starts a sentence with a colour)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "D3"
+   heard: "D3" (0.95)  |  "D 3" (0.93)  |  "3" (0.89)  |  "d-3" (0.91)  |  "the three" (0.89)  |  "the tree" (0.89)  |  "d three" (0.93)
+   normalised: "d3"
+   result: move → d3  (score 9.5)
+   ranked: d3 9.5*  |  d4 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "E4"
+   heard: "E4" (0.82)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  e3 -0.05  |  Be3 -0.35  |  d4 -0.7   margin 9.55
+   turn: white  legal: 27
+   fen: rnbqkbnr/pppppp1p/6p1/8/8/3P4/PPP1PPPP/RNBQKBNR w KQkq - 0 2
+
+#3  [voice]  chose: "F4"
+   heard: "F4" (0.57)  |  "4" (0.42)  |  "Ford F4" (0.60)  |  "for" (0.81)  |  "four" (0.84)  |  "Ford F-4" (0.66)  |  "4 F4" (0.49)
+   normalised: "f4"
+   result: move → f4  (score 9.5)
+   ranked: f4 9.5*  |  Bf4 9.2*  |  f3 -0.05  |  Qf3 -0.35   margin 0.3
+   turn: white  legal: 33
+   fen: rnbqk1nr/ppppppbp/6p1/8/4P3/3P4/PPP2PPP/RNBQKBNR w KQkq - 1 3
+
+#4  [voice]  chose: "Pawn to D5"
+   heard: "Pawn to D5" (0.91)  |  "porn to D5" (0.84)  |  "pulling to D5" (0.87)  |  "pull into D5" (0.79)  |  "Pawn to D 5" (0.90)  |  "Pawn to D five" (0.90)  |  "porn to D 5" (0.85)
+   normalised: "pawn d5"
+   result: move → exd5  (score 10.4)
+   ranked: exd5 10.4*  |  d4 1.02  |  e5 0.7  |  f5 0.7   margin 9.37
+   turn: white  legal: 31
+   fen: rnbqk1nr/ppp1ppbp/6p1/3p4/4PP2/3P4/PPP3PP/RNBQKBNR w KQkq d6 0 4
+
+#5  [voice]  chose: "Queen to F3"
+   heard: "Queen to F3" (0.95)  |  "Queen to F 3" (0.93)
+   normalised: "queen f3"
+   result: move → Qf3  (score 10.4)
+   ranked: Qf3 10.4*  |  Qd2 0.7  |  Qe2 0.7  |  Qg4 0.7   margin 9.7
+   turn: white  legal: 30
+   fen: rnbqk2r/ppp1ppbp/5np1/3P4/5P2/3P4/PPP3PP/RNBQKBNR w KQkq - 1 5
+
+#6  [voice]  chose: "queen to G3"
+   heard: "cream to G3" (0.95)  |  "queen to G3" (0.87)  |  "cream 2G 3" (0.87)  |  "cream to G 3" (0.92)  |  "cream 2 G3" (0.89)  |  "cream to G three" (0.94)  |  "cream to g-3" (0.93)  |  "queen 2G 3" (0.83)
+   normalised: "queen g3"
+   result: move → Qg3  (score 10.4)
+   ranked: Qg3 10.4*  |  Qxg4 1.02  |  Qe4 0.7  |  Qh3 0.7   margin 9.37
+   turn: white  legal: 32
+   fen: rn1qk2r/ppp1ppbp/5np1/3P4/5Pb1/3P1Q2/PPP3PP/RNB1KBNR w KQkq - 3 6
+
+#7  [voice]  chose: "83"
+   heard: "83" (0.95)  |  "83" (0.83)  |  "8-3" (0.87)  |  "8-83" (0.92)  |  "883" (0.87)  |  "83-" (0.92)  |  "8 3" (0.91)  |  "830" (0.92)
+   normalised: "83"
+   result: none  (score 0)   ← REJECTED
+   ranked: d6 -0.7  |  f5 -0.7  |  d4 -0.7  |  a3 -0.7   margin 0
+   turn: white  legal: 28
+   fen: r2qk2r/ppp1ppbp/n4np1/3P4/5Pb1/3P2Q1/PPP3PP/RNB1KBNR w KQkq - 5 7
+
+#8  [voice]  chose: "Pawn C3"
+   heard: "Pawn C3" (0.87)  |  "on C3" (0.79)  |  "Pond C3" (0.88)  |  "Pawn c 3" (0.87)  |  "Pon C3" (0.89)  |  "on c 3" (0.81)  |  "on c-3" (0.77)  |  "Pawn c-3" (0.86)
+   normalised: "pawn c3"
+   result: move → c3  (score 10.4)
+   ranked: c3 10.4*  |  c4 1.02  |  d6 0.7  |  f5 0.7   margin 9.37
+   turn: white  legal: 28
+   fen: r2qk2r/ppp1ppbp/n4np1/3P4/5Pb1/3P2Q1/PPP3PP/RNB1KBNR w KQkq - 5 7
+
+--- mic timeline · state=speaking · 1 mic sessions · 1 barge-ins · 20 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · 34 heard · 22 lost · 33 dropped · span 193s ---
+  (only the last 80 entries were kept; the head of the game rolled off)
+  +111.2s  lost  "Queen" never became a final result (a different utterance began)
+  +111.6s  lost  "to F3" never became a final result (a different utterance began)
+  +112.0s  state  listening → thinking  (routing "Queen to F3")
+  +116.0s  tts  tip: You’re up a pawn.
+  +127.6s  lost  "cream" never became a final result (a different utterance began)
+  +127.9s  lost  "to G3" never became a final result (a different utterance began)
+  +128.3s  state  listening → thinking  (routing "queen to G3")
+  +132.5s  tts  reserve hit: "Black plays knight b8 to a6."
+  +134.0s  echo  ignored "black plays" (100% ours)
+  +134.4s  echo  ignored "plays night" (100% ours)
+  +134.6s  echo  ignored "plays night B" (100% ours)
+  +134.6s  echo  ignored "black plays" (100% ours)
+  +134.6s  echo  ignored "night B" (100% ours)
+  +134.8s  echo  ignored "black plays" (100% ours)
+  +134.8s  echo  ignored "night B8" (100% ours)
+  +135.0s  echo  ignored "black plays night" (100% ours)
+  +135.1s  echo  ignored "B8 to a" (100% ours)
+  +135.8s  state  speaking → listening  (narration ended)
+  +136.1s  echo  ignored after speaking "black plays" (100% ours)
+  +146.9s  state  listening → thinking  (routing "83")
+  +146.9s  state  thinking → speaking  (narration started)
+  +150.6s  state  speaking → listening  (narration ended)
+  +152.0s  state  listening → speaking  (narration started)
+  +153.6s  state  speaking → listening  (narration ended)
+  +156.1s  lost  "the first" never became a final result (a different utterance began)
+  +156.5s  lost  "one" never became a final result (a different utterance began)
+  +156.5s  state  listening → speaking  (narration started)
+  +158.1s  state  speaking → listening  (narration ended)
+  +165.0s  lost  "to eight" never became a final result (a different utterance began)
+  +184.9s  lost  "Pawn" never became a final result (a different utterance began)
+  +185.2s  state  listening → thinking  (routing "Pawn C3")
+  +189.3s  tts  reserve hit: "Black plays queen d8 to d5."
+
+--- verified labels ---
+# Adni, 2026-08-22: "i needed to make random move because voice command didnt
+# let me play what i wanted."
+#
+# He wanted a3. r43's question fired correctly — "Did you mean a3 or h3?" —
+# and then he could not answer it: "83" again (the same mishearing), then
+# "the first one", which the app did not understand. He gave up and played c3.
+# Fixed in r47: ordinal answers, and a second prompt that names the NATO word.
+  #7  MEANT a3
+  #8  MEANT c3
+# Unambiguous, inferred not stated — explicit piece or margin above 9.3:
+  #1  MEANT d3
+  #2  MEANT e4
+  #4  MEANT exd5
+  #5  MEANT Qf3
+  #6  MEANT Qg3
+
+--- describe what went wrong (please type here) ---
+i needed to make random move because voice command didnt let me play what i wanted

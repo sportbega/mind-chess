@@ -3907,3 +3907,89 @@ trailing path too — one change, both doors.
 Replay: r46 scores all 63 recorded utterances exactly as r45 did.
 
 r46 is on the preview only. `/` still serves r31.
+
+## 2026-08-23 — Day 6.10: a question you cannot answer is not a question (r47)
+
+Eighth game. Nothing from the previous seven reports recurred — no self-cut, no
+wrong piece, no late echo, and `20 echoes ignored` with the fragments of
+`"Black plays knight b8 to a6."` all correctly swallowed. Then:
+
+> *"i needed to make random move because voice command didnt let me play what i
+> wanted"*
+
+```
+You     83
+System  Did you mean a3 or h3?          ← r43, working exactly as designed
+You     83
+System  Didn’t catch that — a3 or h3?
+You     the first one
+System  Didn’t catch that — a3 or h3?
+You     Pawn C3                          ← gave up, played a different move
+```
+
+**The question r43 added was right. It was simply unanswerable.**
+
+Three ways in, and the app understood none of them:
+
+- **`"83"` again.** Of course — the file letter had already failed to survive
+  recognition once; repeating it was never going to work, and the app just
+  asked the same question back.
+- **`"the first one"`**, which is how a person answers a two-choice question out
+  loud. `resolvePending` accepted a square, or a file letter, and nothing else.
+- Then he stopped trying, and the game recorded `c3` as a move he did not want.
+
+That is worse than the bug r43 fixed. The app moved from *guessing silently* to
+*blocking politely*, and blocking cost him a move on the board.
+
+### Ordinals
+
+```js
+const ORDINAL=[/\b(first|1st)\b/,/\b(second|2nd)\b/,/\b(third|3rd)\b/];
+```
+
+Wired into all three of the app's choice questions — `file` (a3 or h3),
+`which-piece` (knight or bishop, new in r45) and `piece` (which knight). The
+specific answer is still tried first; the ordinal is the fallback.
+
+Bare `"one"` and `"two"` are **deliberately not accepted**: every one of these
+questions is about squares or pieces, and a bare digit-word collides with a
+rank. `"first"` and `"second"` carry the same meaning with none of the
+collision — and `"the first one"` matches on `"first"` anyway.
+
+### And a second prompt that says how to answer
+
+Repeating a question that has already failed is not a strategy. The second time
+round, the app now names the word that will work:
+
+```
+System  Didn’t catch that — say alpha for a3, or hotel for h3.
+```
+
+`"a3"` was never going to survive this recogniser — it came back as `"83"` twice
+in a row, and as `"83"` in three earlier games. `"alpha"` always survives; the
+normaliser has mapped NATO to files since Day 3. The app knew the answer and had
+simply never offered it.
+
+Verified end to end, all three paths:
+
+```
+"83" → "Did you mean a3 or h3?" → "the first one"  → White plays pawn a2 to a3.
+"83" → ...                      → "83"             → "say alpha for a3, or hotel for h3."
+                                → "hotel"          → White plays pawn h2 to h3.
+"E6" → "Knight or bishop?"      → "the second one" → White plays bishop c4 to e6.
+```
+
+### Also in that game
+
+- **`#6 "queen to G3"`.** The recogniser's own top choice was `"cream to G3"` at
+  0.95, ahead of `"queen to G3"` at 0.87 — and the scorer picked the right one
+  out of the list anyway. That is exactly what maxAlternatives=10 is for.
+- **`You're up a pawn`** — r41's roster sentence, correct, at the right moment.
+- `20 echoes ignored, 0 self-cuts.` r46 held.
+
+Replay: r47 scores all 71 recorded utterances exactly as r46 did. Corpus is now
+**71 utterances over eight games, 25 labelled — hit 19, refused 4, wrong 2,
+intrusion 0.** Both `wrong` entries still have fixes behind them, and no new one
+has appeared since r45.
+
+r47 is on the preview only. `/` still serves r31.
