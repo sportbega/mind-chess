@@ -2886,3 +2886,159 @@ five-utterance fixture from the harness — a known answer for the parser, marke
 synthetic so it cannot leak into a verdict.
 
 r37 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.1: a3 was hiding inside the word "beta" (r38)
+
+The first r37 game came back within the hour, whole, and the corpus went from
+zero utterances to ten — every one carrying its position.
+
+```
+  10 utterances · 10 with a position
+  source: voice 10   outcome: command 1 · move 6 · none 3
+```
+
+Adni's note: *"please check the last 2 moves and commands thats the biggest
+issue."* Moves 5 and 6 of the game are `a3` and `b3`. He only ever asked for
+one of them.
+
+### Three attempts to say "b3", and the third one played a3
+
+```
+You    3                        -> REJECTED
+You    better three             -> REJECTED
+You    Pawn to Beta 3           -> White plays pawn a2 to a3.
+You    B3                       -> White plays pawn b2 to b3.
+```
+
+The third attempt is the one that matters, because it did not fail — it
+succeeded at the wrong thing, on a board he could not see.
+
+```
+#9  chose: "Pawn to Beta 3"
+   normalised: "pawn beta3"
+   result: move → a3  (score 6.44)
+   ranked: a3 1.9  |  b3 1.02  |  b4 1.02  |  a4 0.7   margin 0.88
+```
+
+`constrainedMove()` scored a3 above b3, and the reason is one line:
+
+```js
+const target=heard.includes(speechKey(m.to))?1.2:0;
+```
+
+`speechKey("Pawn to Beta 3")` is `"pawn beta3"`. **The letters `a3` occur
+inside the word `beta3`**, so a3 collected the full destination bonus for a
+square nobody said. Unpicking the arithmetic: a3 scored `1.2 (phantom target) +
+1.2 (pawn named) − 1.0/2 (distance) = 1.9`; b3 scored `0 + 1.2 − 0.36/2 =
+1.02`. **b3 was nearly three times more accurate phonetically and lost anyway**,
+because 1.2 dwarfs the distance term entirely.
+
+The bonus is meant to say *you named this square*. A substring cannot tell that
+from *these letters happened to occur*.
+
+### The fix is strictly narrower, and that is checkable
+
+```js
+const target=heardPad.indexOf(' '+speechKey(m.to)+' ')!==-1?1.2:0;
+```
+
+A whole token instead of a substring. Every real spelling of a square already
+normalises to its own token — `"a3"`, `"A3"`, `"alpha three"`, `"a three"`,
+`"alpha 3"`, `"a-3"`, `"pawn to a3"`, `"a2 to a3"`, `"takes a3"` all reduce to
+a key containing the token `a3`. The two forms disagree on exactly one class of
+input: the one where the square was never spoken.
+
+With the phantom 1.2 gone, b3 leads at 1.02 with a margin of 0.32 — under
+`constrainedMove()`'s own acceptance gate, so it returns null and the utterance
+falls through to the question it should always have been:
+
+```
+You     Pawn to Beta 3
+System  Pawn to where? Say the square.
+```
+
+Nothing is played. That is the whole point: the board is hidden, and a wrong
+move is invisible where a question is not.
+
+### tools/corpus-replay.js — the new instrument, and the reason r37 existed
+
+Because r37 records the FEN with every utterance, all ten can be re-run at the
+positions they were spoken into.
+
+```
+node tools/corpus-replay.js tools/reports/*.txt
+open http://localhost:8934/_corpus.html   then  window.__replayText()
+```
+
+It injects **one exported handle** into a throwaway copy of `index.html` and
+drives the shipped `expandAlternatives()` and `scoreAlternatives()` — nothing
+reimplemented, which is the fault r36 found next door in `echo-threshold.js`.
+The parser is not duplicated either; it shells out to `tools/corpus.js --json`.
+
+Before the fix, on the recorded game:
+
+```
+#9  "Pawn to Beta 3"  a3 -> a3
+0 of 10 drifted.
+```
+
+**Zero drift is the result that makes the harness worth trusting** — it
+reproduces a real Chrome game, ten for ten, from a text file. Then:
+
+```
+#9  "Pawn to Beta 3"  a3 -> none   DRIFT
+1 of 10 drifted.
+```
+
+One utterance changed, and it is the one that was wrong. `echo-threshold`,
+`phon-collisions` and `echo-timing` all still clean.
+
+Two things it does not do, said plainly: it replays the **scorer**, not
+`route()`, so an utterance answering a pending question will not reproduce; and
+storage is shimmed to memory so a replay can never leave a stray position
+behind for the real app to restore.
+
+### The leak r37 fixed had a second door
+
+r37 stopped `lastScoring` leaking between alternatives inside `planFor()`. The
+very first utterance of the very first real report showed it still open:
+
+```
+#1  chose: "show board"
+   result: command  (score 6)
+   ranked: b3 -0.38  |  b4 -0.38  |  a3 -0.7  |  a4 -0.7   margin 0
+```
+
+A board command with a ranking of pawn moves. `scoreAlternatives()` ended with
+
+```js
+lastScoring=scorings[bestText]||lastScoring;
+```
+
+and when the winner is a command or an exact SAN it never reaches
+`constrainedMove()`, so `scorings[bestText]` is null and **the fallback
+substituted whatever the last alternative left behind** — here `"so bored"`.
+Now `||null`. An absent ranking is honest.
+
+### What the game says about the rest
+
+- **`0 barge-ins · 0 echoes ignored` across 136 seconds** with talk-over on.
+  The r31 game cut its own sentence twice in the same span. Weak evidence for
+  r32–r36 rather than strong — nothing came back through the microphone at all,
+  so the guards were never asked a hard question — but it is the first game
+  since r31 that did not interrupt itself.
+- **`1 mic sessions · 0 restarts`.** One session, unbroken, for the whole game.
+  So the clipped openings — `"b3"` arriving as `"3"` (#7) and `"d5"` as `"5"`
+  (#3) — are **not** session-restart gaps. That hypothesis is now dead twice,
+  killed both times by r35's instrument.
+- **The bare-square case is not always ambiguous.** `#6 "E5"` resolved to `Qe5
+  9.2*` with nothing else near it, because no pawn could reach e5. Day 6.0's
+  signature only bites when two pieces can.
+
+### Still open
+
+The leading consonant of a two-character move goes missing — three times in one
+game (`"3"`, `"5"`, `"better three"` for `"b3"`). It is not restart gaps and it
+is not echo. Unexplained.
+
+r38 is on the preview only. `/` still serves r31.

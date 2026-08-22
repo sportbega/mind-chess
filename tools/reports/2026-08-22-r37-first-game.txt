@@ -1,0 +1,194 @@
+=== Mind Chess problem report ===
+build: v2-r37 (an utterance without its position is an anecdote)
+when:  2026-08-22T18:00:20.465Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=kokoro  ·  hearing=system  ·  voice=af_heart  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: rnbq1k1r/pp1pbppp/5n2/2p1Q3/8/PP6/2P1PPPP/RNB1KBNR w KQ c6 0 7
+  pgn: 1. d4 e6 2. d5 exd5 3. Qxd5 Be7 4. Qe5 Kf8 5. a3 Nf6 6. b3 c5
+
+--- last said ---
+  Board  White plays queen d5 to e5.
+  Board  Black plays king e8 to f8.
+  You    3
+  System That didn’t sound like a chess move — try spelling it out, like "alpha three" instead of "a three", or type it in the box below.
+  You    better three
+           heard: also heard: beta 3 / better 3
+  System I didn’t catch a move. Try "knight to f3", "e4", or "castle kingside".
+  You    Pawn to Beta 3
+           heard: also heard: Pawn to better / Pond to better
+  Board  White plays pawn a2 to a3.
+  Board  Black plays knight g8 to f6.
+  You    B3
+           heard: also heard: b-3 / V3
+  Board  White plays pawn b2 to b3.
+  Board  Black plays pawn c7 to c5.
+
+--- what was heard (10) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r37 (an utterance without its position is an anecdote)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "show board"
+   heard: "show bored" (0.82)  |  "show board" (0.82)  |  "showboard" (0.88)  |  "show boards" (0.87)  |  "Showboat" (0.92)  |  "so bored" (0.67)
+   normalised: "show board"
+   result: command  (score 6)
+   ranked: b3 -0.38  |  b4 -0.38  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "D4"
+   heard: "D4" (0.94)  |  "before" (0.85)  |  "d-4" (0.91)  |  "G4" (0.82)  |  "D 4" (0.92)  |  "D for" (0.92)  |  "the four" (0.89)  |  "D four" (0.92)
+   normalised: "d4"
+   result: move → d4  (score 9.5)
+   ranked: d4 9.5*  |  d3 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#3  [voice]  chose: "5"
+   heard: "5" (0.59)
+   normalised: "5"
+   result: none  (score 0)   ← REJECTED
+   ranked: d5 -0.7  |  a3 -0.7  |  a4 -0.7  |  b3 -0.7   margin 0
+   turn: white  legal: 28
+   fen: rnbqkbnr/pppp1ppp/4p3/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2
+
+#4  [voice]  chose: "D5"
+   heard: "D5" (0.93)  |  "d5" (0.84)  |  "D 5" (0.90)  |  "B5" (0.87)
+   normalised: "d5"
+   result: move → d5  (score 9.5)
+   ranked: d5 9.5*  |  Nd2 -0.35  |  Bd2 -0.35  |  Qd2 -0.35   margin 9.85
+   turn: white  legal: 28
+   fen: rnbqkbnr/pppp1ppp/4p3/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2
+
+#5  [voice]  chose: "Queen to D5"
+   heard: "Queen to D5" (0.96)  |  "Queen to D 5" (0.93)  |  "Queen to D five" (0.94)  |  "Queen to d-5" (0.95)  |  "queen2d5" (0.90)  |  "Queen to d v" (0.95)  |  "Queen to dive" (0.96)  |  "Queen 2D 5" (0.90)
+   normalised: "queen d5"
+   result: move → Qxd5  (score 10.4)
+   ranked: Qxd5 10.4*  |  Qd2 1.02  |  Qd3 1.02  |  Qd4 1.02   margin 9.37
+   turn: white  legal: 29
+   fen: rnbqkbnr/pppp1ppp/8/3p4/8/8/PPP1PPPP/RNBQKBNR w KQkq - 0 3
+
+#6  [voice]  chose: "E5"
+   heard: "E5" (0.93)  |  "e 5" (0.90)  |  "B5" (0.90)  |  "E-5" (0.92)  |  "e five" (0.92)  |  "e E5" (0.90)  |  "EB" (0.89)
+   normalised: "e5"
+   result: move → Qe5  (score 9.2)
+   ranked: Qe5 9.2*  |  e3 -0.05  |  e4 -0.05  |  Qe6 -0.35   margin 9.25
+   turn: white  legal: 47
+   fen: rnbqk1nr/ppppbppp/8/3Q4/8/8/PPP1PPPP/RNB1KBNR w KQkq - 1 4
+
+#7  [voice]  chose: "3"
+   heard: "3" (0.67)
+   normalised: "3"
+   result: none  (score 0)   ← REJECTED
+   ranked: a3 -0.7  |  a4 -0.7  |  b3 -0.7  |  b4 -0.7   margin 0
+   turn: white  legal: 45
+   fen: rnbq1knr/ppppbppp/8/4Q3/8/8/PPP1PPPP/RNB1KBNR w KQ - 3 5
+
+#8  [voice]  chose: "better three"
+   heard: "better three" (0.74)  |  "beta 3" (0.53)  |  "better 3" (0.62)  |  "better tree" (0.79)  |  "better" (0.87)  |  "beta three" (0.56)  |  "but at 3:00" (0.79)  |  "better 3:00" (0.73)  |  "beta 3:00" (0.59)
+   normalised: "better three"
+   result: none  (score 0)   ← REJECTED
+   ranked: e3 -0.2  |  b3 -0.38  |  b4 -0.38  |  Qe3 -0.5   margin 0.18
+   turn: white  legal: 45
+   fen: rnbq1knr/ppppbppp/8/4Q3/8/8/PPP1PPPP/RNB1KBNR w KQ - 3 5
+
+#9  [voice]  chose: "Pawn to Beta 3"
+   heard: "Pawn to better" (0.95)  |  "Pond to better" (0.91)  |  "porn to better" (0.92)  |  "Pawn to Beta 3" (0.90)  |  "Pawn to Beta" (0.92)  |  "Pawn to bet a" (0.91)  |  "Pawn to better three" (0.93)  |  "Pawn to better 3" (0.93)
+   normalised: "pawn beta3"
+   result: move → a3  (score 6.44)
+   ranked: a3 1.9  |  b3 1.02  |  b4 1.02  |  a4 0.7   margin 0.88
+   turn: white  legal: 45
+   fen: rnbq1knr/ppppbppp/8/4Q3/8/8/PPP1PPPP/RNB1KBNR w KQ - 3 5
+
+#10  [voice]  chose: "B3"
+   heard: "B3" (0.89)  |  "b-3" (0.74)  |  "V3" (0.85)  |  "D3" (0.85)  |  "P3" (0.86)  |  "Beatrix" (0.87)  |  "B three" (0.90)  |  "beatree" (0.87)
+   normalised: "b3"
+   result: move → b3  (score 9.5)
+   ranked: b3 9.5*  |  b4 -0.05  |  Qb5 -0.35  |  a4 -0.7   margin 9.55
+   turn: white  legal: 43
+   fen: rnbq1k1r/ppppbppp/5n2/4Q3/8/P7/1PP1PPPP/RNB1KBNR w KQ - 1 6
+
+--- mic timeline · state=speaking · 1 mic sessions · 0 barge-ins · 0 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · span 136s ---
+  +0.0s  tts  kokoro ready
+  +0.4s  tts  warmed in 371ms
+  +5.1s  tts  speech unlocked by first gesture
+  +7.8s  state  idle → listening  (session open)
+  +7.8s  session  opened
+  +11.3s  state  listening → thinking  (routing "show board")
+  +11.3s  state  thinking → listening  (nothing to narrate)
+  +17.9s  state  listening → thinking  (routing "D4")
+  +17.9s  state  thinking → speaking  (narration started)
+  +18.6s  tts  rendered ahead(1) in 717ms
+  +18.6s  tts  kokoro chunk in 645ms
+  +19.3s  tts  reserved the reply in 691ms
+  +21.7s  state  speaking → listening  (narration ended)
+  +21.7s  tts  reserve hit: "Black plays pawn e7 to e6."
+  +21.7s  state  listening → speaking  (narration started)
+  +21.8s  tts  kokoro chunk in 5ms
+  +24.9s  state  speaking → listening  (narration ended)
+  +30.9s  state  listening → thinking  (routing "5")
+  +30.9s  state  thinking → listening  (nothing to narrate)
+  +39.5s  state  listening → thinking  (routing "D5")
+  +39.5s  state  thinking → speaking  (narration started)
+  +40.2s  tts  rendered ahead(1) in 708ms
+  +40.2s  tts  kokoro chunk in 604ms
+  +40.9s  tts  reserved the reply in 666ms
+  +43.3s  state  speaking → listening  (narration ended)
+  +43.3s  tts  reserve hit: "Black plays pawn e6 to d5."
+  +43.3s  state  listening → speaking  (narration started)
+  +43.5s  tts  kokoro chunk in 2ms
+  +43.8s  tts  rendered ahead(2) in 501ms
+  +46.6s  tts  kokoro chunk in 3ms
+  +48.6s  state  speaking → listening  (narration ended)
+  +62.0s  state  listening → thinking  (routing "Queen to D5")
+  +62.0s  state  thinking → speaking  (narration started)
+  +62.6s  tts  rendered ahead(1) in 669ms
+  +62.6s  tts  kokoro chunk in 519ms
+  +63.1s  tts  rendered ahead(1) in 442ms
+  +63.7s  tts  reserved the reply in 660ms
+  +65.7s  tts  kokoro chunk in 4ms
+  +67.7s  state  speaking → listening  (narration ended)
+  +67.7s  tts  reserve hit: "Black plays bishop f8 to e7."
+  +67.7s  state  listening → speaking  (narration started)
+  +67.9s  tts  kokoro chunk in 4ms
+  +70.9s  state  speaking → listening  (narration ended)
+  +81.9s  state  listening → thinking  (routing "E5")
+  +81.9s  state  thinking → speaking  (narration started)
+  +82.6s  tts  rendered ahead(1) in 719ms
+  +82.6s  tts  kokoro chunk in 606ms
+  +83.2s  tts  reserved the reply in 611ms
+  +85.8s  state  speaking → listening  (narration ended)
+  +85.8s  tts  reserve hit: "Black plays king e8 to f8."
+  +85.8s  state  listening → speaking  (narration started)
+  +85.9s  tts  kokoro chunk in 4ms
+  +88.9s  state  speaking → listening  (narration ended)
+  +102.6s  state  listening → thinking  (routing "3")
+  +102.6s  state  thinking → listening  (nothing to narrate)
+  +117.0s  state  listening → thinking  (routing "better three")
+  +117.0s  state  thinking → listening  (nothing to narrate)
+  +123.7s  state  listening → thinking  (routing "Pawn to Beta 3")
+  +123.7s  state  thinking → speaking  (narration started)
+  +124.3s  tts  rendered ahead(1) in 631ms
+  +124.3s  tts  kokoro chunk in 511ms
+  +125.0s  tts  reserved the reply in 637ms
+  +127.0s  state  speaking → listening  (narration ended)
+  +127.0s  tts  reserve hit: "Black plays knight g8 to f6."
+  +127.0s  state  listening → speaking  (narration started)
+  +127.1s  tts  kokoro chunk in 4ms
+  +130.1s  state  speaking → listening  (narration ended)
+  +132.3s  state  listening → thinking  (routing "B3")
+  +132.4s  state  thinking → speaking  (narration started)
+  +133.0s  tts  rendered ahead(1) in 670ms
+  +133.0s  tts  kokoro chunk in 557ms
+  +133.7s  tts  reserved the reply in 673ms
+  +136.0s  state  speaking → listening  (narration ended)
+  +136.0s  tts  reserve hit: "Black plays pawn c7 to c5."
+  +136.0s  state  listening → speaking  (narration started)
+
+--- describe what went wrong (please type here) ---
+please check the last 2 moves and commands thats the biggest issue issue. let me know like RE:A001:
