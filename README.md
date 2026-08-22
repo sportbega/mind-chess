@@ -27,7 +27,19 @@ Then open http://localhost:8000
 
 ## Status
 
-**2.1 (`v2-r31`) is the current release**, tagged `v2.1` and serving at `/`. It adds puzzles, tips and one difficulty ladder, and fixes bugs that affected every move of every game — the computer's reply cutting off your own move narration, the app routing its own voice, a seat deadlock, and verbose narration describing castling as a lone king move without the rook. **Every one of those was found by playing a game out loud, and none by any other means.** See [DEVLOG.md](DEVLOG.md) and `git show v2.1` for the full list, including what is knowingly still open.
+**2.2 (`v2-r47`) is the current release**, tagged `v2.2` and serving at `/`. It is sixteen builds of listening — nearly all of them produced by one person playing a game out loud and sending back what went wrong.
+
+What 2.2 fixes that 2.1 got wrong, every one of it invisible on a hidden board:
+
+- **It played the wrong piece.** A bare square that two pieces could reach was decided by array order — "bishop to e6" became `Nxe6`. It now asks *"Knight or bishop?"* when the two readings are exactly tied, and *"Did you mean a3 or h3?"* when the file letter came back as a digit. Both questions answer to "the first one".
+- **It played a square nobody said.** The destination test was a substring, so the letters inside "beta3" handed `a3` a full match. Now a whole token.
+- **It told you that you had lost a piece you still had.** "You're a queen down" meant nine points of material, not a queen. It now names what is actually missing: *"down a rook, a bishop and a knight for two pawns."*
+- **It cut off its own sentences** — five distinct ways, including the word "Check." A phrase that opens with a colour is now recognised as our own voice, and a narration that comes back six seconds late is too.
+- **It could not say what it had lost.** Utterances that were heard but never finalised, and words dropped while the app was speaking, now leave a trace in the timeline.
+
+Every problem report from that run is in `tools/reports/`, and `tools/corpus.js`
+turns them into a graded corpus that any change can be replayed against.
+See [DEVLOG.md](DEVLOG.md) and `git show v2.2`.
 
 The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
 
@@ -71,7 +83,7 @@ Both versions stay online, permanently:
 
 | | URL | What it is |
 |---|---|---|
-| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.1** (`v2-r31`). |
+| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.2** (`v2-r47`). |
 | **v1.0 (frozen)** | https://sportbega.github.io/mind-chess/v1/ | A permanent, byte-identical copy of the `v1.0` tag. Never changes. |
 | **Preview** | https://sportbega.github.io/mind-chess/v2/ | The `v2` branch, refreshed every session. Byte-identical to the release right now, and drifts ahead as soon as work resumes — **share `/`, never this.** |
 
