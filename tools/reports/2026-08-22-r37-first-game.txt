@@ -190,5 +190,24 @@ engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit
   +136.0s  tts  reserve hit: "Black plays pawn c7 to c5."
   +136.0s  state  listening → speaking  (narration started)
 
+--- verified labels ---
+# Adni, 2026-08-22, asked directly (RE:A005): "yes b3, and yes d5 and b3".
+# So the three rejected/mangled utterances at #3, #7 and #9 were all attempts
+# at a move he names here, and #9 is the one the app answered by playing a3.
+  #3  MEANT d5
+  #7  MEANT b3
+  #9  MEANT b3
+# NOT stated by him — inferred, and flagged as such. #8 "better three" sits
+# between #7 and #9, which he confirmed were both b3, in an unbroken run of
+# three attempts at the same move. Treat as weaker evidence than the lines
+# above; ask before letting it decide anything.
+  #8  MEANT b3
+# The rest played what they plainly said and were not queried:
+  #2  MEANT d4
+  #4  MEANT d5
+  #5  MEANT Qxd5
+  #6  MEANT Qe5
+  #10 MEANT b3
+
 --- describe what went wrong (please type here) ---
 please check the last 2 moves and commands thats the biggest issue issue. let me know like RE:A001:

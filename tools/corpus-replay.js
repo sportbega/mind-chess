@@ -131,11 +131,34 @@ window.__runReplay = function(){
   }
   return rows;
 };
+// Same four classes tools/corpus.js grades with, so a replay and a report can
+// be compared without translating between two vocabularies.
+window.__grade = function(played, meant){
+  if (!meant) return null;
+  const moved = /^[A-Za-z][^ ]*$/.test(played) && played !== 'none' && played !== 'command';
+  if (meant === 'none') return moved || played === 'command' ? 'intrusion' : 'hit';
+  if (!moved) return 'refused';
+  return played === meant ? 'hit' : 'wrong';
+};
 window.__replayText = function(){
   const rows = window.__runReplay();
-  const w = rows.map(r => ['#' + r.n, JSON.stringify(r.said), r.recorded + ' -> ' + r.replayed
-    + (r.drift ? '   DRIFT' : ''), r.meant ? 'meant ' + r.meant : ''].join('  ')).join('\\n');
-  return w + '\\n\\n' + rows.filter(r => r.drift).length + ' of ' + rows.length + ' drifted.';
+  const w = rows.map(r => {
+    const was = window.__grade(r.recorded, r.meant), now = window.__grade(r.replayed, r.meant);
+    return ['#' + r.n, JSON.stringify(r.said), r.recorded + ' -> ' + r.replayed
+      + (r.drift ? '   DRIFT' : ''), r.meant ? 'meant ' + r.meant + '  [' + was + ' -> ' + now + ']' : ''].join('  ');
+  }).join('\\n');
+  const tally = which => {
+    const c = {};
+    for (const r of rows) {
+      const g = window.__grade(which === 'before' ? r.recorded : r.replayed, r.meant);
+      if (g) c[g] = (c[g] || 0) + 1;
+    }
+    return Object.keys(c).sort().map(k => k + ' ' + c[k]).join('  ');
+  };
+  return w
+    + '\\n\\n' + rows.filter(r => r.drift).length + ' of ' + rows.length + ' drifted.'
+    + '\\n  as played:  ' + (tally('before') || '(nothing labelled)')
+    + '\\n  as replayed:' + (tally('after') || '(nothing labelled)');
 };
 </script>
 `;

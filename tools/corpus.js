@@ -221,19 +221,32 @@ function clipped(u) {
   return u.chose.trim().split(/\s+/).length > 1;
 }
 
-// An utterance is a MISS when the app played something the player did not mean.
-// "none" means the app should not have played anything at all — an echo it
-// routed, or a fragment it should have questioned.
+// FOUR OUTCOMES, NOT TWO — and the split is the whole point.
+//
+// Lumping every failure together says the first real game had "4 wrong", which
+// reads as one number and hides the only distinction that matters here:
+//
+//   wrong     the app played a move the player did not ask for. On a hidden
+//             board this is INVISIBLE. The player finds out later, from a
+//             position that stopped making sense. Worst outcome in the app.
+//   refused   the player meant a move and the app played nothing. Annoying,
+//             visible, immediately retryable — three of these in the r37 game
+//             and he simply said it again.
+//   intrusion the player meant nothing and the app acted anyway (a routed
+//             echo, a fragment swallowed as a command).
+//   hit       played what was meant.
+//
+// Every rule that makes the app more cautious trades `wrong` for `refused` in
+// one direction and `hit` for `refused` in the other. A grader that cannot
+// tell those apart cannot evaluate a single one of them. r38 is exactly this
+// trade: it turned one `wrong` into one `refused` and touched nothing else.
 function outcome(u) {
   if (!u.meant) return null;
-  // "none" is a miss whenever the app DID something, not only when it moved.
-  // A fragment swallowed as a command is still an action nobody asked for —
-  // the harness run had "night to wear" answered with an engine analysis. The
-  // right response to a fragment is to ask, and asking is what "none" wants.
-  if (u.meant === 'none') return (u.type === 'move' || u.type === 'command') ? 'miss' : 'hit';
-  if (u.type !== 'move') return 'miss';
-  return u.san === u.meant ? 'hit' : 'miss';
+  if (u.meant === 'none') return (u.type === 'move' || u.type === 'command') ? 'intrusion' : 'hit';
+  if (u.type !== 'move') return 'refused';
+  return u.san === u.meant ? 'hit' : 'wrong';
 }
+const BAD = ['wrong', 'intrusion', 'refused'];
 
 // ---------------------------------------------------------------- output
 
@@ -242,7 +255,8 @@ function short(u) {
   const got = u.type === 'move' ? u.san : u.type;
   const mar = u.margin === null ? '   —  ' : ('m' + u.margin.toFixed(2)).padStart(6);
   const o = outcome(u);
-  const tag = o === 'miss' ? ' MISS' : o === 'hit' ? ' hit ' : '  ?  ';
+  const tag = o === 'wrong' ? 'WRONG' : o === 'intrusion' ? 'INTRU' : o === 'refused' ? 'refus'
+            : o === 'hit' ? ' hit ' : '  ?  ';
   return '  ' + (u.report.slice(0, 14)).padEnd(15)
     + ('#' + u.n).padStart(4) + '  ' + tag + '  ' + mar + '  '
     + ('"' + u.chose + '"').padEnd(28).slice(0, 28) + ' → ' + String(got).padEnd(10)
@@ -293,11 +307,14 @@ if (flag('--margin')) {
     console.log('\n  Nothing to sweep. This question needs labelled games; see --needs-label.\n');
     process.exit(0);
   }
-  const wrong = usable.filter(u => outcome(u) === 'miss');
+  // The sweep can only ever convert a move into a refusal, so those are the
+  // two columns: how many wrong moves it stops, and how many correct ones it
+  // stops with them. Utterances the app already refused are unaffected.
+  const wrong = usable.filter(u => outcome(u) === 'wrong' || outcome(u) === 'intrusion');
   const right = usable.filter(u => outcome(u) === 'hit');
-  console.log('  of those: ' + wrong.length + ' wrong, ' + right.length + ' right\n');
+  console.log('  of those: ' + wrong.length + ' played the wrong thing, ' + right.length + ' were correct\n');
   const cuts = Array.from(new Set(usable.map(u => u.margin))).sort((a, b) => a - b);
-  console.log('      T     caught (of ' + wrong.length + ')   interrupted (of ' + right.length + ')');
+  console.log('      T     wrong->refused (of ' + wrong.length + ')   correct->refused (of ' + right.length + ')');
   for (const c of cuts) {
     const T = +(c + 0.01).toFixed(2);
     const caught = wrong.filter(u => u.margin < T).length;
@@ -356,13 +373,18 @@ const pd = moves.filter(pawnDefault);
 console.log('  two exact readings of one transcript: ' + pd.length + ' of ' + moves.length + ' moves'
   + (pd.length ? '   ← the pawn default decided these' : ''));
 console.log('  ' + pd.filter(clipped).length + ' of those also carried a word the normaliser dropped');
-console.log('  labelled: ' + labelled.length + ' of ' + all.length
-  + (labelled.length ? '   (' + labelled.filter(u => outcome(u) === 'miss').length + ' wrong, '
-     + labelled.filter(u => outcome(u) === 'hit').length + ' right)' : ''));
+console.log('  labelled: ' + labelled.length + ' of ' + all.length);
+if (labelled.length) {
+  const n = k => labelled.filter(u => outcome(u) === k).length;
+  console.log('     hit ' + n('hit') + '   refused ' + n('refused')
+    + '   wrong ' + n('wrong') + '   intrusion ' + n('intrusion'));
+  console.log('     (wrong + intrusion are the invisible ones — the player cannot see them happen)');
+}
 
-if (labelled.filter(u => outcome(u) === 'miss').length) {
+const bad = labelled.filter(u => BAD.indexOf(outcome(u)) !== -1);
+if (bad.length) {
   console.log('\n  what went wrong:');
-  for (const u of labelled.filter(u => outcome(u) === 'miss')) console.log(short(u));
+  for (const u of bad) console.log(short(u));
 }
 
 console.log('\n  ' + (labelled.length

@@ -3042,3 +3042,78 @@ game (`"3"`, `"5"`, `"better three"` for `"b3"`). It is not restart gaps and it
 is not echo. Unexplained.
 
 r38 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.1b: the labels arrived, and "4 wrong" turned out to be one
+
+Adni answered `RE:A005` the same evening: **#9 was b3; #3 was d5; #7 was b3.**
+Nine of the ten utterances now carry a `MEANT` label — the first graded corpus
+this project has ever had. (`#8 "better three"` is labelled `b3` too, marked in
+the block as **inferred** from sitting inside an unbroken run of three attempts
+at a move he named on both sides of it, not stated. A label that is a guess has
+to say so or it is worse than no label.)
+
+The first grading read `4 wrong, 5 right`, and that number was hiding the only
+distinction in the app that matters.
+
+### Four outcomes, not two
+
+```
+  wrong      played a move the player did not ask for. On a hidden board this
+             is INVISIBLE — you find out later, from a position that stopped
+             making sense.
+  refused    meant a move, played nothing. Annoying, visible, retried in
+             seconds. He said it again and moved on.
+  intrusion  meant nothing, acted anyway.
+  hit        played what was meant.
+```
+
+Every rule that makes the app more cautious trades `wrong` for `refused` in one
+direction and `hit` for `refused` in the other. **A grader that cannot tell
+those apart cannot evaluate a single one of them.** The r37 game:
+
+```
+  hit 5   refused 3   wrong 1   intrusion 0
+```
+
+One invisible failure, not four. The other three were the same move announcing
+itself as unheard three times in a row, which is the system working — badly,
+but working.
+
+### What r38 did, measured against the player rather than against me
+
+`corpus-replay.js` now grades with the same four classes, so a replay and a
+report can be compared without translating between two vocabularies:
+
+```
+#9  "Pawn to Beta 3"  a3 -> none   DRIFT  meant b3  [wrong -> refused]
+
+as played:   hit 5  refused 3  wrong 1
+as replayed: hit 5  refused 4
+```
+
+**The one invisible failure became a visible one, and nothing else moved.** No
+hit was lost. That is the entire claim for r38, and it is now a number produced
+by the shipped scorer against labels supplied by the person who spoke the
+words — not by me agreeing with myself.
+
+### The margin sweep, now that it can run
+
+```
+      T     wrong->refused (of 1)   correct->refused (of 5)
+     0.89        1               0   <- free
+     9.26        1               1
+```
+
+Note the **gap**. Correct readings in this game had margins of 9.25 to 9.86;
+the wrong one had 0.88. Nothing lives between 0.89 and 9.25 at all. That looks
+like an enormous safety cushion and is mostly an artefact of the scoring
+shape — an exact phrase match scores 8 before any bonus, so anything exact runs
+away from everything fuzzy. The r30 game's correct `bxc3`, which the obvious
+margin rule *would* have interrupted, is not in the corpus, because that report
+was archived without its diagnostics.
+
+So the free row is real and the conclusion it invites is not. Six utterances.
+`--margin` says so itself, unprompted, and will keep saying so until the corpus
+is thirty deep.
+
+No build change — r38 stands. Tooling and labels only.
