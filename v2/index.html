@@ -1201,9 +1201,12 @@
   let echoRecent=[];                   // phon-code sets of what we said
   let lastSpokeAt=0;
   function rememberSpoken(text){
+    const words=speechKey(text).split(' ').filter(Boolean);
     const codes={};
-    speechKey(text).split(' ').filter(Boolean).forEach(w=>{ codes[phon(w)]=1; });
-    echoRecent.push(codes);
+    words.forEach(w=>{ codes[phon(w)]=1; });
+    // The words as well as their codes: a truncated echo has to be compared
+    // against what we said letter by letter, not only by sound.
+    echoRecent.push({codes,words});
     while(echoRecent.length>ECHO_WINDOW) echoRecent.shift();
   }
   // What fraction of what we just heard is made of words we just said.
@@ -1212,10 +1215,32 @@
   function echoOverlapRaw(transcript){
     const heard=speechKey(transcript).split(' ').filter(Boolean);
     if(!heard.length) return 0;
-    const mine={};
-    echoRecent.forEach(codes=>{ Object.keys(codes).forEach(k=>{ mine[k]=1; }); });
-    speechKey(speakingText).split(' ').filter(Boolean).forEach(w=>{ mine[phon(w)]=1; });
-    return heard.filter(w=>mine[phon(w)]).length/heard.length;
+    const mine={}, mineWords=[];
+    echoRecent.forEach(e=>{ Object.keys(e.codes).forEach(k=>{ mine[k]=1; }); mineWords.push.apply(mineWords,e.words); });
+    speechKey(speakingText).split(' ').filter(Boolean).forEach(w=>{ mine[phon(w)]=1; mineWords.push(w); });
+    // A truncated echo ends mid-square. We say "d4" and it comes back "d";
+    // "g8" comes back "g". Observed three times, always the same arithmetic:
+    // a two-word fragment where one word matches scores exactly 1/2 = 0.5,
+    // which is under ECHO_MIN 0.6, so the app reads its own voice as an
+    // interruption and cuts itself off.
+    //
+    //   "Pawn to D"  cut  "White plays pawn d2 to d4."
+    //   "night G"    cut  "Black plays knight g8 to f6."
+    //
+    // Two words can only ever score 0, 0.5 or 1, so no threshold has room to
+    // work at that length — tools/echo-threshold.js says so outright. The fix
+    // has to be in what counts as a match, not in the number.
+    //
+    // Deliberately NOT applied to single-word transcripts. There the same rule
+    // would swallow a real move: the recogniser routinely offers a bare "f"
+    // as the top alternative for "f3", and if we had just said "f6" that would
+    // read as our own voice and the player's move would vanish. The
+    // single-word path keeps requiring an exact match; only fragments of two
+    // or more words — which is where the 0.5 problem lives — get this.
+    const allowPrefix=heard.length>1;
+    const isTruncatedSquare=w=>allowPrefix&&/^[a-h]$/.test(w)
+      &&mineWords.some(m=>m.length>1&&m[0]===w&&/^[a-h][1-8]$/.test(m));
+    return heard.filter(w=>mine[phon(w)]||isTruncatedSquare(w)).length/heard.length;
   }
   function echoOverlap(transcript){
     const heard=speechKey(transcript).split(' ').filter(Boolean);
@@ -2134,7 +2159,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r35 (the timeline can finally see the microphone)';
+  const BUILD='v2-r36 (a square cut in half is still our own voice)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
