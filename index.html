@@ -585,11 +585,20 @@
   // are correct behaviour and both are invisible, which means a game where
   // the app was deaf reads exactly like a game where nobody spoke.
   //
-  // heardCount is a counter rather than a timeline entry on purpose — speech
-  // starts twice a move plus every echo, and the timeline only shows its last
-  // 80 lines. Losing the window that matters to routine events would be the
-  // same mistake in a new place.
-  let heardCount=0, lostInterim='', lostCount=0;
+  // heardCount is a counter rather than a timeline entry on purpose — the mic
+  // picks something up twice a move plus every echo, and the timeline only
+  // shows its last 80 lines. Losing the window that matters to routine events
+  // would be the same mistake in a new place.
+  //
+  // ⚠ It counted `onspeechstart` for exactly one build, and that was wrong in
+  // the now-familiar way: with continuous=true Chrome fires it ONCE per
+  // session, not once per utterance. A whole game read "1 spoke" — the same
+  // shape as r35's "8 sessions", a number that looked like it described the
+  // microphone and described something else. It now counts INTERIM BURSTS
+  // while we are listening: the moment Chrome begins forming a transcript
+  // that could become a move. That is the population `lost` is a subset of,
+  // so `heard N · lost M` finally reads as one sentence.
+  let heardCount=0, lostInterim='', lostCount=0, droppedCount=0;
   const micLog=[];
   function micEvent(kind,detail){
     micLog.push({t:Date.now(),kind:kind,detail:detail||''});
@@ -1296,7 +1305,17 @@
       // through when it is spoken over the narration, and it used to close
       // without a sound. Fourth time a guard has served two consumers whose
       // needs point opposite ways; the quiet one loses unless it is logged.
-      micEvent('drop','one word while speaking: "'+String(transcript||'').trim().slice(0,40)+'"');
+      //
+      // ⚠ Logging every one of them buried the timeline: 28 lines in a 86s
+      // game, and all but two were our own narration arriving as interims —
+      // "black", "black play", "plays", "captures the", "". Counting them all
+      // but only PRINTING the ones that are not recognisably our own voice
+      // keeps the 80-line window for the case this was built to catch. Same
+      // trade r35 made for sessions.
+      droppedCount++;
+      const t=String(transcript||'').trim();
+      if(t&&echoOverlapRaw(transcript)<1)
+        micEvent('drop','one word while speaking: "'+t.slice(0,40)+'"');
       return;
     }
     if(overlap>=ECHO_MIN){ micEvent('echo','ignored "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)'); return; }
@@ -2188,7 +2207,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r39 (the microphone can now say what it lost)';
+  const BUILD='v2-r40 (a tip that waits three plies must not say "that")';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2789,7 +2808,21 @@
     tipSaid.material=bucket;
     if(bucket===0) return 'Material is level again.';
     const word=BUCKET_WORD[Math.abs(bucket)];
-    if(seat) return bucket>0?'That puts you '+word+' up.':'That puts you '+word+' down.';
+    // "That puts you a pawn down" names the move just narrated as the cause —
+    // and TIP_MATERIAL_SETTLE guarantees it is not. The tip deliberately waits
+    // three plies for an exchange to finish before saying anything, so by
+    // construction the capture is already two or three moves in the past.
+    //
+    // Reported live: Nxe4 on ply 6, the tip read out on ply 9 alongside a
+    // quiet d4-d5. "voice said that puts you a pawn down, but nothing happend
+    // like it shouldnt. there was no exchange. strage" — and he was right; on
+    // a hidden board a false causal claim is worse than saying nothing, because
+    // he cannot glance down and see that d5 captured nothing.
+    //
+    // The waiting is correct and stays. The deixis goes: a tip restores a FACT
+    // the player would have seen with a board in front of them, so state it as
+    // a state. The two-player wording below was always phrased this way.
+    if(seat) return bucket>0?'You\u2019re '+word+' up.':'You\u2019re '+word+' down.';
     return (bucket>0?'White':'Black')+' is '+word+' up.';
   }
 
@@ -4109,10 +4142,8 @@
     recognition.onstart=()=>note('Listening\u2026');
     recognition.onspeechstart=()=>{
       lastMicActivity=Date.now();
-      // A new utterance starting means the previous one is over. If it never
-      // produced a final result, say so now rather than never.
-      flushLostInterim('next utterance began');
-      heardCount++;
+      // Fires once per SESSION under continuous=true, not once per utterance,
+      // so it is no use as a count. Kept for the note and the watchdog.
       note('Hearing you\u2026');
     };
     recognition.onresult=e=>{
@@ -4152,7 +4183,24 @@
         }else{
           // The only record that Chrome was forming anything at all. Held,
           // not logged — it becomes a timeline line only if no final follows.
-          lostInterim=res[0].transcript;
+          // An interim arriving with nothing held is a new utterance starting,
+          // which is the only honest place to count one.
+          //
+          // Chrome extends an interim as it forms — "black" → "black play" →
+          // "black plays" — and all of that is ONE utterance. But two lost
+          // interims in a row with no final between them collapsed into one
+          // count, and undercounting exactly when things go wrong is the worst
+          // place to do it. So: an extension continues the burst, anything
+          // else ends it, which also reports the abandoned one at the moment
+          // it was abandoned rather than at the end of the session.
+          const it=res[0].transcript;
+          const held=lostInterim.trim().toLowerCase(), now=it.trim().toLowerCase();
+          if(!lostInterim) heardCount++;
+          else if(held&&now&&held.indexOf(now)!==0&&now.indexOf(held)!==0){
+            flushLostInterim('a different utterance began');
+            heardCount++;
+          }
+          lostInterim=it;
           note('\u201C'+res[0].transcript.trim()+'\u201D');
         }
       }
@@ -5102,7 +5150,7 @@
     const head='\n--- mic timeline · state='+micState
       +' · '+sessions+' mic sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
       +' · '+count('restart')+' restarts · '+count('watchdog')+' watchdog saves · '+count('error')+' errors'
-      +' · '+heardCount+' spoke · '+lostCount+' lost · '+count('drop')+' dropped'
+      +' · '+heardCount+' heard · '+lostCount+' lost · '+droppedCount+' dropped'
       +' · span '+Math.round((micLog[micLog.length-1].t-t0)/1000)+'s ---';
     return head+'\n'+micLog.slice(-80).map(m=>
       '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');
@@ -5185,6 +5233,10 @@
     }).join('\n');
   }
   function buildReport(){
+    // A session that never closes never flushes, and this game had exactly one
+    // session open for its whole span. The report is the last consumer; if
+    // something is still in flight it belongs in this report, not the next.
+    flushLostInterim('report taken');
     return ['=== Mind Chess problem report ===',
             'build: '+BUILD,
             'when:  '+new Date().toISOString(),

@@ -3232,3 +3232,127 @@ game able to say which of the two failures happened. If the counter reads
 how a short utterance is endpointed, and no amount of scoring will touch it.
 
 r39 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.3: a tip that waits three plies must not say "that" (r40)
+
+Third game, on r39, and the new counters earned their build immediately:
+
+```
+1 mic sessions · 1 barge-ins · 10 echoes ignored · 1 spoke · 0 lost · 28 dropped
+```
+
+Three findings in one line, and one of them is that I wrote the line wrong.
+
+### His bug: the tip was telling him a move had done something it hadn't
+
+> *"voice said that puts you a pawn down, but nothing happend like it
+> shouldnt. there was no exchange. strage"*
+
+He is exactly right, and the mechanism is in the design comment two lines above
+the bug:
+
+```js
+// Material has to *settle* before it is worth saying. […] Waiting a few plies
+// for the recapture means a trade that comes out even is never mentioned.
+const TIP_MATERIAL_SETTLE=3;
+```
+
+The waiting is correct. Then:
+
+```js
+if(seat) return bucket>0?'That puts you '+word+' up.':'That puts you '+word+' down.';
+```
+
+**"That"** names the move just narrated as the cause — and `TIP_MATERIAL_SETTLE`
+*guarantees* it is not. His game: `Nxe4` on ply 6, the tip read out on ply 9
+alongside a quiet `d4-d5`. The sentence is structurally incapable of being true.
+
+On a hidden board that is worse than saying nothing, because he cannot glance
+down and see that d5 captured nothing. The delay stays; the deixis goes.
+
+```
+"White plays pawn d4 to d5. You’re a pawn down."
+```
+
+A tip restores a **fact** the player would have seen with a board in front of
+them — the file's own words — so it should state a state. The two-player
+wording (`'White is a pawn up.'`) was always phrased that way; only the "you"
+branch had drifted into claiming causation. Verified end to end by playing into
+a real pawn-down position against the engine.
+
+### My bug: "1 spoke" was measuring the wrong thing, again
+
+He spoke at least six times. The header said **`1 spoke`**, because
+`onspeechstart` fires **once per session** under `continuous=true`, not once
+per utterance — and this game had one session for its whole 86 seconds.
+
+That is r35's "8 sessions" exactly: a number that looked like it described the
+microphone and described something else. One build old and already wrong.
+
+`heard` now counts **interim bursts while listening** — the moment Chrome
+begins forming a transcript that could become a move. Chrome extends an interim
+as it goes (`"black"` → `"black play"` → `"black plays"`), so an extension
+continues the burst and anything else starts a new one, which also reports the
+abandoned one at the moment it was abandoned. `heard N · lost M` now reads as
+one sentence, because `lost` is a subset of `heard`.
+
+`0 lost` was untrustworthy for a second reason: the only flush points were
+session-close and error, and that session never closed. `buildReport()` now
+flushes too — if something is still in flight it belongs in *this* report.
+
+### And "28 dropped" buried the thing it was built to find
+
+```
++20.2s  drop  one word while speaking: "black"
++20.5s  drop  one word while speaking: "black play"
++20.7s  drop  one word while speaking: "plays"
++21.4s  drop  one word while speaking: "8"
+```
+
+Twenty-eight lines in 86 seconds, and all but two were our own narration
+arriving as interims. The timeline shows its last 80 entries; at that rate a
+five-minute game would contain nothing else. **I made the exact mistake I had
+written a comment warning about, in the same build as the comment.**
+
+Now: count every drop, print only the ones that are not recognisably our own
+voice (`echoOverlapRaw(transcript)<1`, the same test `isTrailingEcho` uses).
+Verified — three drops counted, one printed, and the printed one is the `"e5"`.
+
+The two that survive that filter in his game are the interesting ones:
+
+```
++50.3s  drop  one word while speaking: "if"
++50.5s  barge-in  voice: "if time"  cut: "Pawn to where?"
+```
+
+That is him starting to say "F3" over the app's question.
+
+### The instrument that broke as soon as the data got useful
+
+`corpus-replay.js` died with a JSON syntax error at position 65465 — in a file
+that parses perfectly on disk. 65465 is just under 64 KiB.
+
+`corpus.js --json` ended with `console.log(blob); process.exit(0);`, and
+**`process.exit()` discards whatever is still queued in an async stdout write**.
+A pipe takes about 64KB at a time, so the tail vanished the moment the corpus
+grew past it — which is to say the moment it became worth reading. The consumer
+then blamed the data. Now `fs.writeSync(1, blob)`.
+
+Third instrument fault of this shape in three days: **it worked while the data
+was small and broke as the data got useful.** Worth checking anything else that
+pipes.
+
+### What else the game said
+
+- ✅ **`10 echoes ignored`, `1 barge-in`.** r32–r36 are working hard and
+  visibly. The one barge-in was a real interruption, not a self-inflicted one.
+- **`#1 "before" → b4`.** The normaliser turning "before" into `b4` is the
+  single most satisfying line in any report so far.
+- **`#6 "C3" → c3 9.5* | Nc3 9.2* margin 0.3`** — Day 6.0's signature, live,
+  unlabelled. He did not complain, so the pawn default was probably right; that
+  makes it the **counter-example the margin question has been missing**, and it
+  needs a `MEANT` label before it can count as one.
+
+Replay confirms r40 scores all 23 recorded utterances exactly as r39 did.
+
+r40 is on the preview only. `/` still serves r31.

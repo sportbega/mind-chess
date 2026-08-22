@@ -1,0 +1,162 @@
+=== Mind Chess problem report ===
+build: v2-r39 (the microphone can now say what it lost)
+when:  2026-08-22T19:23:41.246Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=system  ·  hearing=system  ·  voice=Google US English  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: rnbqk2r/p1ppppbp/1p1n2p1/3P4/1P6/2P2P2/P5PP/RNBQKBNR w KQkq - 0 7
+  pgn: 1. b4 Nf6 2. d4 g6 3. e4 Nxe4 4. f3 Nd6 5. d5 Bg7 6. c3 b6
+
+--- last said ---
+  Board  Black plays knight f6 to e4. Captures the pawn.
+  You    captures the pond
+           heard: also heard: captures the pawn / captures the pun
+  System Pawn to where? Say the square.
+  You    F3
+           heard: also heard: if time to wear F3 / of time to wear F3
+  Board  White plays pawn f2 to f3.
+  Board  Black plays knight e4 to d6.
+  You    D5
+           heard: also heard: B5 / D 5
+  Board  White plays pawn d4 to d5. That puts you a pawn down.
+  Board  Black plays bishop f8 to g7.
+  You    C3
+  Board  White plays pawn c2 to c3.
+  Board  Black plays pawn b7 to b6.
+
+--- what was heard (6) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r39 (the microphone can now say what it lost)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "before"
+   heard: "before" (0.68)  |  "D4" (0.67)  |  "defore" (0.89)  |  "E4" (0.70)  |  "the four" (0.89)  |  "dfor" (0.82)  |  "defor" (0.89)
+   normalised: "b4"
+   result: move → b4  (score 9.5)
+   ranked: b4 9.5*  |  b3 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "D4"
+   heard: "D4" (0.95)  |  "B4" (0.86)
+   normalised: "d4"
+   result: move → d4  (score 9.5)
+   ranked: d4 9.5*  |  d3 -0.05  |  b5 -0.7  |  a3 -0.7   margin 9.55
+   turn: white  legal: 21
+   fen: rnbqkb1r/pppppppp/5n2/8/1P6/8/P1PPPPPP/RNBQKBNR w KQkq - 1 2
+
+#3  [voice]  chose: "E4"
+   heard: "E4" (0.81)  |  "4" (0.53)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  e3 -0.05  |  Be3 -0.35  |  b5 -0.7   margin 9.55
+   turn: white  legal: 29
+   fen: rnbqkb1r/pppppp1p/5np1/8/1P1P4/8/P1P1PPPP/RNBQKBNR w KQkq - 0 3
+
+#4  [voice]  chose: "captures the pond"
+   heard: "captures the pond" (0.86)  |  "captures the pawn" (0.79)  |  "captures the pun" (0.86)  |  "capture the pond" (0.80)  |  "captures the pon" (0.87)  |  "captures the pain" (0.87)  |  "captures the pod" (0.87)
+   normalised: "x pond"
+   result: none  (score 0)   ← REJECTED
+   ranked: b5 0.2  |  d5 0.2  |  a3 0.2  |  a4 0.2   margin 0
+   turn: white  legal: 37
+   fen: rnbqkb1r/pppppp1p/6p1/8/1P1Pn3/8/P1P2PPP/RNBQKBNR w KQkq - 0 4
+
+#5  [voice]  chose: "D5"
+   heard: "D5" (0.86)  |  "B5" (0.80)  |  "D 5" (0.88)  |  "defy" (0.89)  |  "d-5" (0.88)  |  "D five" (0.88)  |  "defive" (0.89)
+   normalised: "d5"
+   result: move → d5  (score 9.5)
+   ranked: d5 9.5*  |  Nd2 -0.35  |  Bd2 -0.35  |  Qd2 -0.35   margin 9.85
+   turn: white  legal: 34
+   fen: rnbqkb1r/pppppp1p/3n2p1/8/1P1P4/5P2/P1P3PP/RNBQKBNR w KQkq - 1 5
+
+#6  [voice]  chose: "C3"
+   heard: "C3" (0.70)
+   normalised: "c3"
+   result: move → c3  (score 9.5)
+   ranked: c3 9.5*  |  Nc3 9.2*  |  c4 -0.05  |  Bc4 -0.35   margin 0.3
+   turn: white  legal: 34
+   fen: rnbqk2r/ppppppbp/3n2p1/3P4/1P6/5P2/P1P3PP/RNBQKBNR w KQkq - 1 6
+
+--- mic timeline · state=listening · 1 mic sessions · 1 barge-ins · 10 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · 1 spoke · 0 lost · 28 dropped · span 86s ---
+  +0.0s  tts  speech unlocked by first gesture
+  +10.3s  state  idle → listening  (session open)
+  +10.3s  session  opened
+  +15.6s  state  listening → thinking  (routing "before")
+  +15.6s  state  thinking → speaking  (narration started)
+  +18.8s  state  speaking → listening  (narration ended)
+  +18.8s  state  listening → speaking  (narration started)
+  +19.4s  drop  one word while speaking: ""
+  +20.2s  drop  one word while speaking: "black"
+  +20.5s  drop  one word while speaking: "black play"
+  +20.6s  echo  ignored "black plays" (100% ours)
+  +20.7s  drop  one word while speaking: "black"
+  +20.7s  drop  one word while speaking: "plays"
+  +20.9s  drop  one word while speaking: "black"
+  +20.9s  echo  ignored "plays night" (100% ours)
+  +20.9s  drop  one word while speaking: "black"
+  +20.9s  drop  one word while speaking: "plays"
+  +20.9s  echo  ignored "black plays night" (100% ours)
+  +21.1s  echo  ignored "black plays" (100% ours)
+  +21.2s  echo  ignored "black plays night G" (100% ours)
+  +21.4s  drop  one word while speaking: "8"
+  +22.0s  state  speaking → listening  (narration ended)
+  +28.3s  state  listening → thinking  (routing "D4")
+  +28.3s  state  thinking → speaking  (narration started)
+  +31.5s  state  speaking → listening  (narration ended)
+  +31.5s  state  listening → speaking  (narration started)
+  +32.0s  drop  one word while speaking: ""
+  +32.8s  drop  one word while speaking: "black"
+  +35.0s  state  speaking → listening  (narration ended)
+  +40.5s  state  listening → thinking  (routing "E4")
+  +40.5s  state  thinking → speaking  (narration started)
+  +43.4s  state  speaking → listening  (narration ended)
+  +43.4s  state  listening → speaking  (narration started)
+  +44.0s  drop  one word while speaking: ""
+  +47.1s  drop  one word while speaking: ""
+  +47.7s  drop  one word while speaking: "Capt"
+  +47.9s  drop  one word while speaking: "captures"
+  +47.9s  drop  one word while speaking: "captures the"
+  +48.0s  state  speaking → listening  (narration ended)
+  +49.1s  state  listening → thinking  (routing "captures the pond")
+  +49.1s  state  thinking → speaking  (narration started)
+  +50.3s  drop  one word while speaking: "if"
+  +50.5s  barge-in  voice: "if time"  cut: "Pawn to where?"
+  +50.5s  state  speaking → listening  (narration ended)
+  +52.5s  state  listening → speaking  (narration started)
+  +54.0s  drop  one word while speaking: "White"
+  +55.5s  state  speaking → listening  (narration ended)
+  +55.5s  state  listening → speaking  (narration started)
+  +56.1s  drop  one word while speaking: ""
+  +56.6s  drop  one word while speaking: "black"
+  +57.1s  drop  one word while speaking: "black play"
+  +57.2s  drop  one word while speaking: "black"
+  +57.2s  drop  one word while speaking: "plays"
+  +57.8s  echo  ignored "black plays" (100% ours)
+  +58.0s  echo  ignored "black plays" (100% ours)
+  +58.0s  drop  one word while speaking: "94"
+  +58.1s  echo  ignored "black plays" (100% ours)
+  +58.7s  state  speaking → listening  (narration ended)
+  +59.2s  echo  ignored after speaking "black plays" (100% ours)
+  +65.0s  state  listening → thinking  (routing "D5")
+  +65.0s  tts  tip: That puts you a pawn down.
+  +65.0s  state  thinking → speaking  (narration started)
+  +68.6s  drop  one word while speaking: ""
+  +70.3s  state  speaking → listening  (narration ended)
+  +70.3s  state  listening → speaking  (narration started)
+  +73.6s  state  speaking → listening  (narration ended)
+  +79.4s  state  listening → thinking  (routing "C3")
+  +79.4s  state  thinking → speaking  (narration started)
+  +82.6s  state  speaking → listening  (narration ended)
+  +82.6s  state  listening → speaking  (narration started)
+  +83.1s  drop  one word while speaking: ""
+  +84.0s  drop  one word while speaking: "black"
+  +84.2s  drop  one word while speaking: "black play"
+  +84.3s  echo  ignored "black plays" (100% ours)
+  +85.9s  state  speaking → listening  (narration ended)
+
+--- describe what went wrong (please type here) ---
+voice said that puts you a pawn down, but nothing happend like it shouldnt. there was no exchange. strage

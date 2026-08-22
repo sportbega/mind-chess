@@ -267,7 +267,16 @@ if (flag('--json')) {
   const out = valOf('--json');
   const blob = JSON.stringify({ generated: new Date().toISOString(), reports: counted, utterances: all }, null, 2);
   if (out && !out.startsWith('-')) { fs.writeFileSync(out, blob); console.log('wrote ' + out + ' — ' + all.length + ' utterances'); }
-  else console.log(blob);
+  // fs.writeSync to fd 1, NOT console.log. process.exit() below discards
+  // whatever is still queued in an async stdout write, and a pipe only takes
+  // ~64KB at a time — so `corpus.js --json | ...` silently lost its tail the
+  // moment the corpus passed 64KB, which is to say the moment it became worth
+  // reading. The consumer then blames the data: JSON.parse reported a syntax
+  // error at position 65465, in a file that parses perfectly on disk.
+  //
+  // Third instrument fault of this kind: it worked while the data was small
+  // and broke as the data got useful.
+  else fs.writeSync(1, blob);
   process.exit(0);
 }
 
