@@ -2159,7 +2159,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r36 (a square cut in half is still our own voice)';
+  const BUILD='v2-r37 (an utterance without its position is an anecdote)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2204,6 +2204,15 @@
 
   // Build a plan without touching state, so we can score speech alternatives.
   function planFor(text){
+    // lastScoring is written by constrainedMove(), which most readings never
+    // reach: matchSan() resolves a bare "F3" at a flat 8 and returns first. So
+    // scoreAlternatives()'s `scorings[text]=lastScoring` was filing the
+    // ranking of a DIFFERENT alternative under this one, and the report's
+    // `ranked:` line could describe an utterance the app did not choose.
+    // Harmless while nobody read those numbers; not harmless now that
+    // tools/corpus.js reads margins out of reports to decide what a safe
+    // margin is. An absent ranking is honest — a borrowed one is not.
+    lastScoring=null;
     const t=normalize(text);
     const cmd=matchCommand(t);
     if(cmd) return {score:6,type:'command',run:cmd};
@@ -5052,7 +5061,15 @@
       lines.push('   ranked: '+lastScoring.top.map(t=>t.san+' '+t.score+(t.exact?'*':'')).join('  |  ')
         +'   margin '+lastScoring.margin);
     }
-    lines.push('   turn: '+(game.turn()==='w'?'white':'black')+'  legal: '+game.moves().length+'\n');
+    lines.push('   turn: '+(game.turn()==='w'?'white':'black')+'  legal: '+game.moves().length);
+    // The position an utterance happened in was the one thing a report could
+    // not give back. The scorer's entire job is ranking a transcript against
+    // the legal moves, so a recorded mishearing without its position can be
+    // read but never re-run — an anecdote, not a test case. Recorded here,
+    // before execPlan(), so it is the board that was on the table when the
+    // words were said. ~70 bytes an utterance, and it is what turns a pile of
+    // reports into tools/corpus.js.
+    lines.push('   fen: '+game.fen()+'\n');
     debugLog.push(lines.join('\n'));
     // Trim from index 1, never 0: the header is the build marker.
     while(debugLog.length>DIAG_MAX+1) debugLog.splice(1,1);

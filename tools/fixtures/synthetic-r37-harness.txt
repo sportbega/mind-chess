@@ -1,0 +1,108 @@
+### SYNTHETIC — NOT A REAL GAME. NOT CORPUS DATA. ###
+#
+# Produced by driving _vad-harness.html (node tools/voice-harness.js) with
+# tools/fake-recognizer.js on 2026-08-22, to give tools/corpus.js a report to
+# parse that nobody had to hand-write. Every alternatives list here was typed
+# by me, so it says nothing about how anyone really speaks — its whole job is
+# to be a fixture with a known answer:
+#
+#   node tools/corpus.js tools/fixtures/synthetic-r37-harness.txt --include-synthetic
+#
+# corpus.js recognises the _vad-harness.html url and refuses to count it
+# towards any verdict unless that flag is given, so it cannot leak into the
+# real numbers by being sitting in the wrong directory.
+#
+# It is kept because two of the five utterances reproduce the wrong-piece bug
+# exactly, deterministically, from the starting position — see #1 and #5.
+
+=== Mind Chess problem report ===
+build: v2-r37 (an utterance without its position is an anecdote)
+when:  2026-08-22T17:45:30.267Z
+url:   http://localhost:8934/_vad-harness.html
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=two-player  ·  level=1  ·  speech=system  ·  hearing=system  ·  voice=Samantha  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=false  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: rnbqkbnr/pppp1ppp/8/4p3/8/2P2P2/PP1PP1PP/RNBQKBNR b KQkq - 0 2
+  pgn: 1. f3 e5 2. c3
+
+--- last said ---
+  Board  New game. White to move. Board hidden — say "show board" any time.
+  You    to F3
+           heard: also heard: F3 / to f3
+  Board  White plays pawn f2 to f3.
+  You    e5
+           heard: also heard: wobble wobble
+  Board  Black plays pawn e7 to e5.
+  You    night to wear
+           heard: also heard: like to wear
+  Board  Checking.
+  Board  Watch their pawn coming to d5.
+  You    reveal board
+  Board  Board revealed.
+  You    to C3
+           heard: also heard: C3
+  Board  White plays pawn c2 to c3.
+
+--- what was heard (5) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r37 (an utterance without its position is an anecdote)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "to F3"
+   heard: "to F3" (0.90)  |  "F3" (0.85)  |  "to f3" (0.80)  |  "2 F3" (0.75)
+   normalised: "f3"
+   result: move → f3  (score 9.5)
+   ranked: f3 9.5*  |  Nf3 9.2*  |  f4 -0.05  |  a3 -0.7   margin 0.3
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "e5"
+   heard: "wobble wobble" (0.90)  |  "e5" (0.85)
+   normalised: "e5"
+   result: move → e5  (score 8)
+   turn: black  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/5P2/PPPPP1PP/RNBQKBNR b KQkq - 0 1
+
+#3  [voice]  chose: "night to wear"
+   heard: "night to wear" (0.90)  |  "like to wear" (0.85)
+   normalised: "night wear"
+   result: command  (score 6)
+   turn: white  legal: 19
+   fen: rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w KQkq e6 0 2
+
+#4  [voice]  chose: "reveal board"
+   heard: "reveal board" (0.90)
+   normalised: "reveal board"
+   result: command  (score 6)
+   turn: white  legal: 19
+   fen: rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w KQkq e6 0 2
+
+#5  [voice]  chose: "to C3"
+   heard: "to C3" (0.90)  |  "C3" (0.85)
+   normalised: "c3"
+   result: move → c3  (score 9.5)
+   ranked: c3 9.5*  |  Nc3 9.2*  |  c4 -0.05  |  f4 -0.7   margin 0.3
+   turn: white  legal: 19
+   fen: rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w KQkq e6 0 2
+
+--- mic timeline · state=listening · 7 mic sessions · 0 barge-ins · 0 echoes ignored · 6 restarts · 0 watchdog saves · 0 errors · span 125s ---
+  +50.2s  state  listening → thinking  (routing "to F3")
+  +90.0s  state  listening → thinking  (routing "e5")
+  +117.3s  state  listening → thinking  (routing "night to wear")
+  +120.4s  state  listening → thinking  (routing "reveal board")
+  +124.2s  state  listening → thinking  (routing "to C3")
+
+--- verified labels ---
+# Synthetic, so "what was meant" is simply what the script intended to say.
+# The point of the block here is to exercise the parser, and to show the shape
+# a real one takes. In a real report only the player may write these.
+  #1  MEANT Nf3
+  #2  MEANT e5
+  #3  MEANT none
+  #5  MEANT Nc3
+
+--- describe what went wrong (please type here) ---
+Fixture. Nothing went wrong that was not put there on purpose.
