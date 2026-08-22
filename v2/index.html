@@ -1261,6 +1261,21 @@
   // known what/white and on/one collisions. Above 0.65 a partial echo like
   // "that's made" (67%) starts leaking through and cutting narration again.
   const ECHO_MIN=0.6;
+  // Chrome writes a square it only half-heard as a letter that is not a file
+  // at all: "V8" for our "b8", "S4" for "f4", also "V3" and "P3" in the same
+  // reports. Nothing on a chessboard is called v8, so a token of that shape is
+  // recogniser noise — neither ours nor anything a player could have meant.
+  //
+  // Counting it in the DENOMINATOR is what let the app cut its own sentence
+  // again on r43: it said "Black plays knight b8 to c6", heard back "night V8",
+  // and scored 1 match out of 2 tokens = 0.5, under ECHO_MIN. Dropping the
+  // token that cannot mean anything leaves "night" against our "knight" — 1/1,
+  // and the sentence survives. The r36 rule fixed the case where the square
+  // was CUT SHORT ("d" for "d4"); this is the case where it came back WRONG.
+  const NOISE_SQUARE=/^[i-z][0-9]$/;
+  function heardTokens(transcript){
+    return speechKey(transcript).split(' ').filter(w=>w&&!NOISE_SQUARE.test(w));
+  }
   let echoRecent=[];                   // phon-code sets of what we said
   let lastSpokeAt=0;
   function rememberSpoken(text){
@@ -1276,7 +1291,7 @@
   // No length guard: the guard belongs to the callers, because it means
   // opposite things to them (see echoOverlap and isTrailingEcho below).
   function echoOverlapRaw(transcript){
-    const heard=speechKey(transcript).split(' ').filter(Boolean);
+    const heard=heardTokens(transcript);
     if(!heard.length) return 0;
     const mine={}, mineWords=[];
     echoRecent.forEach(e=>{ Object.keys(e.codes).forEach(k=>{ mine[k]=1; }); mineWords.push.apply(mineWords,e.words); });
@@ -1306,7 +1321,7 @@
     return heard.filter(w=>mine[phon(w)]||isTruncatedSquare(w)).length/heard.length;
   }
   function echoOverlap(transcript){
-    const heard=speechKey(transcript).split(' ').filter(Boolean);
+    const heard=heardTokens(transcript);
     if(heard.length<2) return 0;       // a syllable of echo is not an interruption
     return echoOverlapRaw(transcript);
   }
@@ -1332,7 +1347,7 @@
   const ECHO_SINGLE_TAIL_MS=2000;
   function considerBargeIn(transcript){
     const overlap=echoOverlap(transcript);
-    if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2){
+    if(overlap===0&&heardTokens(transcript).length<2){
       // Correct — one syllable must not cut the sentence off. But a bare pawn
       // move IS one word, so this is also the door a real "e5" disappears
       // through when it is spoken over the narration, and it used to close
@@ -1358,7 +1373,7 @@
   // here can reach route(), which is the point.
   function isTrailingEcho(transcript){
     const since=Date.now()-lastSpokeAt;
-    const words=speechKey(transcript).split(' ').filter(Boolean);
+    const words=heardTokens(transcript);
     // A single word is the case overlap cannot judge, and the case that bit:
     // echoOverlap() returns 0 for it by design, 0 reads as "not echo" here, and
     // the app's own "Black plays…" reached route() four times in one game while
@@ -2248,7 +2263,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r43 (refusing a coin flip should mean asking)';
+  const BUILD='v2-r44 (nothing on a chessboard is called v8)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4455,13 +4470,23 @@
     // While it's talking, the mic button is an interrupt — you reached for it
     // to make it stop, not to toggle a session that is already muted.
     if(speaking){ cancelSpeech('mic button'); return; }
-    if(listening){ wantLoop=false; try{recognition.stop();}catch(e){} return; }
+    if(listening){
+      // "Did the mic stop, or did he stop it?" was unanswerable from a report:
+      // a tap and a spontaneous close both surface as `session closed` with
+      // wantLoop already false. On r43 he wrote "i had to turn mic on and off"
+      // and I could not tell from the timeline which of the two events at
+      // +86.1s was his. One line ends that permanently.
+      micEvent('user','mic button: stop');
+      wantLoop=false; try{recognition.stop();}catch(e){} return;
+    }
+    micEvent('user','mic button: start');
     wantLoop=handsFree;
     await startListening();
   });
 
   handsFreeToggle.addEventListener('change',()=>{
     handsFree=handsFreeToggle.checked;
+    micEvent('setting','keep-listening '+(handsFree?'on':'off'));
     if(!handsFree){ wantLoop=false; }
     else if(listening){ wantLoop=true; }
     saveState();
