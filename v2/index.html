@@ -1206,14 +1206,42 @@
     echoRecent.push(codes);
     while(echoRecent.length>ECHO_WINDOW) echoRecent.shift();
   }
-  function echoOverlap(transcript){
+  // What fraction of what we just heard is made of words we just said.
+  // No length guard: the guard belongs to the callers, because it means
+  // opposite things to them (see echoOverlap and isTrailingEcho below).
+  function echoOverlapRaw(transcript){
     const heard=speechKey(transcript).split(' ').filter(Boolean);
-    if(heard.length<2) return 0;       // a syllable of echo is not an interruption
+    if(!heard.length) return 0;
     const mine={};
     echoRecent.forEach(codes=>{ Object.keys(codes).forEach(k=>{ mine[k]=1; }); });
     speechKey(speakingText).split(' ').filter(Boolean).forEach(w=>{ mine[phon(w)]=1; });
     return heard.filter(w=>mine[phon(w)]).length/heard.length;
   }
+  function echoOverlap(transcript){
+    const heard=speechKey(transcript).split(' ').filter(Boolean);
+    if(heard.length<2) return 0;       // a syllable of echo is not an interruption
+    return echoOverlapRaw(transcript);
+  }
+  // How long a ONE-WORD echo can still arrive. Measured, not picked:
+  // tools/echo-timing.js mines problem reports for the gap between "narration
+  // ended" and the next routed utterance. In the r30 verification game the
+  // Across two games the app's own voice came back at 700, 700, 800 and 1500ms,
+  // against a fastest genuine reply of 2800ms. Clean range 1500–2500ms.
+  //
+  // ⚠ This number has now been wrong twice, in opposite directions, and both
+  // corrections came from outside the code:
+  //   1500ms  picked from ONE echo sample
+  //   1000ms  after a second report produced a "King" at 1500ms that the
+  //           tool's heuristic labelled human
+  //   2000ms  after Adni was asked and said he never said "King" — it was the
+  //           app's own castling line. Relabelling one sample doubled the
+  //           answer, and 1000ms had been catching only 3 of 4 echoes.
+  //
+  // The lesson is not the value. It is that the labelling mattered more than
+  // the arithmetic, and only the player knew it. Re-run tools/echo-timing.js
+  // when a report lands, and ask about anything ambiguous rather than letting
+  // a heuristic decide. Never hand-pick this.
+  const ECHO_SINGLE_TAIL_MS=2000;
   function considerBargeIn(transcript){
     const overlap=echoOverlap(transcript);
     if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2) return;
@@ -1223,7 +1251,25 @@
   // The same test, for audio that arrives just after narration ended. Nothing
   // here can reach route(), which is the point.
   function isTrailingEcho(transcript){
-    if(Date.now()-lastSpokeAt>ECHO_TAIL_MS) return false;
+    const since=Date.now()-lastSpokeAt;
+    const words=speechKey(transcript).split(' ').filter(Boolean);
+    // A single word is the case overlap cannot judge, and the case that bit:
+    // echoOverlap() returns 0 for it by design, 0 reads as "not echo" here, and
+    // the app's own "Black plays…" reached route() four times in one game while
+    // the timeline reported "0 echoes ignored". Same guard as barge-in uses,
+    // opposite consequence — Day 3.14's lesson, second occurrence.
+    //
+    // Dropping the guard outright is not the fix: a legitimate one-word
+    // recapture on the square just announced is one of the commonest things in
+    // chess, and it would be swallowed. Time is the separator, and the word
+    // must be entirely ours — a single word scores 1 or 0, nothing between.
+    if(words.length===1){
+      if(since>ECHO_SINGLE_TAIL_MS) return false;
+      if(echoOverlapRaw(transcript)<1) return false;
+      micEvent('echo','ignored one-word echo "'+transcript.trim().slice(0,40)+'" ('+since+'ms after speaking)');
+      return true;
+    }
+    if(since>ECHO_TAIL_MS) return false;
     const overlap=echoOverlap(transcript);
     if(overlap<ECHO_MIN) return false;
     micEvent('echo','ignored after speaking "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)');
@@ -1476,11 +1522,18 @@
     // Verbose should be the most complete, so it names both pieces' squares.
     if(m.flags.indexOf('k')!==-1||m.flags.indexOf('q')!==-1){
       const kingside=m.flags.indexOf('k')!==-1, rank=m.color==='w'?'1':'8';
-      return color+' '+base+': king from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)
-        +', rook from '+spokenSquare((kingside?'h':'a')+rank)
+      return color+' '+base+': king '+spokenSquare(m.from)+' to '+spokenSquare(m.to)
+        +', rook '+spokenSquare((kingside?'h':'a')+rank)
         +' to '+spokenSquare((kingside?'f':'d')+rank)+'.';
     }
-    let t=color+' plays '+piece+' from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
+    // No "from". The word carries nothing — "pawn e2 to e4" is unambiguous —
+    // and it is the word that cost us a sentence: the recogniser hears our own
+    // "king from e1" back as "King for" / "King for me", which scores 1/2 = 0.5
+    // against the narration and reads as an interruption at ECHO_MIN 0.6. The
+    // app cut off its own castling line twice in the r31 game, and the player
+    // never heard the rook. tools/echo-threshold.js says no threshold separates
+    // those two classes, so the phrase had to change rather than the number.
+    let t=color+' plays '+piece+' '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
     if(m.captured) t+=' Captures the '+PIECE_NAME[m.captured]+'.';
     if(m.promotion) t+=' Promotes to '+PIECE_NAME[m.promotion]+'.';
     return t;
@@ -2081,7 +2134,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r31 (castling keeps its rook, and squares are spoken as written)';
+  const BUILD='v2-r34 (only the player knows what the player said)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
