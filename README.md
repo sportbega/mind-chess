@@ -1,12 +1,12 @@
 # Mind Chess
 
-**Live (public beta):** https://sportbega.github.io/mind-chess/ — no install needed, hosted on GitHub Pages. **This is the link to share.**
+**Live:** https://sportbega.github.io/mind-chess/ — no install needed, hosted on GitHub Pages. **This is the link to share.**
 
 ⚠️ Share `/`, not `/v2/`. They are identical the moment a release ships, but `/v2/` is the rolling preview and drifts ahead into half-finished work as soon as the next session starts. `/` only moves when `./publish.sh release` is run deliberately.
 
 Browser chess with a voice / blindfold mode — play by speaking moves ("e4", "knight to f3", "queen takes e5", "castle kingside") while the board stays hidden, or reveal it any time.
 
-No build step, and it still opens as a plain page. `index.html` carries the app; [chess.js](https://github.com/jhlywa/chess.js) 0.10.3 is vendored as `chess-0.10.3.js` rather than fetched from a CDN, so **a game against the computer needs no network at all**. The "Master" level self-hosts real [Stockfish](https://github.com/nmrugg/stockfish.js) (18 Lite, single-threaded WASM, ~7.3 MB), lazy-loaded so the other levels pay nothing for it. `stt-worker.js` runs on-device speech recognition when you ask for it.
+No build step, and it still opens as a plain page. `index.html` carries the app; `puzzles.json` is the generated puzzle set (fetched only when you open Puzzles); [chess.js](https://github.com/jhlywa/chess.js) 0.10.3 is vendored as `chess-0.10.3.js` rather than fetched from a CDN, so **a game against the computer needs no network at all**. The "Master" level self-hosts real [Stockfish](https://github.com/nmrugg/stockfish.js) (18 Lite, single-threaded WASM, ~7.3 MB), lazy-loaded so the other levels pay nothing for it. `stt-worker.js` runs on-device speech recognition when you ask for it.
 
 Speech in and out both have two engines, and **the app is fully playable before any optional download begins**:
 
@@ -27,24 +27,31 @@ Then open http://localhost:8000
 
 ## Status
 
-**2.0 is the current release — the official public beta.** The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
+**2.1 (`v2-r31`) is the current release**, tagged `v2.1` and serving at `/`. It adds puzzles, tips and one difficulty ladder, and fixes bugs that affected every move of every game — the computer's reply cutting off your own move narration, the app routing its own voice, a seat deadlock, and verbose narration describing castling as a lone king move without the rook. **Every one of those was found by playing a game out loud, and none by any other means.** See [DEVLOG.md](DEVLOG.md) and `git show v2.1` for the full list, including what is knowingly still open.
+
+The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
 
 What 2.0 added on top of v1.0:
 
 - **Voice input that survives being misheard.** Spoken moves are scored against the actual legal move list rather than pattern-matched, so "Pond to e4" still plays the pawn. Where two readings are equally legal it refuses instead of guessing — a rejection costs one repeat, a wrong move costs the game
 - **Always-on listening** — the mic stays open through narration ("Talk over it", ships off), and Escape, the mic button or typing always interrupt. Nothing heard while the app is speaking can ever play a move
 - **Ask the board anything** — thirteen computed answers: where a piece is, what it can reach, what's on a square, what attacks or defends it, what's loose, castling rights, material, available captures. All computed by chess.js, never recalled by a model
-- **A coach**, off by default — Stockfish answers "how am I doing", "what should I worry about", "is my king safe". `hints` never names a number or a move; `full` does
-- **A natural voice** — optional Kokoro, and a voice/speed picker for the system voice
+- **Puzzles** — a Puzzles mode with 200 generated mate-in-one and mate-in-two positions, four to seven pieces each so the position fits in your head, read aloud when it starts. Every puzzle has exactly *one* key move, which is what earns the app the right to say "no, not that one". No engine and no network needed — see [tools/make-puzzles.js](tools/make-puzzles.js)
+- **Tips**, on by default — occasional spoken facts you'd have seen with a board in front of you: both queens coming off, a piece type disappearing, a repeated position, the fifty-move count. Unprompted, but never advice and never a move — a material swing is only mentioned once it has settled, so an even trade says nothing at all. Say `tips off`
+- **A coach**, at `hints` by default — Stockfish answers "how am I doing", "what should I worry about", "is my king safe". It never volunteers anything: every answer is one you asked for. `hints` never names a number or a move; `full` does, and stays opt-in. Say `coach off` for board facts only
+- **A natural voice** — optional Kokoro, and a voice/speed picker for the system voice. The computer's reply is rendered while your own move is still being read out, so it arrives already spoken rather than after a pause
+- **An honest difficulty ladder** — each rung beats the one below it, verified head-to-head by `tools/level-ladder.js` (Club 4–0 Casual, Sharp 4–0 Club, Master over Sharp). Club upward is one engine at three settings; Casual stays local so a first visit costs no download
 - **On-device recognition** — optional Moonshine, no network round-trip, and the only route to voice on iOS
 - Voice diagnostics at `?debug=1` — the full mic timeline, what was heard, and how the matcher ranked it
+- **Test voice** — plays a sample and says whether audio actually *started*, so a silent phone is a visible failure rather than an app that looks idle
+- **Report a problem** — copies a diagnostic report (build, settings, position, transcript, and the voice timeline) that a beta tester can paste back. Recording is always on, so a report works retrospectively; nothing leaves the browser until you paste it
 
 v1.0's feature set, all still here:
 
 - Voice input with a constrained-vocabulary matcher (scores speech alternatives against the actual legal move list)
 - Text input fallback
 - Blindfold mode: board hidden by default, toggle to reveal
-- Vs. computer — alpha-beta minimax over material + pawn advancement + a small knight/bishop centrality bonus, ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)'s engine, 3 depth levels (Casual/Club/Sharp), plus a "Master" level backed by real Stockfish — or pass-and-play
+- Vs. computer — **Club, Sharp and Master are all real Stockfish**, at their own Skill Level and depth cap, so "harder" means stronger rather than different. **Casual is the local alpha-beta engine** (ported from [Giga Chess](../../Documents/ChatGPT/chess%20project/chess.html)) and is the default, so opening the page and playing downloads nothing at all — the 7.3 MB engine is fetched only when you pick a level that needs it. The local engine also covers any browser that can't load the WASM engine — or pass-and-play
 - Clock — optional per-side time control (3/5/10/20/30 min presets, or "Custom…" with +/-1 min stepper buttons for any starting time from 1–180 min), silent by default in blindfold mode except for the flag-fall announcement; works vs-computer, pass-and-play, and online. Online clocks are synced through the shared game row (remaining ms + a `last_move_at` anchor) rather than each peer ticking an independent local timer, so both sides agree without any periodic sync write.
 - Disambiguation / promotion prompts when a spoken move is ambiguous
 - Move narration at terse / standard / verbose levels, speech synthesis toggle
@@ -64,9 +71,9 @@ Both versions stay online, permanently:
 
 | | URL | What it is |
 |---|---|---|
-| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.0.** |
+| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.1** (`v2-r31`). |
 | **v1.0 (frozen)** | https://sportbega.github.io/mind-chess/v1/ | A permanent, byte-identical copy of the `v1.0` tag. Never changes. |
-| **Preview** | https://sportbega.github.io/mind-chess/v2/ | The `v2` branch, refreshed every session. May run ahead of the release. |
+| **Preview** | https://sportbega.github.io/mind-chess/v2/ | The `v2` branch, refreshed every session. Byte-identical to the release right now, and drifts ahead as soon as work resumes — **share `/`, never this.** |
 
 `v1/` is a frozen snapshot kept for reference and comparison — extracted directly from the `v1.0` git tag and verified byte-for-byte. Don't edit it. If it ever needs to change, re-extract it from the tag.
 
