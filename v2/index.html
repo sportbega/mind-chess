@@ -611,8 +611,16 @@
   function flushLostInterim(why){
     if(!lostInterim) return;
     lostCount++;
-    micEvent('lost','"'+lostInterim.trim().slice(0,40)+'" never became a final result ('+why+')');
-    lostInterim='';
+    const t=lostInterim; lostInterim='';
+    // ⚠ Same filter `drop` got one build ago, for the same reason, because I
+    // only fixed the half I had been shown. A real game produced 45 `lost`
+    // lines — "captures", "the pond", "black", "castles", "isn't legal",
+    // "you're a queen" — every one of them our own narration arriving as an
+    // interim that never finalised, in a timeline that prints 80 entries.
+    // The one line that mattered ("d", "before" — him saying d4) was buried
+    // among them. Count all, print only what is not recognisably ours.
+    if(echoOverlapRaw(t)<1)
+      micEvent('lost','"'+t.trim().slice(0,40)+'" never became a final result ('+why+')');
   }
   function setMicState(next,why){
     if(micState===next) return;
@@ -2207,7 +2215,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r40 (a tip that waits three plies must not say "that")';
+  const BUILD='v2-r41 (his queen was on c7 the whole time)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2792,7 +2800,49 @@
     const size=a<3?1:a<5?3:a<9?5:9;
     return diff>0?size:-size;
   }
+  // BUCKET_WORD decides WHEN a swing is worth mentioning. It used to decide
+  // WHAT to say too, and that was a lie waiting for a real game.
+  //
+  // Reported: "it said last you are queen down and it was wrong." It was. He
+  // was down a rook, a knight and a bishop, and up two pawns — nine points,
+  // so materialBucket() said 9 and BUCKET_WORD[9] said "a queen". His queen
+  // was on c7 the whole time. On a board he cannot see, being told he has
+  // lost a piece he still owns is worse than being told nothing: the roster
+  // is the exact thing a blindfold player is holding in their head, and this
+  // corrupted it.
+  //
+  // Point totals collapse a roster; the roster is what the tip exists to
+  // restore. So the size still decides whether to speak, and the ACTUAL
+  // difference in pieces decides the words.
   const BUCKET_WORD={1:'a pawn',3:'a piece',5:'a rook',9:'a queen'};
+  // Named apart from COUNT_WORD above, which maps the other direction (heard
+  // words -> numbers) for question parsing.
+  const COUNT_SAID={2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight'};
+  function pieceCountPhrase(type,n){
+    return n===1 ? 'a '+PIECE_NAME[type]
+                 : (COUNT_SAID[n]||n)+' '+PIECE_NAME[type]+'s';
+  }
+  // What is actually missing, by type — queens first, pawns last, so the
+  // sentence leads with the piece that matters.
+  function materialGap(me){
+    const foe=me==='w'?'b':'w', down=[], up=[];
+    for(const t of ['q','r','b','n','p']){
+      const d=pieceSquares(me,t).length-pieceSquares(foe,t).length;
+      if(d<0) down.push(pieceCountPhrase(t,-d));
+      else if(d>0) up.push(pieceCountPhrase(t,d));
+    }
+    return {down,up};
+  }
+  function materialSentence(who,missing,extra,ahead){
+    const lead=ahead?extra:missing, other=ahead?missing:extra;
+    const word=ahead?' up ':' down ', flip=ahead?' down ':' up ';
+    if(lead.length&&other.length) return who+word+joinAnd(lead)+' for '+joinAnd(other)+'.';
+    if(lead.length) return who+word+joinAnd(lead)+'.';
+    if(other.length) return who+flip+joinAnd(other)+'.';
+    // Unreachable while PIECE_VALUE and the roster agree, kept so a future
+    // change to either cannot produce a sentence with a hole in it.
+    return who+(ahead?' ahead on material.':' behind on material.');
+  }
 
   // "You" only means something when one side is yours.
   function tipSeat(){ return mode==='two-player'?null:myColor(); }
@@ -2807,23 +2857,13 @@
     if(ply-tipPendingSince<TIP_MATERIAL_SETTLE) return null;                 // mid-exchange
     tipSaid.material=bucket;
     if(bucket===0) return 'Material is level again.';
-    const word=BUCKET_WORD[Math.abs(bucket)];
-    // "That puts you a pawn down" names the move just narrated as the cause —
-    // and TIP_MATERIAL_SETTLE guarantees it is not. The tip deliberately waits
-    // three plies for an exchange to finish before saying anything, so by
-    // construction the capture is already two or three moves in the past.
-    //
-    // Reported live: Nxe4 on ply 6, the tip read out on ply 9 alongside a
-    // quiet d4-d5. "voice said that puts you a pawn down, but nothing happend
-    // like it shouldnt. there was no exchange. strage" — and he was right; on
-    // a hidden board a false causal claim is worse than saying nothing, because
-    // he cannot glance down and see that d5 captured nothing.
-    //
-    // The waiting is correct and stays. The deixis goes: a tip restores a FACT
-    // the player would have seen with a board in front of them, so state it as
-    // a state. The two-player wording below was always phrased this way.
-    if(seat) return bucket>0?'You\u2019re '+word+' up.':'You\u2019re '+word+' down.';
-    return (bucket>0?'White':'Black')+' is '+word+' up.';
+    const gap=materialGap(me);
+    // gap is always from `me`'s side of the board. Lead with the side of the
+    // ledger the subject is actually on — "up a rook for two pawns", not
+    // "down two pawns for a rook", which reads as losing.
+    if(seat) return materialSentence('You\u2019re',gap.down,gap.up,bucket>0);
+    return materialSentence(bucket>0?'White is':'Black is',
+      bucket>0?gap.down:gap.up, bucket>0?gap.up:gap.down, true);
   }
 
   function tipQueens(){
