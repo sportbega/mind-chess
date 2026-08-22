@@ -1,0 +1,105 @@
+=== Mind Chess problem report ===
+build: v2-r44 (nothing on a chessboard is called v8)
+when:  2026-08-22T21:01:30.912Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=system  ·  hearing=system  ·  voice=Google US English  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: r1b1kb1r/ppq2ppp/4p2n/2p1n3/2B5/7P/PPPP1PP1/RNBQK2R w KQkq - 0 8
+  pgn: 1. e4 e6 2. e5 c5 3. Bc4 Nc6 4. Nf3 Qc7 5. Ng5 Nh6 6. h3 Nxe5 7. Nxe6 dxe6
+
+--- last said ---
+  Board  Game restored. White to move.
+  System Loading the chess engine for this level (7.3 MB, once — then it’s cached and works offline).
+  You    horse to G5
+           heard: also heard: horse G5 / Horsea G5
+  Board  White plays knight f3 to g5.
+  Board  Black plays knight g8 to h6.
+  You    H3
+           heard: also heard: h3 / H 3
+  Board  White plays pawn h2 to h3.
+  Board  Black plays knight c6 to e5. Captures the pawn.
+  You    E6
+           heard: also heard: is 6 / is
+  Board  White plays knight g5 to e6. Captures the pawn.
+  Board  Black plays pawn d7 to e6. Captures the knight.
+
+--- what was heard (3) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r44 (nothing on a chessboard is called v8)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "horse to G5"
+   heard: "horse to G5" (0.83)  |  "horse G5" (0.85)  |  "Horsea G5" (0.82)  |  "horse the G5" (0.85)  |  "horse to G 5" (0.83)  |  "horse G 5" (0.82)  |  "horse to G five" (0.83)  |  "Horsea G 5" (0.82)
+   normalised: "horse g5"
+   result: move → Ng5  (score 6.69)
+   ranked: Ng5 1.9  |  Nh4 0.52  |  Ng1 0.52  |  Nd4 0.2   margin 1.38
+   turn: white  legal: 31
+   fen: r1b1kbnr/ppqp1ppp/2n1p3/2p1P3/2B5/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 5
+
+#2  [voice]  chose: "H3"
+   heard: "H3" (0.80)  |  "h3" (0.81)  |  "H 3" (0.69)  |  "h 3" (0.68)  |  "h33" (0.70)  |  "h33" (0.80)  |  "h330" (0.83)  |  "H3 3" (0.84)  |  "h" (0.70)
+   normalised: "h3"
+   result: move → h3  (score 9.5)
+   ranked: h3 9.5*  |  Nh3 9.2*  |  h4 -0.05  |  Nxe6 -0.35   margin 0.3
+   turn: white  legal: 38
+   fen: r1b1kb1r/ppqp1ppp/2n1p2n/2p1P1N1/2B5/8/PPPP1PPP/RNBQK2R w KQkq - 6 6
+
+#3  [voice]  chose: "E6"
+   heard: "E6" (0.85)  |  "is 6" (0.60)  |  "is" (0.46)  |  "is six" (0.64)  |  "e 6" (0.78)  |  "B6" (0.86)  |  "e-6" (0.87)  |  "A6" (0.80)  |  "he's six" (0.85)
+   normalised: "e6"
+   result: move → Nxe6  (score 9.2)
+   ranked: Nxe6 9.2*  |  Bxe6 9.2*  |  Ne4 -0.35  |  Be2 -0.35   margin 0
+   turn: white  legal: 37
+   fen: r1b1kb1r/ppqp1ppp/4p2n/2p1n1N1/2B5/7P/PPPP1PP1/RNBQK2R w KQkq - 0 7
+
+--- mic timeline · state=listening · 1 mic sessions · 0 barge-ins · 3 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · 6 heard · 3 lost · 11 dropped · span 75s ---
+  +0.0s  tts  speech unlocked by first gesture
+  +17.6s  user  mic button: start
+  +17.6s  state  idle → listening  (session open)
+  +17.6s  session  opened
+  +21.0s  lost  "horse" never became a final result (a different utterance began)
+  +21.2s  lost  "to G5" never became a final result (a different utterance began)
+  +21.2s  lost  "horse to" never became a final result (a different utterance began)
+  +21.8s  state  listening → thinking  (routing "horse to G5")
+  +21.8s  state  thinking → speaking  (narration started)
+  +25.0s  state  speaking → listening  (narration ended)
+  +25.1s  state  listening → speaking  (narration started)
+  +28.3s  state  speaking → listening  (narration ended)
+  +35.1s  state  listening → thinking  (routing "H3")
+  +35.1s  state  thinking → speaking  (narration started)
+  +38.3s  state  speaking → listening  (narration ended)
+  +38.3s  state  listening → speaking  (narration started)
+  +40.6s  echo  ignored "white place" (100% ours)
+  +41.2s  echo  ignored "white place" (100% ours)
+  +43.1s  state  speaking → listening  (narration ended)
+  +43.8s  echo  ignored after speaking "white place" (100% ours)
+  +64.9s  state  listening → thinking  (routing "E6")
+  +64.9s  state  thinking → speaking  (narration started)
+  +69.4s  drop  one word while speaking: "Capt"
+  +69.8s  state  speaking → listening  (narration ended)
+  +69.8s  state  listening → speaking  (narration started)
+  +74.4s  drop  one word while speaking: "Capt"
+  +74.8s  state  speaking → listening  (narration ended)
+
+--- verified labels ---
+# Adni, 2026-08-22, unprompted: "i saod bisoph to e6 few time not knight, then
+# played knight beacause that was also possible move on e6 sq."
+#
+# THE LABEL THE WRONG-PIECE HUNT HAS BEEN BLOCKED ON SINCE DAY 6.0. The word
+# "bishop" never survived recognition — the alternatives were "E6", "is 6",
+# "is", "B6", "A6" — so the app had a bare square two pieces could reach,
+# scored them EXACTLY equal (margin 0, both exact), and picked by array order.
+# Fixed in r45: a margin of 0 between two exact readings is the scorer saying
+# it has no opinion, and the app asks "Knight or bishop?" instead of guessing.
+  #3  MEANT Bxe6
+# Stated in the same sentence: he did want the knight on g5.
+  #1  MEANT Ng5
+# NOT stated — #2 "H3" is the 0.3 pawn-default shape and he did not mention it.
+# Left unlabelled on purpose; see --needs-label.
+
+--- describe what went wrong (please type here) ---
+i saod bisoph to e6 few time  not knight, then played knight beacause that was also possible move on e6 sq.

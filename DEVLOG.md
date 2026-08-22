@@ -3728,3 +3728,94 @@ narration now produces `0 barge-ins`, where r43 produced the cut. Replay: r44
 scores all 45 recorded utterances exactly as r43 did.
 
 r44 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.8: a tie is the scorer saying it has no opinion (r45)
+
+Sixth game, and the label the wrong-piece hunt has been blocked on since Day
+6.0 arrived unprompted, attached to the bug happening:
+
+> *"i saod bisoph to e6 few time not knight, then played knight beacause that
+> was also possible move on e6 sq."*
+
+```
+#3  chose: "E6"
+   heard: "E6" (0.85) | "is 6" (0.60) | "is" (0.46) | "B6" (0.86) | "A6" (0.80)
+   result: move → Nxe6  (score 9.2)
+   ranked: Nxe6 9.2*  |  Bxe6 9.2*  |  Ne4 -0.35   margin 0
+```
+
+The word **"bishop" never survived recognition** — it is in none of the nine
+alternatives. So the app had a bare square that two pieces could reach, scored
+them **exactly equal**, and picked by array order. It moved the wrong piece on
+a board he could not see, which is the worst thing this app can do.
+
+### The fix needed no threshold, which is why it took six games to find
+
+Day 6.0 spent a build proving that the 0.3 margin in the *first* wrong-piece
+sighting was not a measurement — it is `constrainedMove()`'s pawn preference, a
+constant. The conclusion then was that "refuse on a narrow margin" is a rule
+about the position rather than the recognition, and I have not touched it since.
+
+This case is different in the one way that matters. **Margin 0 between two
+exact matches is not a narrow margin. It is the scorer saying, in the only way
+it can, that it has no opinion at all.** Zero is not a number chosen from a
+sweep; it is the only value that means *no information*.
+
+```js
+function exactTie(bestText){
+  if(!lastScoring||lastScoring.margin!==0) return null;
+  const tied=top.filter(t=>t.exact&&t.score===top[0].score);
+  if(tied.length<2) return null;
+  if(spokenPiece(speechKey(bestText))) return null;   // a piece word already separated them
+  ...
+  if(new Set(cands.map(m=>m.piece)).size<2) return null;   // askDisambiguation's job
+}
+```
+
+```
+You     E6
+System  Knight or bishop? Both can go there.
+You     bishop
+Board   White plays bishop c4 to e6. Captures the pawn.
+```
+
+The pawn default is deliberately untouched. `"C3"` still ranks `c3 9.5*` over
+`Nc3 9.2*` — a real separation that has been doing real work all week, and he
+has played bare-square pawn moves in every game without complaint. This fires
+only where that preference had nothing to say.
+
+### What it costs, across every game ever recorded
+
+The replay had to learn to see it — the decision lives in `route()`, not the
+scorer, so a replay that only scored would report a move the app no longer
+makes. With `exactTie` exported into the harness, over all **53** utterances
+from six real games:
+
+```
+r40 #11  "H3"  was Nh3   -> asks knight/rook
+r40 #12  "F2"  was Nf2   -> asks knight/king
+r44 #3   "E6"  was Nxe6  -> asks knight/bishop   meant Bxe6
+```
+
+**Three.** One of them is the confirmed wrong move; the other two are the
+utterances I have been asking him to label since Day 6.4 — `Nh3` over `Rh3` and
+`Nf2` over `Kf2`, both decided by array order, both unverifiable from here. The
+rule makes them safe without needing the answer, which is a better outcome than
+the label would have been.
+
+Four controls, all held: the 0.3 pawn default (`"C3"`, `"H3"`) still plays
+without asking, a named piece (`"Bishop C4"`) still goes straight through, and
+an unambiguous square (`"E4"`) is untouched.
+
+### The corpus, six games in
+
+```
+53 utterances · 15 labelled
+   hit 10   refused 3   wrong 2   intrusion 0
+```
+
+Both `wrong` entries are now fixed builds: `"Pawn to Beta 3"` → a3 (r38) and
+`"E6"` → Nxe6 (r45). Every invisible failure the corpus has ever recorded has a
+fix behind it.
+
+r45 is on the preview only. `/` still serves r31.

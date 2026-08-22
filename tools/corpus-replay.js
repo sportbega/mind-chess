@@ -70,7 +70,7 @@ if (page.split(CLOSE).length !== 2) {
 const HOOK = `
   // ---- injected by tools/corpus-replay.js, never committed ----
   window.__replay = {
-    game, expandAlternatives, scoreAlternatives, speechKey,
+    game, expandAlternatives, scoreAlternatives, speechKey, exactTie,
     settings(s){
       // Only the settings the scorer can see. Anything else is decoration and
       // pretending otherwise would make the harness look more faithful than
@@ -84,10 +84,16 @@ const HOOK = `
       const list = expandAlternatives(alts.slice());
       const r = scoreAlternatives(list);
       const b = r.best;
+      // r45 asks instead of moving when two exact readings tie. That decision
+      // lives in route(), not the scorer, so a replay that only scored would
+      // report a move the app no longer makes. Read it here so the corpus can
+      // say how much friction the rule actually adds across every game.
+      const tie = (b && b.type === 'move') ? exactTie(r.bestText) : null;
       return {
         chose: r.bestText,
-        type: b ? b.type : 'none',
-        san: (b && b.type === 'move' && b.move) ? b.move.san : null,
+        type: tie ? 'asks' : (b ? b.type : 'none'),
+        san: (!tie && b && b.type === 'move' && b.move) ? b.move.san : null,
+        asks: tie ? [...new Set(tie.map(m => m.piece))].join('/') : null,
         score: b ? Math.round(b.score * 100) / 100 : null
       };
     }
@@ -138,7 +144,7 @@ window.__runReplay = function(){
       report: u.report, n: u.n,
       said: u.chose,
       recorded: wasSan || u.type,
-      replayed: nowSan || got.type,
+      replayed: nowSan || (got.asks ? 'asks ' + got.asks : got.type),
       drift: (wasSan || u.type) !== (nowSan || got.type),
       meant: u.meant || null,
       score: got.score

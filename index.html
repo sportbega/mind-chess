@@ -2263,7 +2263,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r44 (nothing on a chessboard is called v8)';
+  const BUILD='v2-r45 (a tie is the scorer saying it has no opinion)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3617,7 +3617,14 @@
         else if(/^[a-h][1-8]$/.test(t)) m=pa.cands.find(c=>c.from===t);
         if(m){ pendingAction=null; updateStatus(); execPlan(planForMove(m)); return true; }
       }
-        if(pa.type==='file'){
+        if(pa.type==='which-piece'){
+        const want=spokenPiece(speechKey(raw));
+        if(want){
+          const m=pa.cands.find(c=>c.piece===want);
+          if(m){ pendingAction=null; updateStatus(); execPlan(planForMove(m)); return true; }
+        }
+      }
+      if(pa.type==='file'){
         const sq=(t.match(/\b([a-h][1-8])\b/)||[])[1];
         const file=spokenFileCode(t);
         const want=sq||(file?file+pa.rank:null);
@@ -3752,6 +3759,7 @@
     if(pa.type==='castle') return 'kingside or queenside?';
     if(pa.type==='square') return cap(PIECE_NAME[pa.piece])+' to where?';
     if(pa.type==='confirm') return 'did you mean '+pa.san+'? Say yes or no.';
+    if(pa.type==='which-piece') return [...new Set(pa.cands.map(c=>PIECE_NAME[c.piece]))].join(' or ')+'?';
     if(pa.type==='file') return pa.squares.join(' or ')+'?';
     if(pa.type==='promotion') return 'promote to queen, rook, bishop, or knight?';
     if(pa.type==='piece') return 'which one?';
@@ -3798,6 +3806,50 @@
     }
     return null;
   }
+  // TWO READINGS THE SCORER CANNOT SEPARATE AT ALL.
+  //
+  // Reported live on r44: "i saod bisoph to e6 few time not knight, then
+  // played knight beacause that was also possible move on e6 sq."
+  //
+  //   #3  chose: "E6"
+  //       ranked: Nxe6 9.2*  |  Bxe6 9.2*  |  Ne4 -0.35   margin 0
+  //
+  // The word "bishop" never survived recognition — the alternatives were "E6",
+  // "is 6", "is", "B6", "A6". So the app had a bare square that two pieces
+  // could reach, scored them EXACTLY equal, and picked by array order. It
+  // moved the wrong piece, on a board he could not see.
+  //
+  // The app's own rule is to refuse when two readings are equally legal. This
+  // is that case in its purest form, and it needs no threshold to detect:
+  // margin 0 between two EXACT matches is the scorer saying, in the only way
+  // it can, that it has no opinion. 0 is not a number chosen from a sweep; it
+  // is the only value that means "no information".
+  //
+  // Deliberately NOT the 0.3 case. "C3" ranks c3 9.5* over Nc3 9.2* — a real
+  // separation, produced by constrainedMove()'s pawn preference — and Adni has
+  // played bare-square pawn moves all week without complaint. That preference
+  // is doing its job. This fires only where the preference had nothing to say.
+  function exactTie(bestText){
+    if(!lastScoring||lastScoring.margin!==0) return null;
+    const top=lastScoring.top||[];
+    const tied=top.filter(t=>t.exact&&t.score===top[0].score);
+    if(tied.length<2) return null;
+    // If a piece word survived, the piece bonus already separated them and a
+    // tie means something else. Only an unqualified square gets asked about.
+    if(spokenPiece(speechKey(bestText))) return null;
+    const legal=game.moves({verbose:true});
+    const cands=tied.map(t=>legal.find(m=>m.san===t.san)).filter(Boolean);
+    // Same piece type twice is a different question ("which knight?") and
+    // askDisambiguation() already owns it.
+    if(new Set(cands.map(m=>m.piece)).size<2) return null;
+    return cands;
+  }
+  function askWhichPiece(cands){
+    pendingAction={type:'which-piece',cands};
+    const names=[...new Set(cands.map(m=>PIECE_NAME[m.piece]))];
+    warn(cap(names.join(' or '))+'? Both can go there.');
+    updateStatus();
+  }
   function askDestinationFile(opt){
     pendingAction={type:'file',squares:opt.squares,rank:opt.rank};
     warn('Did you mean '+opt.squares.join(' or ')+'?');
@@ -3832,6 +3884,9 @@
 
     if(!scored) scored=scoreAlternatives(list);
     const best=scored.best, bestText=scored.bestText;
+    // Captured HERE: recordDiagnostic() clears lastScoring on its way out, and
+    // it runs before the guards below.
+    const tie=(best&&best.type==='move')?exactTie(bestText):null;
     const others=list.filter(x=>x!==bestText).slice(0,2);
     if(!alreadyLogged) log('You',bestText,others.length?'also heard: '+others.join(' / '):null);
     recordDiagnostic(list,best,bestText);
@@ -3847,6 +3902,12 @@
         if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return; }
         if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return; }
       }
+    }
+    // Two exact readings, no piece named, nothing to choose between them.
+    if(tie){
+      askWhichPiece(tie);
+      if(!speaking) setMicState(listening?'listening':(wantLoop&&handsFree?'restarting':'idle'),'asked which piece');
+      return;
     }
     // A rejection that the app could have turned into a question. Checked
     // after the turn/game-over guards above, so it never asks on a turn the
