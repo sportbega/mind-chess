@@ -2650,3 +2650,91 @@ that is `route()`'s scoring loop, the most safety-critical path in the app — a
 the general form (refuse on a narrow margin) would have interrupted a correct
 `bxc3` in the r30 game. **It needs a corpus of real utterances to tune, not a
 judgement call at the end of a long session.**
+
+## 2026-08-22 — session close: 2.1 shipped, and six builds of listening to ourselves
+
+Eleven commits, Day 5.0 to 5.6. **2.1 is released and tagged `v2.1`; `/` serves
+`v2-r31`. `/v2/` serves `v2-r36`, which has never been played.**
+
+| build | | released? |
+|---|---|---|
+| r30 | the mic label stops lying about listening | — |
+| **r31** | **castling keeps its rook; squares spoken as written** | **`/`, tagged v2.1** |
+| r32 | a one-word echo is still our own voice | preview |
+| r33 | verbose drops "from", the word that cost us a sentence | preview |
+| r34 | the single-word window, corrected twice | preview |
+| r35 | the timeline can finally see the microphone | preview |
+| r36 | a square cut in half is still our own voice | preview |
+
+Eight instruments now: `phon-collisions`, `voice-harness`, `stt-bench`,
+`level-ladder`, `make-puzzles`, `echo-threshold`, and two new —
+**`echo-timing`** (mines problem reports for the gap between narration ending
+and the next routed utterance) and **`look-harness`** (swaps the stylesheet so a
+restyle can be judged without landing it).
+
+### What this session was actually about
+
+Every fix in it started as Adni playing out loud. That was already the standing
+lesson. What is new is sharper and less comfortable:
+
+**1. My instrument was wrong twice, and he corrected it both times.**
+`ECHO_SINGLE_TAIL_MS` went 1500 → 1000 → 2000. The measuring was right every
+time; the *labelling* was not. A heuristic labelled a `"King"` as a human
+utterance, and one question — *did you say that?* — doubled the answer and
+revealed that 1000ms had been catching only three echoes of four. **Ask about
+the ambiguous sample instead of letting a rule decide it.**
+
+**2. Building the instrument first killed a wrong hypothesis for free.** I was
+confident the 37-second deaf spell was session-restart gaps. r35 answered it in
+one line — `1 mic sessions · 0 restarts · span 172s` — before a build was spent
+on the fix. The instrument that proves you wrong is worth more than the one that
+confirms you.
+
+**3. A guard has a direction, for the third time.** `echoOverlap()`'s length
+check means "don't cut the sentence" to barge-in and "not echo" to the trailing
+test. The `no-speech` early return silenced a UI note and took the diagnostic
+with it. Both are one guard serving two consumers whose needs point opposite
+ways, and both times the quiet consumer lost silently.
+
+**4. The failure lives in a word that does no work.** Day 3.11 spellings, Day
+3.14 function words, and now "from" — removed because the recogniser mangled it
+into `"King for"` and no threshold could separate that from a real interruption.
+`echo-threshold.js` said so itself: *the phrases themselves need attention, not
+the number.*
+
+**5. A bench that reimplements what it measures starts lying, and it does it
+quietly.** `echo-threshold.js` had its own copy of the overlap scorer. Faithful
+when written, stale the instant r36 changed the original, and it would have gone
+on reporting green. It now lifts the real function and throws if it moves.
+**Worth auditing the other instruments for the same fault.**
+
+### Open, and where to start next time
+
+⚠️ **The wrong-piece bug is the top item.** `"knight to f3"` arrived as
+`"to F3"` and the app played the **pawn**. `parseRequest` discards the dangling
+`"to"`, so a fragment is indistinguishable from a deliberate bare-square pawn
+move, and the scoring was `f3 9.5` against `Nf3 9.2` — a **0.3 margin on a 9.5
+scale**, while the app's own rule is to refuse when two readings are equally
+legal.
+
+The obvious fix does not hold: the recogniser also offered a bare `"F3"` as an
+alternative of the same utterance, which is a legitimate pawn move and wins
+anyway. It has to act on the whole utterance, in `route()`'s scoring loop — the
+most safety-critical path in the app — and the general form would have
+interrupted a correct `bxc3` in the r30 game. **It needs a corpus of real
+utterances. Do not patch it cold.**
+
+Also open:
+- **r32–r36 have never been played.** Five builds of echo handling, all verified
+  from this side, and this project's whole history says that is not the same as
+  working.
+- The **(d)chess restyle** is committed as a preview generator (`tools/look.css`,
+  `tools/look-harness.js`) and deliberately not landed. Two decisions wait on
+  Adni: chrome accent decoupled from board theme, and whether a permanent
+  position panel undermines blindfold play.
+- `PLAYBOOK.md` and `dchess-visual-prototype.html` are still untracked at the
+  repo root. The prototype is a `.html` there, so committing it as-is will make
+  `publish.sh` refuse to publish until it is listed or ignored. Move it to
+  `tools/` if it stays.
+- Elo anchoring still needs ~20 games an anchor to mean anything, and on-device
+  recognition has still never run on an iPhone.
