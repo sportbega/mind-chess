@@ -2248,7 +2248,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r42 (six seconds late is still our own voice)';
+  const BUILD='v2-r43 (refusing a coin flip should mean asking)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3602,6 +3602,20 @@
         else if(/^[a-h][1-8]$/.test(t)) m=pa.cands.find(c=>c.from===t);
         if(m){ pendingAction=null; updateStatus(); execPlan(planForMove(m)); return true; }
       }
+        if(pa.type==='file'){
+        const sq=(t.match(/\b([a-h][1-8])\b/)||[])[1];
+        const file=spokenFileCode(t);
+        const want=sq||(file?file+pa.rank:null);
+        if(want&&pa.squares.indexOf(want)!==-1){
+          pendingAction=null; updateStatus();
+          // Re-planned from the square rather than a stored move, so the
+          // answer behaves exactly as if the square had been said outright —
+          // including any piece ambiguity, which is a different question and
+          // gets asked in its own turn.
+          execPlan(planFor(want));
+          return true;
+        }
+      }
       if(pa.type==='promotion'){
         let L=null;
         t.split(' ').forEach(w=>{ const x=PIECE_WORDS[w]; if(x&&x!=='p'&&x!=='k') L=x; });
@@ -3723,6 +3737,7 @@
     if(pa.type==='castle') return 'kingside or queenside?';
     if(pa.type==='square') return cap(PIECE_NAME[pa.piece])+' to where?';
     if(pa.type==='confirm') return 'did you mean '+pa.san+'? Say yes or no.';
+    if(pa.type==='file') return pa.squares.join(' or ')+'?';
     if(pa.type==='promotion') return 'promote to queen, rook, bishop, or knight?';
     if(pa.type==='piece') return 'which one?';
     return '';
@@ -3743,10 +3758,35 @@
       // If both readings are legal it's a coin flip, and silently playing the
       // wrong move is far worse than asking again — a blindfold player can't
       // see it happen. Expand only when the position makes it unambiguous.
+      //
+      // When it doesn't, route() asks: see fileDigitOptions(). Refusing was
+      // half a decision. Observed on r40 — "a3" came back as "83" and was
+      // refused four times in a row, each time with generic advice about
+      // spelling it out, while the app knew perfectly well that the only two
+      // readings were a3 and h3 and could simply have said so.
       if(reachable.length!==1) continue;
       extra.push(t.replace(/\b8([1-8])\b/g,reachable[0]));
     }
     return extra.length ? list.concat(extra.filter(x=>list.indexOf(x)===-1)) : list;
+  }
+
+  // The other half of expandAlternatives(): the digit-for-a-file mishearing
+  // where BOTH readings are legal, so it cannot be resolved and must be asked.
+  // Returns the two squares, or null.
+  function fileDigitOptions(list){
+    const dests=new Set(game.moves({verbose:true}).map(m=>m.to));
+    for(const t of list){
+      const m=String(t||'').match(/\b8([1-8])\b/);
+      if(!m) continue;
+      const opts=['a'+m[1],'h'+m[1]].filter(sq=>dests.has(sq));
+      if(opts.length===2) return {squares:opts,rank:m[1]};
+    }
+    return null;
+  }
+  function askDestinationFile(opt){
+    pendingAction={type:'file',squares:opt.squares,rank:opt.rank};
+    warn('Did you mean '+opt.squares.join(' or ')+'?');
+    updateStatus();
   }
 
   function route(alternatives){
@@ -3791,6 +3831,17 @@
         if(onlineState.spectating){ warn('You’re spectating — moves are disabled.'); return; }
         if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return; }
         if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return; }
+      }
+    }
+    // A rejection that the app could have turned into a question. Checked
+    // after the turn/game-over guards above, so it never asks on a turn the
+    // player cannot move in.
+    if(best.type==='none'){
+      const amb=fileDigitOptions(list);
+      if(amb){
+        askDestinationFile(amb);
+        if(!speaking) setMicState(listening?'listening':(wantLoop&&handsFree?'restarting':'idle'),'asked which file');
+        return;
       }
     }
     execPlan(best);
