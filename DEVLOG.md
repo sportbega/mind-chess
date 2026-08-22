@@ -1995,3 +1995,68 @@ was true every single time it was spoken. A message that is true, and useless,
 and repeats, is describing a state the app has no way out of — and the instinct
 to fix the message is the wrong one twice over. Both times the fix was upstream
 of the sentence.
+
+## 2026-08-22 — session close: where 2.1 stands
+
+Ten sittings (Day 4.0–4.9), builds r20 through r29, all on the preview. **`/`
+was never touched and still serves 2.0 (`v2-r19`).** 2.1 is finished but not
+released, and the only thing standing between them is a full game played by
+voice.
+
+What 2.1 is:
+
+| build | |
+|---|---|
+| r20 | Test voice, Report a problem, diagnostics recorded unconditionally, coach at `hints` |
+| r21 | every rung on Stockfish; the reply stops cutting off your own move narration and renders during the wait |
+| r22 | the narration deadline became self-healing — one stall, not one per move |
+| r23 | Casual local and default, so a first visit downloads nothing |
+| r24 | tips |
+| r25 | puzzles |
+| r26 | release-candidate marker, `tips` in the report |
+| r27 | echo window widened; the app stops interrupting and answering itself |
+| r28 | an identical warning is never spoken twice in six seconds |
+| r29 | the game could deadlock with nobody to move |
+
+Six instruments now, all generated from `index.html` so none can drift:
+`phon-collisions`, `voice-harness` (`--fake-kokoro`, `--fast`, `--no-gpu`),
+`stt-bench`, `level-ladder` (`--elo` anchoring), `make-puzzles` (`--audit`),
+`echo-threshold`.
+
+**The thing worth carrying into the next session is where the bugs came from.**
+Everything I could verify, I verified: six instruments, a 219-line game through
+`route()`, fool's mate, every board answer, the coach, puzzles solved end to
+end, 375px layout, storage namespacing, the publish file list. All of it
+passed, and **all three of the defects that actually mattered were found by
+Adni playing a game out loud**:
+
+- the computer's reply cutting off your own move narration mid-word — present
+  in *every* build of the beta, including the game played to mate on Day 3.4;
+- the app hearing its own voice, interrupting itself, and then routing its own
+  words as input;
+- and a deadlock where a Black-to-play puzzle left you seated as Black in the
+  next computer game, so nobody was on move and every spoken move was answered
+  "The computer is thinking." forever.
+
+None of the three was reachable from this side: the harness has no microphone
+and no speaker, and the one instrument that simulates the voice loop turned out
+to have rotted (`fake-recognizer.js` cannot complete a narration once the mic
+is open — confirmed pre-existing by reproducing it on r26). **A verification
+game is not a formality at the end of the checklist. It is the only test that
+has ever found the serious bugs in this project**, and that is now true of
+Day 3.14, Day 4.7, Day 4.8 and Day 4.9.
+
+Second thing worth carrying: **"The computer is thinking." has now been the
+visible symptom of two entirely unrelated bugs.** It was true every time it was
+spoken. A message that is true, useless and repeating is describing a state the
+app cannot get out of — and both times the fix was upstream of the sentence.
+
+Open, and deliberately not done:
+
+- **2.1 is not released.** `./publish.sh release`, then tag `v2.1`.
+- `tools/fake-recognizer.js` needs a pass — its speechSynthesis stand-in never
+  ends a narration while the mic is open, which made this session's end-to-end
+  checks much harder than they should have been. Day 3.12's lesson, again.
+- Elo anchoring exists but its answer was "don't ship a number"; redoing it
+  properly needs ~20 games an anchor at a realistic time control.
+- On-device recognition has still never run on an iPhone.

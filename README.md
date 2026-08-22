@@ -27,7 +27,9 @@ Then open http://localhost:8000
 
 ## Status
 
-**2.0 is the current release — the official public beta.** The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
+**2.0 (`v2-r19`) is the current release — the official public beta.** **2.1 is built and sitting on the preview at `/v2/` (`v2-r29`), not released.** It is a large step on from 2.0 and includes fixes to bugs that affected every move of every game; releasing it needs a full game played by voice first, since three real defects this cycle were found that way and by no other means. See the end of [DEVLOG.md](DEVLOG.md) for what 2.1 contains.
+
+ The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
 
 What 2.0 added on top of v1.0:
 
@@ -69,9 +71,9 @@ Both versions stay online, permanently:
 
 | | URL | What it is |
 |---|---|---|
-| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.0.** |
+| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.0** (`v2-r19`). |
 | **v1.0 (frozen)** | https://sportbega.github.io/mind-chess/v1/ | A permanent, byte-identical copy of the `v1.0` tag. Never changes. |
-| **Preview** | https://sportbega.github.io/mind-chess/v2/ | The `v2` branch, refreshed every session. May run ahead of the release. |
+| **Preview** | https://sportbega.github.io/mind-chess/v2/ | The `v2` branch, refreshed every session. **Currently 2.1 (`v2-r29`), well ahead of the release.** |
 
 `v1/` is a frozen snapshot kept for reference and comparison — extracted directly from the `v1.0` git tag and verified byte-for-byte. Don't edit it. If it ever needs to change, re-extract it from the tag.
 
