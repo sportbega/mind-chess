@@ -2134,7 +2134,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r34 (only the player knows what the player said)';
+  const BUILD='v2-r35 (the timeline can finally see the microphone)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4060,7 +4060,12 @@
       // In hands-free mode Chrome ends the session with `no-speech` after any
       // quiet stretch. That is normal operation between moves, not a fault —
       // reporting it would fill the mic line with noise every few seconds.
-      if(e.error==='no-speech'&&wantLoop&&handsFree){ note(''); return; }
+      // Quiet stretches end a session constantly; saying so in the mic line
+      // would fill it with noise every few seconds, which is why this returns
+      // early. It used to skip micEvent() on the way out too — so the single
+      // most common thing that happens to the microphone left no trace in the
+      // diagnostics at all. The UI stays quiet; the timeline does not.
+      if(e.error==='no-speech'&&wantLoop&&handsFree){ micEvent('session','no-speech'); note(''); return; }
       micEvent('error',e.error);
       // A network blip is not a broken microphone. Counting it toward the
       // give-up threshold meant a few seconds of bad wifi could end listening
@@ -4083,6 +4088,11 @@
       if(e.error==='not-allowed'||e.error==='service-not-allowed') wantLoop=false;
     };
     recognition.onend=()=>{
+      if(sessionStartedAt){
+        micEvent('session','closed after '+Math.round((Date.now()-sessionStartedAt)/100)/10+'s'
+          +(speaking?' (while we were speaking)':''));
+        micGapAt=Date.now();
+      }
       setListening(false);
       if(micNote.textContent==='Listening\u2026'||micNote.textContent==='Hearing you\u2026') note('');
       // The session we just lost was aborted by beginSpeaking(). endSpeaking()
@@ -4098,6 +4108,7 @@
   // (revoked permission, no input device), and retrying at full speed would
   // spin forever, so back off and then stop visibly rather than silently.
   let sessionStartedAt=0, shortSessions=0, lastErrorWasNetwork=false;
+  let micGapAt=0;                     // when the mic last went deaf, for measuring the gap
   function scheduleRestart(){
     if(Date.now()-sessionStartedAt<1200) shortSessions++; else shortSessions=0;
     if(shortSessions>=5){
@@ -4153,6 +4164,12 @@
       // backoff attached to the problem instead of to the session count.
       lastErrorWasNetwork=false;
       setListening(true);
+      // When the microphone is actually open is the one thing the timeline
+      // could never answer, and it is the first question whenever someone
+      // says "it didn't hear me". A gap between a close and the next open is
+      // dead air: anything said in it is gone, and nothing else records that.
+      micEvent('session','opened'+(micGapAt?'  ('+(Date.now()-micGapAt)+'ms deaf)':''));
+      micGapAt=0;
     }
     catch(err){ /* already started — ignore */ }
   }
@@ -4971,9 +4988,14 @@
     if(!micLog.length) return '';
     const t0=micLog[0].t;
     const count=k=>micLog.filter(m=>m.kind===k).length;
-    const sessions=micLog.filter(m=>m.kind==='state'&&/→ listening/.test(m.detail)).length;
+    // Count sessions the recogniser actually opened. This used to count state
+    // transitions INTO `listening`, which is mostly narration endings — so a
+    // game with no session churn at all still reported "8 sessions", and the
+    // one number that looked like it described the microphone described the
+    // narration instead.
+    const sessions=micLog.filter(m=>m.kind==='session'&&/opened/.test(m.detail)).length;
     const head='\n--- mic timeline · state='+micState
-      +' · '+sessions+' sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
+      +' · '+sessions+' mic sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
       +' · '+count('restart')+' restarts · '+count('watchdog')+' watchdog saves · '+count('error')+' errors'
       +' · span '+Math.round((micLog[micLog.length-1].t-t0)/1000)+'s ---';
     return head+'\n'+micLog.slice(-80).map(m=>
