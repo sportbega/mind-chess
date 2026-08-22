@@ -1942,3 +1942,56 @@ This is the same family as guardrail 4. That rule says never *speak* a phrase
 that suggests something to say back; the general form is that anything the app
 says can come back through the microphone, so no spoken message may be capable
 of causing itself.
+
+## 2026-08-22 — Day 4.9: the game could deadlock with nobody to move (r29)
+
+Third report, on a fresh r28, and this one is not the echo loop at all. The
+message is the same — "it is always saying the computer is thinking" — and the
+cause is completely different, which is worth stating plainly: **that message
+repeating has now meant two unrelated bugs, and it is a symptom of both.**
+
+The report contains the whole diagnosis if you read three lines together:
+
+```
+settings:  seat=black            <- the player is Black
+position:  ... w KQkq - 0 1      <- White to move
+pgn:       (no moves)            <- nothing has happened in 54 seconds
+```
+
+Black is on move nowhere. White is the computer. And the computer never moves.
+
+**`startPuzzle()` sets `humanColor = game.turn()`,** because a puzzle can be
+either side to play — half of ours are Black to play. Going back to a game
+against the computer inherited that seat: `startNewGame()` never reset it,
+while still announcing "You're White against the computer". So the game opened
+with the player as Black and White to move.
+
+**And the computer's move is scheduled only from inside `applyMove()`.** That
+is fine for every game that starts on your turn and silently fatal for one that
+does not: there is no other path that makes the computer move, so both sides
+wait. Every move the player then speaks is genuinely out of turn, and the app
+correctly, uselessly, forever answers "The computer is thinking."
+
+Reproduced on r28 by playing to a Black-to-play puzzle and switching back to
+the computer: `No moves yet.` and the message, exactly as reported. The same
+sequence on r29 plays `1.e4 e5`.
+
+Three fixes, because the seat and the deadlock are separate faults:
+
+- `startNewGame()` resets `humanColor` to White for non-online modes. That is
+  the correctness fix — a new game against the computer is one where you are
+  White, which is what the app was already saying out loud.
+- `loadState()` repairs a restored Black seat in a fresh computer game, so
+  anyone already stuck heals by reloading rather than staying stuck.
+- **`ensureComputerToMove()`** runs after any game start or restore: if it is
+  the computer's move, make sure that move happens. This is the structural one
+  — it means the deadlock cannot exist regardless of how the seat got set. It
+  also fixed something nobody had reported: reloading the page while the
+  computer was thinking left the game stopped in the same way, and now the
+  move resumes.
+
+**The lesson is about the message, not the seat.** "The computer is thinking."
+was true every single time it was spoken. A message that is true, and useless,
+and repeats, is describing a state the app has no way out of — and the instinct
+to fix the message is the wrong one twice over. Both times the fix was upstream
+of the sentence.
