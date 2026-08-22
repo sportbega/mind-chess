@@ -3356,3 +3356,139 @@ pipes.
 Replay confirms r40 scores all 23 recorded utterances exactly as r39 did.
 
 r40 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.4: his queen was on c7 the whole time (r41)
+
+Fourth game, on r40, and it was not clean — so 2.2 does not ship yet.
+
+> *"it said last you are queen down and it was wrong. plus whole other stuff
+> that was recorded"*
+
+### The tip named a piece he still owned
+
+At the moment it fired he had: a rook, a knight, a bishop, eight pawns — **and
+his queen, on c7, where it had been since move 11.** Black had two rooks, two
+knights, two bishops, six pawns and a queen.
+
+```
+white  9 + 5 + 3 + 3 + 8  = 28
+black  9 + 10 + 6 + 6 + 6 = 37       diff -9
+```
+
+`materialBucket(-9)` returns 9, `BUCKET_WORD[9]` is `'a queen'`, and the app
+told a **blindfolded** player he had lost the one piece he had not lost. He was
+down a rook, a bishop and a knight, and up two pawns — nine points, no queen
+anywhere in it.
+
+The roster is the exact thing a blindfold player carries in their head. This
+corrupted it, and unlike a sighted player he could not glance down and check.
+Worse than saying nothing.
+
+**A point total collapses a roster; the roster is what the tip exists to
+restore.** So the bucket still decides *whether* to speak — it was always a
+"something changed by about this much" trigger and it is good at that — and the
+actual difference in pieces now decides the words:
+
+```js
+for(const t of ['q','r','b','n','p']){
+  const d=pieceSquares(me,t).length-pieceSquares(foe,t).length;
+  if(d<0) down.push(pieceCountPhrase(t,-d));
+  else if(d>0) up.push(pieceCountPhrase(t,d));
+}
+```
+
+Replaying his game move for move through the harness, the sentence that said
+"You're a queen down" now reads:
+
+```
+White plays pawn d3 to d4. Black is up a rook, a bishop and a knight for two pawns.
+```
+
+And the seat wording, verified in a separate game against the engine, where r40
+said "You're a pawn down" for a **two**-pawn deficit:
+
+```
+Black plays knight f6 to e4. Captures the pawn. You’re down two pawns.
+```
+
+The sentence leads with whichever side of the ledger the subject is on — "up a
+rook for two pawns", never "down two pawns for a rook", which reads as losing.
+
+### "plus whole other stuff": my instrument buried itself again
+
+```
+71 heard · 45 lost · 44 dropped
+```
+
+Forty-five `lost` lines, and here is what they were:
+
+```
++335.0s  lost  "captures" never became a final result
++336.7s  lost  "black" never became a final result
++337.0s  lost  "castles king size" never became a final result
++343.8s  lost  "isn't legal right" never became a final result
+```
+
+Every one the app's own narration, arriving as an interim that never finalised,
+in a timeline that prints 80 entries. **The one line that mattered was in there
+too** — `+391.4s lost "d"` and `"before"`, him saying d4 — and you would never
+find it.
+
+This is the identical fault I fixed in `drop` one build ago. **I fixed the half
+I had been shown and left its twin untouched**, three lines away, and the very
+next game filled the log with it. `lost` now takes the same filter: count every
+one, print only what is not recognisably our own voice.
+
+### What the game found that is not fixed
+
+⚠️ **A cut narration comes back six seconds later and gets played.**
+
+```
++334.8s  barge-in  voice: "captures the p"  cut: "Black castles kingside: king e8 to g8, rook "
++335.0s  lost  "captures" …            (22 more revisions)
++341.0s  routing "black castles King side King"   → "Castling isn’t legal right now."
+```
+
+The app cut its own sentence, then Chrome spent **six seconds** revising that
+same audio before finalising it — long past `ECHO_TAIL_MS` — so the trailing
+echo test let it through and the app answered its own castling announcement.
+
+`tools/echo-timing.js` now says so out loud, where two days ago it reported a
+clean range:
+
+```
+  2000ms     4/5             32/32          <== shipped
+  No window separates them. Timing alone is not the answer here.
+```
+
+That is the bench doing its job: new data, and the old answer stops being true.
+A five-word transcript scoring 100% ours is not something a player says, so the
+fix probably lives in overlap rather than time — but it touches the
+safety-critical path and both benches can now measure it, so it gets its own
+build.
+
+⚠️ **`"a3"` came back as `"83"` four times in a row and was refused each time.**
+`expandAlternatives()` handles the `8X` shape by trying `a3` and `h3` and
+expanding only when exactly one is legal. Both were legal, so it refused —
+correctly, by its own rule that a coin flip is worse than a question. But it
+then said nothing about the coin flip. **Refusing should mean asking**, and the
+machinery for that (`pendingAction`) already exists.
+
+⚠️ **Five of sixteen moves in one game had two or more EXACT readings.**
+
+```
+#2  "C3"  → c3 9.5* | Nc3 9.2*   margin 0.3
+#9  "F3"  → f3 9.5* | Qf3 9.2* | Nf3 9.2*   margin 0.3
+#11 "H3"  → Nh3 9.2* | Rh3 9.2*   margin 0
+#12 "F2"  → Nf2 9.2* | Kf2 9.2*   margin 0
+#13 "D3"  → d3 9.5* | Nd3 9.2* | Bd3 9.2*   margin 0.3
+```
+
+A third of his moves decided by a tiebreak, and **#11 and #12 are margin zero** —
+two readings that are exactly, arithmetically equal, resolved by array order.
+Day 6.0 found the 0.3 case; this is the same bug with the pawn removed from it.
+All five need `MEANT` labels before anything is done about it.
+
+Replay: r41 scores all 45 recorded utterances exactly as r40 did.
+
+r41 is on the preview only. `/` still serves r31, and still has the queen bug.

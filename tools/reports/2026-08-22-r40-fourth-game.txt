@@ -1,0 +1,302 @@
+=== Mind Chess problem report ===
+build: v2-r40 (a tip that waits three plies must not say "that")
+when:  2026-08-22T19:48:21.054Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=system  ·  hearing=system  ·  voice=Google US English  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: rnb3k1/1pq1pp1p/p5pb/2Pr4/3P1P1P/P1P5/6P1/RN1QKB1n w Q - 0 17
+  pgn: 1. c3 g6 2. e3 a6 3. a3 Nf6 4. f3 Bg7 5. h4 c5 6. Nh3 d5 7. Nf2 Nh5 8. d3 Ng3 9. Ng4 Bxg4 10. e4 Bc8 11. b4 Qc7 12. exd5 Nxh1 13. bxc5 O-O 14. Bh6 Bxh6 15. f4 Rd8 16. d4 Rxd5
+
+--- last said ---
+  Board  Black castles kingside: king e8 to g8, rook h8 to f8.
+  You    black castles King side King
+           heard: also heard: black castles kingside King / black castles king-side King
+  System Castling isn’t legal right now.
+  You    H6
+           heard: also heard: 6 / six
+  Board  White plays bishop c1 to h6. You’re a rook down.
+  Board  Black plays bishop g7 to h6. Captures the bishop.
+  You    F4
+           heard: also heard: f / S4
+  Board  White plays pawn f3 to f4.
+  Board  Black plays rook f8 to d8.
+  You    D4
+           heard: also heard: before / B4
+  Board  White plays pawn d3 to d4. You’re a queen down.
+  Board  Black plays rook d8 to d5. Captures the pawn.
+
+--- what was heard (22) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r40 (a tip that waits three plies must not say "that")  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "reveal board"
+   heard: "Prevail board" (0.78)  |  "reveal board" (0.62)  |  "prevailboard" (0.67)  |  "Prevail bored" (0.75)  |  "previewboard" (0.59)  |  "preview board" (0.75)  |  "trivial board" (0.78)  |  "Prevail boards" (0.79)
+   normalised: "reveal board"
+   result: command  (score 6)
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "C3"
+   heard: "C3" (0.94)  |  "c-3" (0.91)  |  "c 3" (0.90)  |  "c three" (0.92)  |  "seat 3" (0.87)  |  "seat three" (0.89)  |  "seatree" (0.89)
+   normalised: "c3"
+   result: move → c3  (score 9.5)
+   ranked: c3 9.5*  |  Nc3 9.2*  |  c4 -0.05  |  a3 -0.7   margin 0.3
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#3  [voice]  chose: "E3"
+   heard: "E3" (0.90)  |  "e 3" (0.83)  |  "e33" (0.75)  |  "83" (0.83)
+   normalised: "e3"
+   result: move → e3  (score 9.5)
+   ranked: e3 9.5*  |  e4 -0.05  |  c4 -0.7  |  a3 -0.7   margin 9.55
+   turn: white  legal: 21
+   fen: rnbqkbnr/pppppp1p/6p1/8/8/2P5/PP1PPPPP/RNBQKBNR w KQkq - 0 2
+
+#4  [voice]  chose: "83"
+   heard: "83" (0.88)  |  "83" (0.68)
+   normalised: "83"
+   result: none  (score 0)   ← REJECTED
+   ranked: c4 -0.7  |  e4 -0.7  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 31
+   fen: rnbqkbnr/1ppppp1p/p5p1/8/8/2P1P3/PP1P1PPP/RNBQKBNR w KQkq - 0 3
+
+#5  [voice]  chose: "83"
+   heard: "83" (0.87)  |  "-83" (0.70)  |  "83" (0.83)  |  "883" (0.84)  |  "8-83" (0.84)  |  "8-3" (0.81)  |  "833" (0.78)  |  "88" (0.79)  |  "-833" (0.66)
+   normalised: "83"
+   result: none  (score 0)   ← REJECTED
+   ranked: c4 -0.7  |  e4 -0.7  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 31
+   fen: rnbqkbnr/1ppppp1p/p5p1/8/8/2P1P3/PP1P1PPP/RNBQKBNR w KQkq - 0 3
+
+#6  [voice]  chose: "83"
+   heard: "83" (0.92)  |  "-83" (0.78)  |  "83" (0.84)  |  "833" (0.84)  |  "883" (0.77)  |  "8 3" (0.89)  |  "8-3" (0.90)  |  "-833" (0.78)
+   normalised: "83"
+   result: none  (score 0)   ← REJECTED
+   ranked: c4 -0.7  |  e4 -0.7  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 31
+   fen: rnbqkbnr/1ppppp1p/p5p1/8/8/2P1P3/PP1P1PPP/RNBQKBNR w KQkq - 0 3
+
+#7  [voice]  chose: ".283"
+   heard: ".283" (0.85)  |  "283" (0.70)  |  ".83" (0.82)  |  "83" (0.65)  |  ".3" (0.83)
+   normalised: "283"
+   result: none  (score 0)   ← REJECTED
+   ranked: c4 -0.7  |  e4 -0.7  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 31
+   fen: rnbqkbnr/1ppppp1p/p5p1/8/8/2P1P3/PP1P1PPP/RNBQKBNR w KQkq - 0 3
+
+#8  [voice]  chose: "Pawn to A3"
+   heard: "Pawn to A3" (0.81)  |  "on to A3" (0.73)  |  "pound to A3" (0.78)  |  "Pawn to a tree" (0.71)  |  "phone to A3" (0.84)  |  "Pawn to 83" (0.76)  |  "on to a tree" (0.67)  |  "pound to a tree" (0.70)
+   normalised: "pawn a3"
+   result: move → a3  (score 10.4)
+   ranked: a3 10.4*  |  a4 1.02  |  c4 0.7  |  e4 0.7   margin 9.37
+   turn: white  legal: 31
+   fen: rnbqkbnr/1ppppp1p/p5p1/8/8/2P1P3/PP1P1PPP/RNBQKBNR w KQkq - 0 3
+
+#9  [voice]  chose: "F3"
+   heard: "F3" (0.82)  |  "F 3" (0.87)  |  "f-3" (0.87)  |  "8" (0.89)  |  "F2" (0.87)  |  "F three" (0.87)  |  "f" (0.85)
+   normalised: "f3"
+   result: move → f3  (score 9.5)
+   ranked: f3 9.5*  |  Qf3 9.2*  |  Nf3 9.2*  |  f4 -0.05   margin 0.3
+   turn: white  legal: 30
+   fen: rnbqkb1r/1ppppp1p/p4np1/8/8/P1P1P3/1P1P1PPP/RNBQKBNR w KQkq - 1 4
+
+#10  [voice]  chose: "H4"
+   heard: "H4" (0.67)  |  "4" (0.70)  |  "4" (0.62)  |  "haw" (0.60)  |  "h-4" (0.65)
+   normalised: "h4"
+   result: move → h4  (score 9.5)
+   ranked: h4 9.5*  |  e4 0.2  |  h3 -0.05  |  Qe2 -0.35   margin 9.3
+   turn: white  legal: 26
+   fen: rnbqk2r/1pppppbp/p4np1/8/8/P1P1PP2/1P1P2PP/RNBQKBNR w KQkq - 1 5
+
+#11  [voice]  chose: "H3"
+   heard: "H3" (0.81)  |  "Age 3" (0.44)  |  "age three" (0.61)  |  "H 3" (0.64)  |  "page 3" (0.80)  |  "h" (0.83)  |  "Edge 3" (0.84)  |  "page three" (0.86)  |  "H three" (0.83)
+   normalised: "h3"
+   result: move → Nh3  (score 9.2)
+   ranked: Nh3 9.2*  |  Rh3 9.2*  |  h5 -0.05  |  e4 -0.05   margin 0
+   turn: white  legal: 27
+   fen: rnbqk2r/1p1pppbp/p4np1/2p5/7P/P1P1PP2/1P1P2P1/RNBQKBNR w KQkq c6 0 6
+
+#12  [voice]  chose: "F2"
+   heard: "F2" (0.89)  |  "f-2" (0.86)  |  "f 2" (0.86)
+   normalised: "f2"
+   result: move → Nf2  (score 9.2)
+   ranked: Nf2 9.2*  |  Kf2 9.2*  |  f4 -0.05  |  Nf4 -0.35   margin 0
+   turn: white  legal: 29
+   fen: rnbqk2r/1p2ppbp/p4np1/2pp4/7P/P1P1PP1N/1P1P2P1/RNBQKB1R w KQkq d6 0 7
+
+#13  [voice]  chose: "D3"
+   heard: "D3" (0.72)  |  "B3" (0.58)  |  "3" (0.72)  |  "d3" (0.80)
+   normalised: "d3"
+   result: move → d3  (score 9.5)
+   ranked: d3 9.5*  |  Nd3 9.2*  |  Bd3 9.2*  |  d4 -0.05   margin 0.3
+   turn: white  legal: 28
+   fen: rnbqk2r/1p2ppbp/p5p1/2pp3n/7P/P1P1PP2/1P1P1NP1/RNBQKB1R w KQkq - 2 8
+
+#14  [voice]  chose: "Knight to G4"
+   heard: "night to G4" (0.79)  |  "Knight to G4" (0.83)  |  "nice to G4" (0.80)  |  "Knights to G4" (0.74)  |  "nights to G4" (0.78)  |  "night to G four" (0.82)  |  "night to G 4" (0.82)
+   normalised: "knight g4"
+   result: move → Ng4  (score 10.4)
+   ranked: Ng4 10.4*  |  Ne4 0.7  |  Nh3 0.7  |  Nd2 0.7   margin 9.7
+   turn: white  legal: 24
+   fen: rnbqk2r/1p2ppbp/p5p1/2pp4/7P/P1PPPPn1/1P3NP1/RNBQKB1R w KQkq - 1 9
+
+#15  [voice]  chose: "E4"
+   heard: "E4" (0.82)  |  "before" (0.76)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  Qe2 -0.35  |  Be2 -0.35  |  h5 -0.7   margin 9.85
+   turn: white  legal: 23
+   fen: rn1qk2r/1p2ppbp/p5p1/2pp4/6bP/P1PPPPn1/1P4P1/RNBQKB1R w KQkq - 0 10
+
+#16  [voice]  chose: "before"
+   heard: "before" (0.97)  |  "D4" (0.89)
+   normalised: "b4"
+   result: move → b4  (score 9.5)
+   ranked: b4 9.5*  |  b3 -0.05  |  Qb3 -0.35  |  e5 -0.7   margin 9.55
+   turn: white  legal: 27
+   fen: rnbqk2r/1p2ppbp/p5p1/2pp4/4P2P/P1PP1Pn1/1P4P1/RNBQKB1R w KQkq - 1 11
+
+#17  [voice]  chose: "D5"
+   heard: "D5" (0.73)  |  "the D5" (0.59)  |  "the five" (0.62)  |  "D five" (0.75)  |  "def D5" (0.83)  |  "the 5" (0.69)  |  "defive" (0.89)
+   normalised: "d5"
+   result: move → exd5  (score 9.5)
+   ranked: exd5 9.5*  |  d4 -0.05  |  Nd2 -0.35  |  Bd2 -0.35   margin 9.55
+   turn: white  legal: 28
+   fen: rnb1k2r/1pq1ppbp/p5p1/2pp4/1P2P2P/P1PP1Pn1/6P1/RNBQKB1R w KQkq - 1 12
+
+#18  [voice]  chose: "C5"
+   heard: "C5" (0.92)
+   normalised: "c5"
+   result: move → bxc5  (score 9.5)
+   ranked: bxc5 9.5*  |  c4 -0.05  |  Qc2 -0.35  |  d6 -0.7   margin 9.55
+   turn: white  legal: 26
+   fen: rnb1k2r/1pq1ppbp/p5p1/2pP4/1P5P/P1PP1P2/6P1/RNBQKB1n w Qkq - 0 13
+
+#19  [voice]  chose: "black castles King side King"
+   heard: "black castles King side King" (0.94)  |  "black castles kingside King" (0.91)  |  "black castles king-side King" (0.95)  |  "black castles King side Kingdom" (0.92)  |  "black castles King side kingf8" (0.91)  |  "black castles kingside kingf8" (0.88)  |  "black castles King side king8" (0.93)  |  "black castles King side King hfh" (0.92)
+   normalised: "black castles kingside king"
+   result: illegal  (score 1)
+   ranked: Kd2 0.36  |  Ke2 0.36  |  c6 -2.04  |  c4 -2.04   margin 0
+   turn: white  legal: 25
+   fen: rnb2rk1/1pq1ppbp/p5p1/2PP4/7P/P1PP1P2/6P1/RNBQKB1n w Q - 1 14
+
+#20  [voice]  chose: "H6"
+   heard: "6" (0.61)  |  "six" (0.72)  |  "H6" (0.74)  |  "age 6" (0.74)  |  "60" (0.88)  |  "H 6" (0.66)  |  "age six" (0.75)
+   normalised: "h6"
+   result: move → Bh6  (score 9.2)
+   ranked: Bh6 9.2*  |  h5 -0.05  |  Be3 -0.35  |  Qe2 -0.35   margin 9.25
+   turn: white  legal: 25
+   fen: rnb2rk1/1pq1ppbp/p5p1/2PP4/7P/P1PP1P2/6P1/RNBQKB1n w Q - 1 14
+
+#21  [voice]  chose: "F4"
+   heard: "F4" (0.82)  |  "f" (0.90)  |  "S4" (0.82)  |  "f for" (0.87)  |  "F-4" (0.88)  |  "f-" (0.88)  |  "at4" (0.80)  |  "F four" (0.90)
+   normalised: "f4"
+   result: move → f4  (score 9.5)
+   ranked: f4 9.5*  |  c6 -0.7  |  d6 -0.7  |  h5 -0.7   margin 10.2
+   turn: white  legal: 19
+   fen: rnb2rk1/1pq1pp1p/p5pb/2PP4/7P/P1PP1P2/6P1/RN1QKB1n w Q - 0 15
+
+#22  [voice]  chose: "D4"
+   heard: "D4" (0.63)  |  "before" (0.59)  |  "B4" (0.70)  |  "V4" (0.75)
+   normalised: "d4"
+   result: move → d4  (score 9.5)
+   ranked: d4 9.5*  |  d6 -0.05  |  Nd2 -0.35  |  Qd2 -0.35   margin 9.55
+   turn: white  legal: 23
+   fen: rnbr2k1/1pq1pp1p/p5pb/2PP4/5P1P/P1PP4/6P1/RN1QKB1n w Q - 1 16
+
+--- mic timeline · state=restarting · 2 mic sessions · 1 barge-ins · 20 echoes ignored · 2 restarts · 0 watchdog saves · 1 errors · 71 heard · 45 lost · 44 dropped · span 415s ---
+  (only the last 80 entries were kept; the head of the game rolled off)
+  +334.3s  drop  one word while speaking: "Capt"
+  +334.6s  state  speaking → listening  (narration ended)
+  +334.6s  state  listening → speaking  (narration started)
+  +334.8s  barge-in  voice: "captures the p"  cut: "Black castles kingside: king e8 to g8, rook "
+  +334.8s  state  speaking → listening  (narration ended)
+  +335.0s  lost  "captures" never became a final result (a different utterance began)
+  +335.0s  lost  "the pond" never became a final result (a different utterance began)
+  +335.0s  lost  "captures the" never became a final result (a different utterance began)
+  +336.1s  lost  "pond" never became a final result (a different utterance began)
+  +336.7s  lost  "black" never became a final result (a different utterance began)
+  +336.8s  lost  "castles" never became a final result (a different utterance began)
+  +336.8s  lost  "black" never became a final result (a different utterance began)
+  +336.9s  lost  "castles King" never became a final result (a different utterance began)
+  +336.9s  lost  "black" never became a final result (a different utterance began)
+  +337.0s  lost  "castles king size" never became a final result (a different utterance began)
+  +337.0s  lost  "black castles" never became a final result (a different utterance began)
+  +337.3s  lost  "king size" never became a final result (a different utterance began)
+  +337.3s  lost  "black castles king" never became a final result (a different utterance began)
+  +337.5s  lost  "size" never became a final result (a different utterance began)
+  +337.9s  lost  "black castles king size" never became a final result (a different utterance began)
+  +338.0s  lost  "King" never became a final result (a different utterance began)
+  +338.0s  lost  "black castles King" never became a final result (a different utterance began)
+  +338.6s  lost  "side King" never became a final result (a different utterance began)
+  +338.9s  lost  "black castles king" never became a final result (a different utterance began)
+  +339.1s  lost  "size King 8 to G8" never became a final result (a different utterance began)
+  +339.1s  lost  "black castles King" never became a final result (a different utterance began)
+  +339.7s  lost  "side King" never became a final result (a different utterance began)
+  +341.0s  state  listening → thinking  (routing "black castles King side King")
+  +341.0s  state  thinking → speaking  (narration started)
+  +342.7s  drop  one word while speaking: "is"
+  +343.0s  echo  ignored "isn't" (100% ours)
+  +343.1s  echo  ignored "isn't leg" (67% ours)
+  +343.2s  echo  ignored "isn't legal" (100% ours)
+  +343.3s  echo  ignored "isn't legal right" (100% ours)
+  +343.4s  echo  ignored "isn't legal right now" (100% ours)
+  +343.4s  echo  ignored "isn't" (100% ours)
+  +343.5s  echo  ignored "legal right now" (100% ours)
+  +343.7s  state  speaking → listening  (narration ended)
+  +343.8s  lost  "isn't legal" never became a final result (a different utterance began)
+  +343.8s  lost  "right now" never became a final result (a different utterance began)
+  +343.8s  lost  "isn't legal right" never became a final result (a different utterance began)
+  +343.9s  lost  "now" never became a final result (a different utterance began)
+  +344.2s  echo  ignored after speaking "isn't legal right now" (100% ours)
+  +346.9s  lost  "isn't legal right now" never became a final result (a different utterance began)
+  +352.4s  state  listening → thinking  (routing "H6")
+  +352.4s  tts  tip: You’re a rook down.
+  +352.4s  state  thinking → speaking  (narration started)
+  +357.1s  echo  ignored "you're" (100% ours)
+  +357.1s  echo  ignored "you're a" (100% ours)
+  +357.3s  state  speaking → listening  (narration ended)
+  +357.3s  state  listening → speaking  (narration started)
+  +362.5s  state  speaking → listening  (narration ended)
+  +370.3s  state  listening → thinking  (routing "F4")
+  +370.4s  state  thinking → speaking  (narration started)
+  +373.4s  state  speaking → listening  (narration ended)
+  +373.4s  state  listening → speaking  (narration started)
+  +375.1s  echo  ignored "black plays" (100% ours)
+  +376.3s  state  speaking → listening  (narration ended)
+  +376.8s  echo  ignored one-word echo "black" (526ms after speaking)
+  +391.4s  lost  "d" never became a final result (a different utterance began)
+  +391.4s  lost  "before" never became a final result (a different utterance began)
+  +392.0s  state  listening → thinking  (routing "D4")
+  +392.0s  tts  tip: You’re a queen down.
+  +392.0s  state  thinking → speaking  (narration started)
+  +396.2s  echo  ignored "you're" (100% ours)
+  +396.5s  echo  ignored "you're a" (100% ours)
+  +396.6s  echo  ignored "you're a queen" (100% ours)
+  +396.7s  state  speaking → listening  (narration ended)
+  +396.8s  state  listening → speaking  (narration started)
+  +401.4s  state  speaking → listening  (narration ended)
+  +404.0s  state  listening → restarting  (session closed)
+  +404.0s  error  network
+  +404.0s  session  closed after 300.5s
+  +404.0s  restart  in 2500ms (network backoff)
+  +406.5s  state  restarting → listening  (session open)
+  +406.5s  session  opened  (2503ms deaf)
+  +414.6s  state  listening → restarting  (session closed)
+  +414.6s  session  no-speech
+  +414.6s  session  closed after 8.1s
+  +414.6s  restart  in 200ms
+
+--- verified labels ---
+# Adni, 2026-08-22: "it said last you are queen down and it was wrong."
+# He never lost his queen — it was on c7 for the whole game. See DEVLOG Day 6.4.
+# Move labels not yet supplied; #2, #9, #11, #12, #13 are all bare squares that
+# two or more pieces could reach and need one.
+
+--- describe what went wrong (please type here) ---
+it said last you are queen down and it was wrong. plus whole other stuff that was recorded
