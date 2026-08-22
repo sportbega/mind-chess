@@ -2045,7 +2045,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r28 (and stops answering itself in a loop)';
+  const BUILD='v2-r29 (the game could deadlock with nobody to move)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4688,11 +4688,37 @@
     resetTips();
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
     lastComputerMove=null;
+    // Which seat you are in survives from wherever you were last, and a puzzle
+    // sets it to whichever side is to play — so a Black-to-play puzzle left
+    // humanColor='b', and the next game against the computer opened with you
+    // as Black, White to move, and this line still announcing you as White.
+    // Nothing then moved at all (see ensureComputerToMove below).
+    if(mode!=='online') humanColor='w';
     resetClock();
     setBoardHidden(true);
     transcript.innerHTML='';
     log('Board','New game. White to move.'+(mode==='computer'?' You\u2019re White against the computer.':' Board hidden — say "show board" any time.'));
     renderAll();
+    ensureComputerToMove();
+  }
+
+  // The computer's move is scheduled from applyMove(), which is fine for every
+  // game that starts on your turn and silently fatal for one that doesn't:
+  // there is no other path that makes it move, so the game simply stops with
+  // both sides waiting. Every move you then speak is genuinely out of turn, so
+  // the app answers "The computer is thinking." forever — a message that is
+  // true, useless, and the only symptom of a deadlock.
+  //
+  // Reported as "it is always saying the computer is thinking", which is
+  // exactly what it looks like from outside. So: whenever a game begins or is
+  // restored, if it is the computer's move, make sure that move happens.
+  function ensureComputerToMove(){
+    if(mode!=='computer'||gameOver) return;
+    if(game.turn()===humanColor) return;
+    const g=generation;
+    setTimeout(()=>{
+      if(g===generation&&!gameOver&&mode==='computer'&&game.turn()!==humanColor) triggerComputerMove();
+    },650);
   }
 
   // ===============================================================
@@ -4771,6 +4797,11 @@
       // let it serve the next unsolved one.
       if(mode==='puzzle'){ enterPuzzles(); return true; }
       humanColor=saved.humanColor||'w';
+      // A save written while you were a puzzle's Black side, or an online game
+      // where you took Black, restores that seat into a computer game. With no
+      // moves on the board that is the deadlock above, reached by reloading
+      // rather than by pressing New game — so repair it rather than trust it.
+      if(mode==='computer'&&!game.history().length&&humanColor!=='w') humanColor='w';
       lastMove=game.history({verbose:true}).slice(-1)[0]||null;
       gameOver=game.game_over();
       pendingAction=null;
@@ -4781,6 +4812,9 @@
       setBoardHidden(saved.boardHidden!==false);
       startClock();
       renderAll();
+      // And if the restored position is genuinely the computer's move — you
+      // reloaded while it was thinking — it has to be told to think again.
+      ensureComputerToMove();
       return true;
     }catch(e){ return false; }
   }
