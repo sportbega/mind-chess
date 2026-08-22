@@ -2284,7 +2284,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r46 (a player never starts a sentence with a colour)';
+  const BUILD='v2-r47 (a question you cannot answer is not a question)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3550,6 +3550,25 @@
   // ===============================================================
   // Pending-question resolution
   // ===============================================================
+  // "the first one" is how a person answers a two-choice question out loud,
+  // and the app understood none of it. Reported live on r46: asked "Did you
+  // mean a3 or h3?", he replied "83" (the same mishearing), then "the first
+  // one", then gave up and played a different move —
+  // "i needed to make random move because voice command didnt let me play
+  // what i wanted". The question r43 added was worth adding; it was just
+  // unanswerable.
+  //
+  // Bare "one"/"two" are deliberately NOT accepted: they collide with ranks,
+  // and every one of these questions is about squares or pieces. "first" and
+  // "second" carry the same meaning with none of the collision.
+  const ORDINAL=[/\b(first|1st)\b/,/\b(second|2nd)\b/,/\b(third|3rd)\b/];
+  function ordinalIndex(t){
+    for(let i=0;i<ORDINAL.length;i++) if(ORDINAL[i].test(t)) return i;
+    return -1;
+  }
+  // Reverse of NATO, for telling someone how to answer when the plain letter
+  // keeps coming back as a digit.
+  const NATO_WORD={a:'alpha',b:'bravo',c:'charlie',d:'delta',e:'echo',f:'foxtrot',g:'golf',h:'hotel'};
   function askDisambiguation(cands){
     pendingAction={type:'piece',cands};
     const files=[...new Set(cands.map(c=>c.from[0]))];
@@ -3636,19 +3655,23 @@
         if(file) m=pa.cands.find(c=>c.from[0]===file);
         else if(/^[1-8]$/.test(t)) m=pa.cands.find(c=>c.from[1]===t);
         else if(/^[a-h][1-8]$/.test(t)) m=pa.cands.find(c=>c.from===t);
+        else { const ord=ordinalIndex(t); if(ord>=0) m=pa.cands[ord]; }
         if(m){ pendingAction=null; updateStatus(); execPlan(planForMove(m)); return true; }
       }
         if(pa.type==='which-piece'){
         const want=spokenPiece(speechKey(raw));
-        if(want){
-          const m=pa.cands.find(c=>c.piece===want);
+        const ord=ordinalIndex(t);
+        const pick=want||(ord>=0?pa.order[ord]:null);
+        if(pick){
+          const m=pa.cands.find(c=>c.piece===pick);
           if(m){ pendingAction=null; updateStatus(); execPlan(planForMove(m)); return true; }
         }
       }
       if(pa.type==='file'){
         const sq=(t.match(/\b([a-h][1-8])\b/)||[])[1];
         const file=spokenFileCode(t);
-        const want=sq||(file?file+pa.rank:null);
+        const ord=ordinalIndex(t);
+        const want=sq||(file?file+pa.rank:null)||(ord>=0?pa.squares[ord]:null);
         if(want&&pa.squares.indexOf(want)!==-1){
           pendingAction=null; updateStatus();
           // Re-planned from the square rather than a stored move, so the
@@ -3780,8 +3803,18 @@
     if(pa.type==='castle') return 'kingside or queenside?';
     if(pa.type==='square') return cap(PIECE_NAME[pa.piece])+' to where?';
     if(pa.type==='confirm') return 'did you mean '+pa.san+'? Say yes or no.';
-    if(pa.type==='which-piece') return [...new Set(pa.cands.map(c=>PIECE_NAME[c.piece]))].join(' or ')+'?';
-    if(pa.type==='file') return pa.squares.join(' or ')+'?';
+    if(pa.type==='which-piece'){
+      const names=[...new Set(pa.cands.map(c=>PIECE_NAME[c.piece]))];
+      return pa.tries?'say '+names.join(' or ')+', or first or second.':names.join(' or ')+'?';
+    }
+    if(pa.type==='file'){
+      // Once the plain answer has failed, stop repeating the question and say
+      // how to answer it. He was heard as "83" twice running; "a3" was never
+      // going to survive recognition, and "alpha" always does.
+      if(pa.tries) return 'say '+NATO_WORD[pa.squares[0][0]]+' for '+pa.squares[0]
+        +', or '+NATO_WORD[pa.squares[1][0]]+' for '+pa.squares[1]+'.';
+      return pa.squares.join(' or ')+'?';
+    }
     if(pa.type==='promotion') return 'promote to queen, rook, bishop, or knight?';
     if(pa.type==='piece') return 'which one?';
     return '';
@@ -3866,7 +3899,7 @@
     return cands;
   }
   function askWhichPiece(cands){
-    pendingAction={type:'which-piece',cands};
+    pendingAction={type:'which-piece',cands,order:[...new Set(cands.map(c=>c.piece))]};
     const names=[...new Set(cands.map(m=>PIECE_NAME[m.piece]))];
     warn(cap(names.join(' or '))+'? Both can go there.');
     updateStatus();
@@ -3896,6 +3929,7 @@
       // something else.
       scored=scoreAlternatives(list);
       if(!scored.best||scored.best.score<6){
+        pendingAction.tries=(pendingAction.tries||0)+1;
         warnSilent('Didn’t catch that — '+pendingPrompt());
         say('Sorry?');       // deliberately contains no phrase worth echoing
         return;
