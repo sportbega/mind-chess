@@ -2271,3 +2271,92 @@ Worth stating for the release decision: **2.0 has no trailing-echo check at
 all** (`isTrailingEcho` appears 0 times in the `v2.0` tag). So this is a
 pre-existing condition that 2.1 partially fixes, not a regression 2.1
 introduces.
+
+## 2026-08-22 — Day 5.2: a one-word echo is still our own voice (r32)
+
+The bug left open on r31, fixed the way this project fixes things: measure
+first, and build the instrument that does the measuring.
+
+### The measurement was already in the report
+
+`tools/echo-threshold.js` answers *how much overlap means echo*. It cannot
+reach a **one-word** echo at all, because `echoOverlap()` opens with
+`if(heard.length<2) return 0;` — and 0 means "don't cut the sentence" to
+`considerBargeIn()` and "not echo" to `isTrailingEcho()`. Every reply the app
+speaks starts *"Black plays…"*, so the single likeliest one-word echo in the
+whole app is the word it says first.
+
+The naive fix — drop the length guard — swallows a legitimate one-word
+recapture, which is one of the commonest things in chess. So the separator has
+to be time, and time had to be measured.
+
+It turned out the data was already sitting in the problem report: the mic
+timeline stamps both `narration ended` and every `routing` event, so the gap
+between them is a real observation, from a real game, on real hardware, through
+the real recognizer. **`tools/echo-timing.js`** reads them back out. On the r30
+verification game:
+
+```
+  gap      words  kind    transcript
+  700ms    1      ECHO    "black"
+  2800ms   1      human   "C3"
+  5600ms   1      human   "F4"
+  9100ms   1      human   "E4"
+  ...
+  37600ms  3      human   "horse to H3"
+
+slowest echo   700ms     fastest human  2800ms     separation  2100ms
+clean range: 800–2500ms   midpoint: 1500ms
+```
+
+Shipped **1500 ms**, mid the clean range, with 800 ms of margin under the echo
+and 1300 ms over the fastest human.
+
+**The data is thin — one echo sample — and the tool says so in its own output
+rather than presenting a range as a result.** It is shipped anyway because the
+two failure directions are not symmetrical: too long costs one repeated word,
+too short costs the app playing a move in its own voice. The tool re-runs over
+`tools/reports/` and sharpens as reports accumulate.
+
+### The rule
+
+A single word cannot be scored by overlap — it is 1 or 0, nothing between. So
+`isTrailingEcho()` now branches: single words get their own, much shorter
+window, and must be *entirely* ours.
+
+```js
+if(words.length===1){
+  if(since>ECHO_SINGLE_TAIL_MS) return false;   // 1500ms
+  if(echoOverlapRaw(transcript)<1) return false;
+  ...ignore it
+}
+```
+
+`echoOverlapRaw()` is the scorer with no length guard; `echoOverlap()` is that
+plus the guard, for the barge-in caller that wants it. **The guard moved to the
+callers, because it means opposite things to them.** That is the actual lesson
+here — Day 3.14 said a guard has a direction, and this is what it costs when
+one guard serves two callers whose directions differ.
+
+### Verified, all three directions
+
+Using the repaired harness feeding the app its own narration — which is the
+thing Day 5.0 made possible and which did not exist when this bug shipped:
+
+| case | result |
+|---|---|
+| ours, inside the window | `echo  ignored one-word echo "black" (1000ms after speaking)` — never reached `route()` |
+| ours, outside the window | `+14.5s narration ended` → `+36.3s routing "pawn"` — routed, as a real recapture must be |
+| not ours, inside the window | `You banana` — routed |
+
+The header now reads `1 echoes ignored` where the whole 429-second verification
+game had read `0`.
+
+⚠️ **Harness note worth carrying:** the agent's browser pane reports
+`document.hidden === true` even when the tab is fronted, so `setTimeout` is
+throttled hard — long enough to strand the fake mid-utterance for minutes. Any
+sub-second scheduling in there is worse than a lie now. Two things that work:
+read the app's *own* timeline for what `since` it actually measured, and use
+the real wall-clock gap **between tool calls** instead of a timer inside one.
+
+r32 is on the preview only. `/` still serves r31.

@@ -1,0 +1,89 @@
+=== Mind Chess problem report ===
+build: v2-r30 (the mic label stopped lying about listening)
+when:  2026-08-22T04:06:49.173Z
+url:   https://sportbega.github.io/mind-chess/v2/
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=kokoro  ·  hearing=system  ·  voice=af_heart  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- mic timeline · state=listening · 38 sessions · 0 barge-ins · 0 echoes ignored · 0 restarts · 0 watchdog saves · 1 errors · span 429s ---
+  +256.5s  tts  kokoro chunk in 3ms
+  +259.9s  state  speaking → listening  (narration ended)
+  +269.0s  state  listening → thinking  (routing "E4")
+  +269.0s  state  thinking → speaking  (narration started)
+  +269.7s  tts  rendered ahead(1) in 709ms
+  +269.7s  tts  kokoro chunk in 596ms
+  +270.1s  tts  rendered ahead(1) in 424ms
+  +270.8s  tts  reserved the reply in 739ms
+  +272.9s  tts  kokoro chunk in 4ms
+  +275.0s  state  speaking → listening  (narration ended)
+  +275.0s  tts  reserve hit: "Black plays bishop from c8 to d7."
+  +275.0s  state  listening → speaking  (narration started)
+  +275.1s  tts  kokoro chunk in 4ms
+  +278.7s  state  speaking → listening  (narration ended)
+  +316.3s  state  listening → thinking  (routing "horse to H3")
+  +316.3s  state  thinking → speaking  (narration started)
+  +317.0s  tts  rendered ahead(1) in 662ms
+  +317.0s  tts  kokoro chunk in 525ms
+  +317.6s  tts  reserved the reply in 631ms
+  +320.2s  state  speaking → listening  (narration ended)
+  +320.2s  tts  reserve hit: "Black plays king from e8 to c8."
+  +320.2s  state  listening → speaking  (narration started)
+  +320.3s  tts  kokoro chunk in 3ms
+  +323.4s  state  speaking → listening  (narration ended)
+  +324.1s  state  listening → thinking  (routing "black")
+  +324.1s  state  thinking → listening  (nothing to narrate)
+  +345.8s  state  listening → thinking  (routing "Bishop C4")
+  +345.8s  state  thinking → speaking  (narration started)
+  +346.5s  tts  rendered ahead(1) in 731ms
+  +346.5s  tts  kokoro chunk in 616ms
+  +347.2s  tts  reserved the reply in 673ms
+  +347.9s  error  network
+  +349.9s  state  speaking → restarting  (narration ended)
+  +349.9s  tts  reserve hit: "Black plays pawn from e5 to f4."
+  +349.9s  state  restarting → speaking  (narration started)
+  +350.0s  tts  kokoro chunk in 1ms
+  +350.4s  tts  rendered ahead(2) in 469ms
+  +353.4s  tts  kokoro chunk in 5ms
+  +355.4s  state  speaking → restarting  (narration ended)
+  +355.6s  state  restarting → listening  (session open)
+  +361.0s  state  listening → thinking  (routing "F4")
+  +361.0s  state  thinking → speaking  (narration started)
+  +361.7s  tts  rendered ahead(1) in 699ms
+  +361.7s  tts  kokoro chunk in 554ms
+  +362.1s  tts  rendered ahead(1) in 416ms
+  +362.8s  tts  reserved the reply in 681ms
+  +365.1s  tts  kokoro chunk in 4ms
+  +367.1s  state  speaking → listening  (narration ended)
+  +367.1s  tts  reserve hit: "Black plays pawn from d4 to c3."
+  +367.1s  state  listening → speaking  (narration started)
+  +367.3s  tts  kokoro chunk in 2ms
+  +367.6s  tts  rendered ahead(2) in 469ms
+  +370.6s  tts  kokoro chunk in 4ms
+  +372.6s  state  speaking → listening  (narration ended)
+  +375.4s  state  listening → thinking  (routing "C3")
+  +375.4s  state  thinking → speaking  (narration started)
+  +376.0s  tts  rendered ahead(1) in 654ms
+  +376.0s  tts  kokoro chunk in 516ms
+  +376.5s  tts  rendered ahead(1) in 419ms
+  +377.1s  tts  reserved the reply in 666ms
+  +379.2s  tts  kokoro chunk in 4ms
+  +381.2s  state  speaking → listening  (narration ended)
+  +381.2s  tts  reserve hit: "Black plays knight from g8 to h6."
+  +381.2s  state  listening → speaking  (narration started)
+  +381.4s  tts  kokoro chunk in 4ms
+  +384.6s  state  speaking → listening  (narration ended)
+  +403.6s  state  listening → thinking  (routing "Castle king size")
+  +403.6s  state  thinking → speaking  (narration started)
+  +404.3s  tts  rendered ahead(1) in 690ms
+  +404.3s  tts  kokoro chunk in 577ms
+  +405.0s  tts  reserved the reply in 667ms
+  +407.4s  state  speaking → listening  (narration ended)
+  +407.5s  tts  reserve hit: "Black plays knight from h6 to g4."
+  +407.5s  state  listening → speaking  (narration started)
+  +407.6s  tts  kokoro chunk in 4ms
+  +410.9s  state  speaking → listening  (narration ended)
+  +425.6s  state  listening → thinking  (routing "this is for review to remember")
+  +425.6s  state  thinking → listening  (nothing to narrate)
+  +429.4s  state  listening → thinking  (routing "they're just wrong stuff here I'")
+  +429.4s  state  thinking → listening  (nothing to narrate)
