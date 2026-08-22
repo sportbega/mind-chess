@@ -1227,6 +1227,31 @@
   // The opposite error costs the app taking dictation from itself.
   const ECHO_WINDOW=3;                 // narrations kept
   const ECHO_TAIL_MS=2500;             // how long echo can still arrive after we stop
+  // ...and what to do when it arrives later than that anyway.
+  //
+  // Observed on r40: the app cut its own castling announcement on hearing a
+  // fragment, and Chrome then spent SIX SECONDS revising that same audio
+  // before finalising it. The transcript landed at +6.2s, past ECHO_TAIL_MS,
+  // reached route(), and the app answered itself: "Castling isn't legal right
+  // now." The player had said nothing.
+  //
+  // Widening ECHO_TAIL_MS is not available. tools/echo-timing.js reports "No
+  // window separates them" on the same reports, because genuine replies start
+  // arriving around 2.5s. So the separator cannot be time.
+  //
+  // It is length and content. A LONG phrase that is ENTIRELY ours is not
+  // something a player says, and tools/echo-threshold.js measures exactly that
+  // over both corpora: of phrases four words or longer, every echo scores
+  // 1.00 and the highest-scoring real interruption scores 0.50 ("what is on
+  // e4"). A gap that wide is chosen from, not guessed at — 0.9 sits near the
+  // top of it deliberately, because being wrong here swallows a MOVE, and a
+  // swallowed move on a hidden board is the worst failure this app has.
+  const ECHO_LATE_WORDS=4;
+  const ECHO_LATE_MIN=0.9;
+  // A cap, not a discriminator. echoRecent holds narration for a while and
+  // without a bound a player quoting the board a minute later would vanish.
+  // 15s is well over twice the only late arrival ever observed (6.2s).
+  const ECHO_LATE_MS=15000;
   // Widening the window raises the chance a *real* interruption looks like our
   // own voice, so the threshold was re-measured rather than left at the 0.5
   // that suited comparing against a single chunk. Swept over ten real echoes
@@ -1350,7 +1375,15 @@
       micEvent('echo','ignored one-word echo "'+transcript.trim().slice(0,40)+'" ('+since+'ms after speaking)');
       return true;
     }
-    if(since>ECHO_TAIL_MS) return false;
+    if(since>ECHO_TAIL_MS){
+      // Late, and judged on content instead of the clock. See ECHO_LATE_MIN.
+      if(since>ECHO_LATE_MS||words.length<ECHO_LATE_WORDS) return false;
+      const late=echoOverlap(transcript);
+      if(late<ECHO_LATE_MIN) return false;
+      micEvent('echo','ignored late echo "'+transcript.trim().slice(0,40)+'" ('
+        +Math.round(late*100)+'% ours, '+since+'ms after speaking)');
+      return true;
+    }
     const overlap=echoOverlap(transcript);
     if(overlap<ECHO_MIN) return false;
     micEvent('echo','ignored after speaking "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)');
@@ -2215,7 +2248,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r41 (his queen was on c7 the whole time)';
+  const BUILD='v2-r42 (six seconds late is still our own voice)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
