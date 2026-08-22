@@ -4077,3 +4077,60 @@ file, not an instruction. The header travels with the file; a convention would
 not.
 
 r48 is on the preview only. `/` serves 2.2.
+
+## 2026-08-23 — Day 6.12: stage 2, and four browser calls become one
+
+`tools/triage.sh` — the deterministic half of a report cycle in one command:
+
+```
+./tools/triage.sh rows.json            archive, then measure everything
+./tools/triage.sh --against v2.2       compare against a chosen build
+```
+
+Archive → corpus → what still needs a label → every instrument's verdict line →
+build the replay. It decides nothing, which is the point: every fix this week
+needed an insight that none of those numbers contain.
+
+### The replay comparison was four browser calls and is now one
+
+Comparing two builds meant: build page A, load it, stash its results, build page
+B, load it, diff. Four round-trips, eleven builds running. **Four round-trips is
+exactly the cost that stops a check being run**, and this is the check that has
+justified every fix.
+
+`--against <ref>` now builds the previous page too and wires `window.__diff()`
+to it. The old build loads in a hidden same-origin iframe and is driven through
+its own `__replay` handle — both scorers real, in their real files, neither
+reimplemented.
+
+```js
+await window.__diff()
+{ compared: 71, from: "v2-r44 …", to: "v2-r48 …", diffs: [] }
+```
+
+### And it broke on the first old build it was pointed at
+
+Against r44 it reported *"the previous build never exposed `__replay`"*. True,
+and useless. The injected hook named `exactTie` directly — a function that did
+not exist before r45 — so the ReferenceError took the entire app IIFE down with
+it, and the comparison could only observe the absence.
+
+**Older builds are the whole point of `--against`**, so the hook may not assume
+anything a past `index.html` lacked. Optional handles are resolved defensively,
+and a boot error is now captured and reported as `because:` rather than left
+for the caller to guess at.
+
+Verified both directions, which is the part that matters — an empty diff proves
+nothing unless the same tool can produce a full one:
+
+```
+vs r47 (nothing touched)  →  diffs: []
+vs r44 (r45 landed since) →  #11 "H3" Nh3 → asks n/r
+                             #12 "F2" Nf2 → asks n/k
+                             #3  "E6" Nxe6 → asks n/b   meant Bxe6
+```
+
+Exactly the three utterances r45 changed, across four builds of drift, in one
+call.
+
+Tools only — no build change, `/v2/` still serves r48 and `/` serves 2.2.

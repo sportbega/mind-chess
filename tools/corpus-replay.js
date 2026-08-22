@@ -46,8 +46,14 @@ const root = path.join(__dirname, '..');
 const argOf = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
 const indexPath = argOf('--index', path.join(root, 'index.html'));
 const outPath = argOf('--out', path.join(root, '_corpus.html'));
+// --against <git-ref> builds the comparison page too and wires window.__diff()
+// to it, so the whole two-build comparison is ONE browser call instead of
+// four. It was four for eleven builds running, and four round-trips is exactly
+// the kind of cost that stops a check from being run.
+const against = argOf('--against', null);
 const files = process.argv.slice(2)
-  .filter((a, i, all) => !a.startsWith('-') && all[i - 1] !== '--index' && all[i - 1] !== '--out');
+  .filter((a, i, all) => !a.startsWith('-')
+    && all[i - 1] !== '--index' && all[i - 1] !== '--out' && all[i - 1] !== '--against');
 const corpus = JSON.parse(execFileSync('node',
   [path.join(__dirname, 'corpus.js'), ...files, '--json'], { encoding: 'utf8', maxBuffer: 64e6 }));
 
@@ -69,8 +75,16 @@ if (page.split(CLOSE).length !== 2) {
 }
 const HOOK = `
   // ---- injected by tools/corpus-replay.js, never committed ----
+  // OLDER BUILDS ARE THE POINT of --against, so nothing here may assume a
+  // function that a past index.html did not have. Naming exactTie directly
+  // threw a ReferenceError on every build before r45, which took the whole
+  // app IIFE down with it and left no __replay at all — the comparison then
+  // reported "the previous build never exposed __replay", which is true and
+  // says nothing about why.
+  const __opt = n => { try { return eval(n); } catch (e) { return null; } };
   window.__replay = {
-    game, expandAlternatives, scoreAlternatives, speechKey, exactTie,
+    game, expandAlternatives, scoreAlternatives, speechKey,
+    exactTie: __opt('exactTie'),
     settings(s){
       // Only the settings the scorer can see. Anything else is decoration and
       // pretending otherwise would make the harness look more faithful than
@@ -88,7 +102,8 @@ const HOOK = `
       // lives in route(), not the scorer, so a replay that only scored would
       // report a move the app no longer makes. Read it here so the corpus can
       // say how much friction the rule actually adds across every game.
-      const tie = (b && b.type === 'move') ? exactTie(r.bestText) : null;
+      const tie = (b && b.type === 'move' && window.__replay.exactTie)
+        ? window.__replay.exactTie(r.bestText) : null;
       return {
         chose: r.bestText,
         type: tie ? 'asks' : (b ? b.type : 'none'),
@@ -128,8 +143,25 @@ if (page.indexOf(ANCHOR) === -1) throw new Error('Could not find the app script 
 // the shim's own closer instead of the app's. Close the app first, then wrap.
 let out = page.replace(CLOSE, HOOK + CLOSE).replace(ANCHOR, SHIM + ANCHOR);
 
+// Built first, so the page that iframes it already exists when it loads.
+let prevPage = null;
+if (against) {
+  const { execFileSync: run } = require('child_process');
+  const tmp = path.join(root, '_corpus-prev-index.html');
+  fs.writeFileSync(tmp, run('git', ['show', against + ':index.html'], { encoding: 'utf8', maxBuffer: 64e6 }));
+  run('node', [__filename, ...files, '--index', tmp, '--out', path.join(root, '_corpus-prev.html')],
+      { encoding: 'utf8', stdio: 'ignore' });
+  fs.unlinkSync(tmp);
+  prevPage = '_corpus-prev.html';
+}
+
 const DRIVER = `
 <script>
+window.__BUILD_LABEL = ${JSON.stringify(buildOf)};
+// If the app IIFE threw on the way past the hook, say so out loud rather than
+// leaving the comparison to guess from an absent handle.
+window.addEventListener('error', e => { window.__replayBootError = String(e.message || e); });
+window.__PREV_PAGE = ${JSON.stringify(prevPage)};
 window.__corpus = ${JSON.stringify(usable)};
 window.__runReplay = function(){
   const R = window.__replay;
@@ -161,6 +193,52 @@ window.__grade = function(played, meant){
   if (!moved) return 'refused';
   return played === meant ? 'hit' : 'wrong';
 };
+// The comparison, run inside one page: the previous build is loaded in a
+// hidden same-origin iframe and driven through its own __replay handle. Both
+// scorers are the real ones, in the real files, neither reimplemented.
+window.__diff = function(){
+  return new Promise(resolve => {
+    if (!window.__PREV_PAGE) { resolve({ error: 'built without --against' }); return; }
+    const S = { mode: 'computer', coach: 'hints', narration: 'verbose' };
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px';
+    f.src = window.__PREV_PAGE;
+    f.onload = () => {
+      const w = f.contentWindow;
+      let tries = 0;
+      (function wait(){
+        if (w.__replay && w.__runReplay) {
+          w.__replay.settings(S);
+          const prev = w.__runReplay();
+          window.__replay.settings(S);
+          const now = window.__runReplay();
+          const diffs = [];
+          for (let i = 0; i < now.length; i++) {
+            const a = prev[i], b = now[i];
+            if (!a || a.replayed !== b.replayed) diffs.push({
+              report: b.report, n: b.n, said: b.said,
+              was: a ? a.replayed : '(not in previous run)', now: b.replayed, meant: b.meant || null
+            });
+          }
+          const label = w.__BUILD_LABEL;
+          f.remove();
+          resolve({ compared: now.length, from: label, to: window.__BUILD_LABEL, diffs });
+          return;
+        }
+        // The pane clamps timers to about a second, so this is ~20s of grace,
+        // not two.
+        if (++tries > 20) {
+          const why = w.__replayBootError || 'no error was recorded — check the iframe console';
+          f.remove();
+          resolve({ error: 'the previous build never exposed __replay', because: why });
+          return;
+        }
+        setTimeout(wait, 100);
+      })();
+    };
+    document.body.appendChild(f);
+  });
+};
 window.__replayText = function(){
   const rows = window.__runReplay();
   const w = rows.map(r => {
@@ -191,4 +269,6 @@ console.log('wrote ' + base + ' — ' + usable.length + ' utterances from '
   + new Set(usable.map(u => u.report)).size + ' report(s)');
 console.log('  app:  ' + buildOf);
 console.log('open  http://localhost:8934/' + base);
-console.log('then  window.__replayText()');
+console.log(against
+  ? 'then  await window.__diff()      (vs ' + against + ', one call)'
+  : 'then  window.__replayText()');
