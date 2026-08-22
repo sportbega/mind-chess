@@ -2159,7 +2159,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r37 (an utterance without its position is an anecdote)';
+  const BUILD='v2-r38 (a3 was hiding inside the word beta)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -2176,6 +2176,8 @@
     if(!legal.length) return null;
     const heard=speechKey(text);
     if(!heard) return null;
+    // Padded so the destination test below can ask for a whole token. See it.
+    const heardPad=' '+heard+' ';
     const said=spokenPiece(heard);
     const scored=legal.map(m=>{
       const phrases=movePhrases(m);
@@ -2183,7 +2185,26 @@
       const exact=phrases.some(p=>speechKey(p)===heard);
       // Reward exact destination and piece words while keeping the score
       // normalized so short moves such as "e4" are not unfairly penalized.
-      const target=heard.includes(speechKey(m.to))?1.2:0;
+      //
+      // A WHOLE TOKEN, not a substring. This was `heard.includes(...)`, and in
+      // a real game on r37 that handed the destination bonus to a square
+      // nobody said: "pawn to b3" came back as "Pawn to Beta 3", which
+      // speechKey() reduces to "pawn bet[a3]" — and the letters inside "beta3"
+      // contain "a3". a3 collected the full 1.2 for a destination that exists
+      // only as spelling, scored 1.9 against b3's 1.02, and the app played a3
+      // on a blindfolded board where it could not be seen.
+      //
+      // b3 had nearly three times the phonetic accuracy (distance 0.36 against
+      // 1.0) and lost anyway, because 1.2 dwarfs the distance term. The bonus
+      // is meant to say "you named this square"; a substring cannot tell that
+      // from "these letters happened to occur".
+      //
+      // Every real spelling of a square already normalises to its own token —
+      // "a3", "A3", "alpha three", "a three", "alpha 3", "a-3", "pawn to a3",
+      // "a2 to a3", "takes a3" all reduce to a key containing the token "a3".
+      // So this is strictly narrower and loses nothing: it disagrees with the
+      // old test only where the square was never spoken.
+      const target=heardPad.indexOf(' '+speechKey(m.to)+' ')!==-1?1.2:0;
       // The piece word carries as much information as the destination. Without
       // weighting it, "knight f3" scored the pawn move f3 exactly as highly as
       // Nf3 — a dead tie that failed the margin test every single time. Naming
@@ -3550,7 +3571,14 @@
         if(said){ best.said=said; best.text=text; bestText=text; break; }
       }
     }
-    lastScoring=scorings[bestText]||lastScoring;   // report the winner, not the last tried
+    // Report the winner's ranking, or none at all. The `||lastScoring` that
+    // used to close this line was the same leak r37 fixed inside planFor(),
+    // still open by one door: when the winner is a command or an exact SAN it
+    // never reaches constrainedMove(), so scorings[bestText] is null and the
+    // fallback quietly substituted whatever the LAST alternative left behind.
+    // Caught in the first real r37 report — utterance #1 "show board" carried
+    // a ranking of b3/b4/a3/a4, which belonged to the alternative "so bored".
+    lastScoring=scorings[bestText]||null;
     return {best,bestText};
   }
 
