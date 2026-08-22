@@ -2579,3 +2579,74 @@ a two-word echo fragment where one word mismatches, scoring 1/2 = 0.5 against
 score 0, 0.5 or 1, so 0.6 has no room to work at that length — and lowering it
 is already ruled out, because `"coach off"` and `"tips off"` sit at 0.5 too.
 Not yet fixed; needs a better idea than a number.
+
+## 2026-08-22 — Day 5.6: a square cut in half is still our own voice (r36)
+
+Third sighting of the same arithmetic, so it stopped being a coincidence:
+
+```
+"Pawn to D"  cut  "White plays pawn d2 to d4."
+"night G"    cut  "Black plays knight g8 to f6."
+"King for"   cut  "White castles kingside: king from e1 to g1, "
+```
+
+Every one is a **truncated echo**: the recogniser cuts the square in half and
+returns `"d"` for our `"d4"`, `"g"` for our `"g8"`. A two-word fragment where
+one word matches scores exactly 1/2 = 0.5, which is under `ECHO_MIN` 0.6, so
+the app reads its own voice as an interruption and cuts itself off.
+
+**Two words can only ever score 0, 0.5 or 1.** No threshold has room to work at
+that length, which is what `tools/echo-threshold.js` had already said in as many
+words. r33 fixed the third case by removing "from"; the first two are squares,
+and you cannot remove those.
+
+So the fix is in **what counts as a match**, not in the number: a single letter
+`a`–`h` counts as ours when it is the first letter of a square we just said.
+
+**Deliberately not applied to single-word transcripts.** There the same rule
+would swallow a real move — the recogniser routinely offers a bare `"f"` as the
+top alternative for `"f3"` (seen in the r34 game), and if we had just said
+`"f6"` that would read as our own voice and the player's move would vanish
+inside the 2000ms window. The single-word path keeps requiring an exact match.
+Only fragments of two or more words — which is where the 0.5 problem lives —
+get the new rule.
+
+Sweep, at the untouched shipped threshold: **21/21 echoes caught, 15/15
+interruptions preserved.**
+
+### The bench had quietly started reimplementing what it measures
+
+`tools/echo-threshold.js` had its own copy of the overlap scorer. It was
+faithful when written and would have gone stale the moment r36 changed the real
+one — reporting on a version of the app that does not exist. The devlog already
+carries that lesson from `tools/level-ladder.js`, and this file had acquired the
+same fault without anyone noticing.
+
+It now **lifts `echoOverlapRaw()` out of `index.html`** and drives it with an
+`echoRecent` built the way `rememberSpoken()` builds it, so the thing under test
+is the thing that ships. It throws if the function moves.
+
+Verified end to end by firing the truncated echo from inside the app's own
+`onend`:
+
+```
++26.4s  echo  ignored after speaking "pawn to d" (100% ours)
+```
+
+`0 barge-ins`. Before r36 that line read `barge-in  voice: "Pawn to D"`.
+
+### Not fixed, and deliberately left for a fresh session
+
+`"knight to f3"` arrived as `"to F3"` and the app played the **pawn**.
+`parseRequest` discards the dangling `"to"`, so a fragment is indistinguishable
+from a deliberate bare-square pawn move — and the scoring was `f3 9.5` against
+`Nf3 9.2`, a margin of 0.3 on a 9.5 scale. The app's own rule is to refuse
+where two readings are equally legal, and 3% is not a decision.
+
+The obvious fix does not hold: the recogniser also offered a bare `"F3"` as an
+alternative of the same utterance, which is a legitimate pawn move and would win
+anyway. So this has to act on the whole utterance rather than one alternative —
+that is `route()`'s scoring loop, the most safety-critical path in the app — and
+the general form (refuse on a narrow margin) would have interrupted a correct
+`bxc3` in the r30 game. **It needs a corpus of real utterances to tune, not a
+judgement call at the end of a long session.**

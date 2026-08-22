@@ -47,12 +47,31 @@ const m = src.match(/const ECHO_MIN\s*=\s*([\d.]+)/);
 if (!m) throw new Error('Could not find ECHO_MIN in index.html.');
 const SHIPPED = parseFloat(m[1]);
 
+// echoOverlapRaw() is LIFTED from index.html, not reimplemented here.
+//
+// It used to be a copy, and the copy went stale the moment r36 taught the real
+// one to match a truncated square ("d" against our "d4"). A bench that
+// reimplements what it measures reports on a version of the app that does not
+// exist — the devlog has that lesson from tools/level-ladder.js already, and
+// this file had quietly acquired the same fault.
+const fromO = src.indexOf('  function echoOverlapRaw(');
+const toO = src.indexOf('\n  }', fromO) + 4;
+if (fromO === -1 || toO < fromO) throw new Error('Could not slice echoOverlapRaw() out of index.html.');
+const makeOverlap = new Function('speechKey', 'phon', 'echoRecent', 'speakingText',
+  src.slice(fromO, toO) + '\nreturn echoOverlapRaw;');
+
 function overlap(heard, mineTexts) {
+  // Built the way rememberSpoken() builds it, so the shape the real function
+  // reads is the shape it gets.
+  const echoRecent = mineTexts.map(t => {
+    const words = speechKey(t).split(' ').filter(Boolean);
+    const codes = {};
+    words.forEach(w => { codes[phon(w)] = 1; });
+    return { codes, words };
+  });
   const h = speechKey(heard).split(' ').filter(Boolean);
   if (h.length < 2) return 0;                 // a syllable of echo is not an interruption
-  const mine = {};
-  mineTexts.forEach(t => speechKey(t).split(' ').filter(Boolean).forEach(w => { mine[phon(w)] = 1; }));
-  return h.filter(w => mine[phon(w)]).length / h.length;
+  return makeOverlap(speechKey, phon, echoRecent, '')(heard);
 }
 
 // Real narrations the app produces, as the echo window would hold them.
@@ -76,6 +95,8 @@ const SELF   = ['The computer is thinking.'];
 // regression witness — if "from" ever creeps back, this fails again.
 const CASTLE_OLD = ['White castles kingside: king from e1 to g1, rook from h1 to f1.'];
 const CASTLE = ['White castles kingside: king e1 to g1, rook h1 to f1.'];
+const MOVES_D  = ['White plays pawn d2 to d4.'];
+const KNIGHT_G = ['Black plays knight g8 to f6.'];
 
 // Things the app said, heard back through the microphone. Must read as echo.
 const ECHOES = [
@@ -97,6 +118,11 @@ const ECHOES = [
   ['king e1 to g1', CASTLE],
   ['rook h1 to f1', CASTLE],
   ['castles kingside king e1 to g1', CASTLE],
+  // Truncated echoes: the recogniser cuts the square in half. All three were
+  // observed cutting the app off mid-sentence before r36.
+  ['pawn to d', MOVES_D],
+  ['night g', KNIGHT_G],
+  ['plays night g', KNIGHT_G],
 ];
 
 // Things a player says while the app is talking. Must read as an interruption.
