@@ -2498,3 +2498,84 @@ so no timer sits between the narration ending and the echo arriving:
 ```
 
 r34 is on the preview branch only. `/` still serves r31.
+
+## 2026-08-22 — Day 5.5: the timeline could not see the microphone (r35)
+
+The r34 game. **The echo fixes work**: `4 echoes ignored`, where every previous
+game reported `0`.
+
+```
++15.0s  echo  ignored one-word echo "black" (639ms after speaking)
++79.2s  echo  ignored "plays night" (100% ours)
++79.4s  echo  ignored "black plays" (100% ours)
+```
+
+Adni's complaint was different, and better: *"it took too long too many attempts
+to recognize pawn to f3"*. The timeline shows a **37-second hole** — nothing
+routed between +28.5s and +66.1s. Not a rejection, not an echo, nothing. He was
+talking and the app recorded no evidence either way.
+
+### The one number that looked like an answer was measuring something else
+
+```js
+const sessions = micLog.filter(m => m.kind==='state' && /→ listening/.test(m.detail)).length;
+```
+
+**"8 sessions" was counting state transitions into `listening`** — which is
+mostly narration endings. It never had anything to do with the microphone. A
+game with no session churn at all would still report eight.
+
+And the way a session normally ends was invisible too:
+
+```js
+if(e.error==='no-speech'&&wantLoop&&handsFree){ note(''); return; }
+```
+
+The comment explains that reporting `no-speech` would fill the mic line with
+noise every few seconds. True, and the right call **for the UI note** — but the
+`return` took `micEvent()` with it, so the single most common thing that
+happens to the microphone left no trace in the diagnostics. **Same shape as the
+echo guard two days ago: one early return serving two consumers whose needs
+differ, and the quiet one loses.**
+
+So the honest answer to "why did it take so many attempts" was: *I cannot tell
+you, and neither can the report.*
+
+### What r35 adds — instrumentation only, no behaviour change
+
+- `session opened` / `session closed after Ns`, and the `no-speech` close now
+  logs to the timeline while staying out of the UI note.
+- **`micGapAt` measures the dead air**: how long the microphone was actually
+  deaf between a close and the next open. Anything said in that gap is gone,
+  and nothing else records it.
+- The header now says **`mic sessions`** and counts real ones.
+
+First run in the harness:
+
+```
++26.9s  session  no-speech
++26.9s  session  closed after 8s
++26.9s  restart  in 200ms
++27.9s  session  opened  (1000ms deaf)
+```
+
+⚠️ **That 1000ms is the harness lying, not the app** — the pane clamps timers,
+so a 200 ms restart measures as a second. The structure is what matters here;
+the real number can only come from Adni's machine.
+
+The hypothesis this is built to test: `scheduleRestart()` waits 200 ms, plus
+Chrome's own start latency, and Day 3.x already recorded that *"the gap between
+sessions captures nothing at all — so 'knight to f3' routinely arrived as 'to
+f3'"*. The r34 game is consistent with that — `#4` came back as `"f"` (0.94)
+with `"F3"` only sixth in the list, which is what a clipped opening looks like.
+**Consistent with is not evidence.** Get a report from r35 and read the gaps.
+
+### Still open
+
+`+79.5s barge-in voice: "night G" cut: "Black plays knight g8 to f6."` — the
+app cut off its own narration again, and it is the "King for" shape exactly:
+a two-word echo fragment where one word mismatches, scoring 1/2 = 0.5 against
+`ECHO_MIN` 0.6. `"g"` does not match our `"g8"`. Two-word fragments can only
+score 0, 0.5 or 1, so 0.6 has no room to work at that length — and lowering it
+is already ruled out, because `"coach off"` and `"tips off"` sit at 0.5 too.
+Not yet fixed; needs a better idea than a number.
