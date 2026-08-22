@@ -95,6 +95,11 @@ const SELF   = ['The computer is thinking.'];
 // regression witness — if "from" ever creeps back, this fails again.
 const CASTLE_OLD = ['White castles kingside: king from e1 to g1, rook from h1 to f1.'];
 const CASTLE = ['White castles kingside: king e1 to g1, rook h1 to f1.'];
+// The one that got through. Observed on r40: the app cut its own castling
+// announcement, Chrome spent six seconds revising the audio, and the finished
+// transcript arrived at +6.2s — past ECHO_TAIL_MS — and was routed, so the app
+// answered itself with "Castling isn't legal right now."
+const CASTLE_BLACK = ['Black castles kingside: king e8 to g8, rook h8 to f8.'];
 const MOVES_D  = ['White plays pawn d2 to d4.'];
 const KNIGHT_G = ['Black plays knight g8 to f6.'];
 
@@ -123,6 +128,7 @@ const ECHOES = [
   ['pawn to d', MOVES_D],
   ['night g', KNIGHT_G],
   ['plays night g', KNIGHT_G],
+  ['black castles kingside king', CASTLE_BLACK],
 ];
 
 // Things a player says while the app is talking. Must read as an interruption.
@@ -143,6 +149,44 @@ const REAL = [
   ['coach off', TIPS],
   ['tips off', TIPS],
 ];
+
+// ---------------------------------------------------------------- late echo
+//
+// ECHO_TAIL_MS bounds how long after we stop speaking an echo may still
+// arrive. In a real game on r40, Chrome spent SIX SECONDS revising a single
+// utterance before finalising it, so the app's own castling announcement came
+// back at +6.2s, sailed past the window, reached route(), and was answered
+// with "Castling isn't legal right now."
+//
+// Widening the window is not available: tools/echo-timing.js reports "No
+// window separates them" on the same data, because genuine replies start
+// arriving around 2.5s.
+//
+// So the separator has to be something other than time. The claim under test:
+// a LONG phrase that is ENTIRELY ours is not something a player says. If that
+// holds, a late arrival can be judged on content alone, and the corpora below
+// are exactly the population to check it against.
+const LONG_WORDS = 4;
+const wordsOf = t => speechKey(t).split(' ').filter(Boolean).length;
+
+function lateReport() {
+  const longEcho = ECHOES.filter(([t]) => wordsOf(t) >= LONG_WORDS).map(([t, n]) => ({ t, o: overlap(t, n) }));
+  const longReal = REAL.filter(([t]) => wordsOf(t) >= LONG_WORDS).map(([t, n]) => ({ t, o: overlap(t, n) }));
+  console.log('\n--- late-echo rule: >= ' + LONG_WORDS + ' words, judged on overlap alone ---');
+  console.log('  our own voice, long phrases:   ' + longEcho.length + ' of ' + ECHOES.length);
+  console.log('  real interruptions, long:      ' + longReal.length + ' of ' + REAL.length);
+  if (!longEcho.length || !longReal.length) { console.log('  not enough long phrases to choose a threshold.'); return; }
+  const lo = Math.min(...longEcho.map(x => x.o)), hi = Math.max(...longReal.map(x => x.o));
+  console.log('  lowest scoring long ECHO:      ' + lo.toFixed(2) + '  "' + longEcho.find(x => x.o === lo).t + '"');
+  console.log('  highest scoring long INTERRUPT:' + hi.toFixed(2) + '  "' + longReal.find(x => x.o === hi).t + '"');
+  if (lo > hi) {
+    console.log('  → separated. Any threshold in (' + hi.toFixed(2) + ', ' + lo.toFixed(2) + '] works;');
+    console.log('    the shipped ECHO_LATE_MIN should sit near the top of that band, because');
+    console.log('    the cost of being wrong here is swallowing a move, not a sentence.');
+  } else {
+    console.log('  → NOT separated. Length plus overlap is not enough either; do not ship this rule.');
+  }
+}
 
 const caught = th => ECHOES.filter(([t, n]) => overlap(t, n) >= th).length;
 const kept   = th => REAL.filter(([t, n]) => overlap(t, n) < th).length;
@@ -171,6 +215,8 @@ if (swallowed.length) {
   console.log('\nReal interruptions swallowed as echo at ' + SHIPPED + ' (player cannot cut in by voice):');
   swallowed.forEach(([t, n]) => console.log('  ' + Math.round(overlap(t, n) * 100) + '%  "' + t + '"'));
 }
+
+lateReport();
 
 if (!missedEcho.length && !swallowed.length) {
   console.log('\nClean at the shipped threshold: every echo caught, every interruption preserved.');

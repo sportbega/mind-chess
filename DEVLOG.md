@@ -3492,3 +3492,83 @@ All five need `MEANT` labels before anything is done about it.
 Replay: r41 scores all 45 recorded utterances exactly as r40 did.
 
 r41 is on the preview only. `/` still serves r31, and still has the queen bug.
+
+## 2026-08-22 — Day 6.5: six seconds late is still our own voice (r42)
+
+The r40 game's second finding, and the one that made the app answer itself:
+
+```
++334.8s  barge-in  cut: "Black castles kingside: king e8 to g8, rook "
++335.0s  lost  "captures" …                (22 more revisions of the same audio)
++341.0s  routing "black castles King side King"  →  "Castling isn’t legal right now."
+```
+
+The app cut its own sentence. Chrome then spent **six seconds** revising that
+same stretch of audio before finalising it, so the transcript landed at +6.2s —
+past `ECHO_TAIL_MS` of 2500 — and `isTrailingEcho()` waved it through.
+
+### The window cannot be widened, and the tool said so before I asked
+
+```
+  2000ms     4/5             32/32          <== shipped
+  2500ms     4/5             31/32
+  No window separates them. Timing alone is not the answer here.
+```
+
+Two days ago `echo-timing.js` reported a clean range. One more game and it
+does not. **That is the bench working**: genuine replies start arriving around
+2.5s, so any window wide enough to catch a 6-second echo eats real moves.
+
+### So the separator is not time
+
+The claim: **a long phrase that is entirely ours is not something a player
+says.** `echo-threshold.js` grew a section to test exactly that against both
+corpora it already maintains — 22 phrases the app says, 15 things a player says
+while it is talking:
+
+```
+--- late-echo rule: >= 4 words, judged on overlap alone ---
+  our own voice, long phrases:   9 of 22
+  real interruptions, long:      4 of 15
+  lowest scoring long ECHO:      1.00  "black to play and mate in"
+  highest scoring long INTERRUPT:0.50  "what is on e4"
+  → separated.
+```
+
+Every long echo scores **1.00**. The highest-scoring long interruption scores
+**0.50**. That is not a threshold to be guessed at; it is a gap to choose a
+point in. `ECHO_LATE_MIN=0.9` sits near the top of it deliberately — being
+wrong in this direction swallows a **move**, and a swallowed move on a hidden
+board is the worst failure this app has.
+
+The observed phrase went into the corpus as a test case, so the next change to
+the scorer has to keep catching it.
+
+```js
+if(since>ECHO_TAIL_MS){
+  if(since>ECHO_LATE_MS||words.length<ECHO_LATE_WORDS) return false;
+  const late=echoOverlap(transcript);
+  if(late<ECHO_LATE_MIN) return false;
+  micEvent('echo','ignored late echo …');
+  return true;
+}
+```
+
+`ECHO_LATE_MS=15000` is a cap, not a discriminator — `echoRecent` holds
+narration for a while and without a bound a player quoting the board a minute
+later would vanish. Two and a half times the only late arrival ever seen.
+
+### Verified, including the ways it could be wrong
+
+```
++6.7s   echo  ignored late echo "white plays pawn e2 to e4" (100% ours, 4051ms after speaking)
++21.2s  routing "knight to c6"        ← real 3-word move, same 4s delay, played
++27.7s  routing "what can I take"     ← real 4-word question, same delay, answered
+```
+
+The echo is caught; a real move and a real question at the identical delay both
+go through untouched. `echo-threshold` 22/22 and 15/15 at the shipped
+threshold; replay confirms r42 scores all 45 recorded utterances exactly as r41
+did — this lives in the microphone path and touches no scoring.
+
+r42 is on the preview only. `/` still serves r31.
