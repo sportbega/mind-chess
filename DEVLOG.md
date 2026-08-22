@@ -2186,3 +2186,88 @@ ever ending, no `onstart` ever firing — and the failure that produces is not a
 error. It is a *plausible wrong answer*. `tools/fake-recognizer.js` is the only
 instrument in this repo not generated from `index.html`, which is exactly why
 it is the only one that can drift this way.
+
+## 2026-08-22 — Day 5.1: the verbose setting was the one that lied (r31)
+
+The verification game on r30. Sixteen moves, every one heard and played
+correctly — and the report still carried two real defects, one of them the
+worst kind this app can have.
+
+### Castling, in the mode chosen for detail, lost the rook
+
+```
+You    Castle king size
+Board  White plays king from e1 to g1.
+```
+
+`describeMove()` builds castling correctly and then throws it away. Terse
+returns `cap(base)`, Standard returns `color+' plays. '+base`, and **verbose
+never looks at `base` at all** — it constructs its own sentence from `piece`
+and `from`/`to`, which for `O-O` is a king walking two squares with no rook
+anywhere in it.
+
+So the one setting a blindfold player would choose *because it gives more
+detail* was the only one of the three that left them holding a wrong position,
+with the rook still on h1 for the rest of the game. Terse and Standard were
+both right the whole time.
+
+Verbose now names both pieces: *"White castles kingside: king from e1 to g1,
+rook from h1 to f1."* All four forms verified in two-player mode —
+`e1→g1 / h1→f1`, `e1→c1 / a1→d1`, `e8→g8 / h8→f8`, `e8→c8 / a8→d8`.
+
+Running that check turned up a third case of the same root: Standard read
+**"White plays. castles kingside."** — lowercase, because the two castling
+strings are literals while every other `base` is built from `cap(piece)`.
+Castling is simply the branch that skips the shared formatting, and it had been
+skipped three different ways.
+
+### Squares are spoken as written now, on both engines
+
+The system voice was handed `"ee 4"` for `e4`. That respelling
+(`{a:'ay',…,e:'ee',f:'eff',h:'aitch'}`) was measured *off* Kokoro on Day 3.11 —
+`"eff 6"` phonemizes to ˌiːˌɛfˈɛf, "ee-eff-eff" — but the speechSynthesis path
+kept it, and it is wrong there for the same reason. The letter names are
+already what a synthesizer says for a lone letter, so respelling only gets read
+back as spelled-out letters. **Reported by ear, which is the only instrument
+that can hear it.**
+
+`voiceizeSquares()` is now the identity function, and that retires a standing
+hazard along with it: two engines needing two spellings meant something had to
+remain the single source of truth about which engine was *actually* speaking —
+a setting could say Natural while the weights were still downloading and
+speechSynthesis was covering. One spelling, no source of truth required. It
+also makes `rememberSpoken()` exact, since what we record as said is now
+byte-identical to what was spoken, which can only help echo detection.
+
+### Still open: the app routed its own voice four times
+
+`"black"` reached `route()` four times — the first word of every verbose reply,
+*"**Black** plays…"* — while the timeline reported **`0 echoes ignored`** for
+the whole 429-second game.
+
+`echoOverlap()` opens with `if(heard.length<2) return 0;  // a syllable of echo
+is not an interruption`. That is true for `considerBargeIn()`, where 0 means
+*don't cut the sentence*. `isTrailingEcho()` reuses it, and there 0 means *not
+echo* — so it falls through to `route()`. **Same guard, opposite consequence,
+and the comment reads as "handled" in both directions.**
+
+This is Day 3.14's lesson for the second time. Last time the collision table
+said "neutralised"; this time the guard says "not an interruption". When a
+guard describes what it protects, ask which direction it protects it in.
+
+**Not fixed here, because the obvious fix breaks something common.** Dropping
+the length guard would classify a one-word echo correctly — and would also
+swallow a legitimate one-word recapture, which is exactly what happened at #19:
+the app said *"…pawn from d4 to c3. Captures the pawn."* and 2.8 s later the
+player said `"C3"` and recaptured. Recapturing on the square just announced is
+one of the most common things in chess. The separation available is timing —
+the echo arrived at 0.7 s, the real move at 2.8 s — so the answer is probably a
+much shorter trailing window for single words. **One data point is not a
+threshold**, and `tools/echo-threshold.js` exists precisely so this gets swept
+rather than guessed. The repaired harness can now feed the app its own
+narration at controlled delays, which is what generates that corpus.
+
+Worth stating for the release decision: **2.0 has no trailing-echo check at
+all** (`isTrailingEcho` appears 0 times in the `v2.0` tag). So this is a
+pre-existing condition that 2.1 partially fixes, not a regression 2.1
+introduces.

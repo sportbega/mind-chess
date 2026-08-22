@@ -1430,20 +1430,23 @@
   // on-screen transcript and, once Kokoro arrived, into its ears too.
   function spokenSquare(s){ return s; }
 
-  // The respelling that a plain speechSynthesis voice needs. Kokoro does not:
-  // measured, "f6" phonemizes to ˈɛf sˈɪks ("eff six") which is exactly right,
-  // while "eff 6" becomes ˌiːˌɛfˈɛf ("ee-eff-eff") — it reads the respelling as
-  // spelled-out letters. "ay 4" is wrong there too: ˈaɪ, "eye four". Every file
-  // a–h was checked; plain algebraic is correct for all eight.
-  const spokenFile={a:'ay',b:'bee',c:'see',d:'dee',e:'ee',f:'eff',g:'gee',h:'aitch'};
-  function voiceizeSquares(text){
-    // Keyed on what will actually speak, not on what is selected. During the
-    // window where Natural is chosen but the weights are still downloading,
-    // speakNextChunk falls back to speechSynthesis — and that voice still
-    // wants the respelling.
-    if(ttsEngine==='kokoro'&&kokoro) return text;
-    return text.replace(/\b([a-h])([1-8])\b/g,(m,f,r)=>spokenFile[f]+' '+r);
-  }
+  // Squares are spoken exactly as they are written, on both engines.
+  //
+  // There used to be a respelling here for plain speechSynthesis —
+  // {a:'ay',…,e:'ee',f:'eff',h:'aitch'} — so "e4" was handed to the voice as
+  // "ee 4". Kokoro was measured off it on Day 3.11 ("f6" phonemizes to ˈɛf
+  // sˈɪks, correct; "eff 6" becomes ˌiːˌɛfˈɛf, "ee-eff-eff"), but the system
+  // path kept it, and it is wrong there for the same reason: the letter names
+  // are what a synthesizer already says for a lone letter, so respelling only
+  // gets it read back as spelled-out letters — "ee four" at best, "ee-ee-four"
+  // at worst. Reported by ear, which is the only instrument that can hear it.
+  //
+  // This also retires a standing hazard: two engines needing two spellings
+  // meant something had to stay the single source of truth about which one was
+  // actually speaking — a setting could say Natural while the weights were
+  // still downloading and speechSynthesis was covering. One spelling, no
+  // source of truth required.
+  function voiceizeSquares(text){ return text; }
   function describeMove(m,v){
     const color=m.color==='w'?'White':'Black', piece=PIECE_NAME[m.piece];
     let base;
@@ -1457,7 +1460,26 @@
     // same setting since v1.0. Terse is now actually terse: mid-game you
     // already know whose move it was.
     if(v==='terse') return cap(base)+'.';
-    if(v==='standard') return color+' plays. '+base+'.';
+    // cap(base), not base: every other move builds base from cap(piece) and is
+    // already capitalised, but the two castling strings are literals — so this
+    // read "White plays. castles kingside." Same root as the verbose bug
+    // below; castling is simply the branch that skips the shared formatting.
+    if(v==='standard') return color+' plays. '+cap(base)+'.';
+    // Verbose builds its own sentence from the piece and the from/to squares,
+    // and for castling that describes a king walking two squares and never
+    // mentions the rook at all — "White plays king from e1 to g1." Terse and
+    // Standard both say it correctly, because they use `base`; verbose ignored
+    // it. So the one mode a blindfold player would pick FOR the extra detail
+    // was the only one that left them holding a wrong position, with the rook
+    // still on h1 for the rest of the game. Found by playing a real game.
+    //
+    // Verbose should be the most complete, so it names both pieces' squares.
+    if(m.flags.indexOf('k')!==-1||m.flags.indexOf('q')!==-1){
+      const kingside=m.flags.indexOf('k')!==-1, rank=m.color==='w'?'1':'8';
+      return color+' '+base+': king from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)
+        +', rook from '+spokenSquare((kingside?'h':'a')+rank)
+        +' to '+spokenSquare((kingside?'f':'d')+rank)+'.';
+    }
     let t=color+' plays '+piece+' from '+spokenSquare(m.from)+' to '+spokenSquare(m.to)+'.';
     if(m.captured) t+=' Captures the '+PIECE_NAME[m.captured]+'.';
     if(m.promotion) t+=' Promotes to '+PIECE_NAME[m.promotion]+'.';
@@ -2059,7 +2081,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r30 (the mic label stopped lying about listening)';
+  const BUILD='v2-r31 (castling keeps its rook, and squares are spoken as written)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
