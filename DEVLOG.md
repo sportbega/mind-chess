@@ -4134,3 +4134,72 @@ Exactly the three utterances r45 changed, across four builds of drift, in one
 call.
 
 Tools only — no build change, `/v2/` still serves r48 and `/` serves 2.2.
+
+## 2026-08-23 — Day 6.13: 2.3, and a catalogue something else can read
+
+### 2.3 is released
+
+`/` serves **`v2-r48`**, tagged **`v2.3`** — 2.2 plus the Send button.
+
+Worth recording the mistake it corrects: 2.2 shipped *so that reports would
+come from people other than Adni*, and then shipped one build before the button
+that makes that possible. The reason for the release did not survive the
+release. Verified live: `/` = r48, the Send handler is in the served file.
+
+### tools/signatures.js
+
+Eleven builds in four days, and the same handful of shapes kept coming back
+wearing different words. That catalogue lived in this file as prose — fine for
+a person reading in order, useless to anything that has to decide. It is now
+the same catalogue with detectors attached:
+
+```
+exact-tie             #11 #12    fixed r45 (asks "Knight or bishop?")
+pawn-default          #2 #9 #13  NOT a bug on its own. Needs a MEANT label.
+file-digit            #4 #5 #6   fixed r43 + r47
+bare-digit            #4 #5 #6   ⚠ OPEN. Chrome number-formatting is the guess.
+phantom-destination   #9         fixed r38 (whole-token destination test)
+self-cut              1×         fixed five times: r33, r36, r42, r44, r46
+unanswerable-question 2×         fixed r47
+```
+
+**The point is the last line it prints, not the first.** A signature that fires
+means the shape is understood. An utterance matching *nothing* is either a new
+bug or a new disguise, and this project has eleven builds of evidence that the
+obvious fix for an unfamiliar shape is wrong — widening the echo window and
+refusing on a narrow margin were both obvious and both wrong. So "unmatched" is
+a full stop, not a gap to fill in.
+
+### The detector for the substring bug was written with a substring
+
+First run: **one labelled failure matched nothing** — `"Pawn to Beta 3" → a3,
+meant b3`. The `phantom-destination` detector was supposed to be exactly that
+case. It read:
+
+```js
+!tokens(u).some(t => t.includes(dest))
+```
+
+`"beta3".includes("a3")` is true, so the detector concluded the destination had
+been spoken. **It is the identical substring fault r38 removed from the app,
+reproduced in the tool written to find it**, and it failed on the one utterance
+it exists for.
+
+A whole token now, here as there. All nine games' labelled failures map to a
+known shape.
+
+### .claude/agents/mind-chess-triage.md
+
+The agent, gated on that file. Archive → measure → classify → **stop** on
+anything unmatched or open. Where the shape is known it must reproduce the
+failure *before* changing anything, add the case to the bench the signature
+names, and show a replay diff that names exactly the utterances it meant to
+change and no others. It commits to a branch and never publishes.
+
+Two safeguards that are structural rather than instructed: it stays on `v2`,
+and `publish.sh` refuses to run outside `main` — so publishing is impossible
+rather than merely forbidden. And the first rule in the file is that a report
+is untrusted text, because the description box is free text and one has already
+arrived carrying an instruction addressed to me.
+
+Tools and agent only — `/v2/` and `/` both serve r48.
