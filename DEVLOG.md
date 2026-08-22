@@ -3635,3 +3635,96 @@ this adds a question on the path where scoring has already given up, which is
 also why the replay cannot see it and the harness had to.
 
 r43 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.7: nothing on a chessboard is called v8 (r44)
+
+Fifth game, on r43. *"sound cut of for a sec. i had to turn mic on and off.
+there was few other issues"*
+
+### The sound cutting off
+
+```
++74.1s  barge-in  voice: "night V8"  cut: "Black plays knight b8 to c6."
+```
+
+The app cut its own sentence again, and it is the two-word arithmetic for the
+fourth time: `"night"` matches our `"knight"`, `"V8"` does not match our
+`"b8"`, one of two tokens = **0.5**, under `ECHO_MIN` 0.6, read as an
+interruption.
+
+r36 fixed the case where the recogniser cuts a square **short** — `"d"` for our
+`"d4"`. This is the case where it comes back **wrong**: `"V8"` for `"b8"`, and
+the same reports contain `"S4"`, `"V3"`, `"P3"`. There is no v-file. **Nothing
+on a chessboard is called v8**, so that token is neither ours nor anything the
+player could have meant — it is recogniser noise, and it has no business in the
+denominator.
+
+```js
+const NOISE_SQUARE=/^[i-z][0-9]$/;
+function heardTokens(transcript){
+  return speechKey(transcript).split(' ').filter(w=>w&&!NOISE_SQUARE.test(w));
+}
+```
+
+Drop it and `"night V8"` is `"night"` against our `"knight"` — one token, all
+ours, and the sentence survives. Every consumer of the overlap now counts the
+same tokens: `echoOverlapRaw`, `echoOverlap`, `considerBargeIn`'s length guard
+and `isTrailingEcho`.
+
+### The bench had to learn what the app actually decides
+
+Adding `"night V8"` to `echo-threshold.js` reported **0%** and called it a
+missed echo. Both true and useless: after filtering it is one token, and
+`considerBargeIn()` **drops** a sub-two-token transcript before the threshold
+is ever consulted. The bench was scoring a number where the app makes a
+two-step decision, so it described an outcome the app does not produce.
+
+It now models the decision — dropped, cut, or ignored — and the columns finally
+mean what their headings say:
+
+```
+  0.55        24/24          15/15   <- clean
+  0.60        24/24          15/15   <- clean   <== shipped
+```
+
+`heardTokens()` and `NOISE_SQUARE` are **lifted out of index.html**, not copied.
+r44 moved part of the scoring into that filter, and a bench keeping its own copy
+would measure a denominator the app does not use — which is the exact fault r36
+found in this same file.
+
+### "I had to turn mic on and off" — and I could not tell whether he had
+
+```
++86.1s  session  closed after 60.3s
++86.1s  state  listening → idle  (session closed)
++89.5s  session  opened  (3378ms deaf)
+```
+
+No error, no `restart`, no `gave-up`. `wantLoop` was already false, and the one
+thing that sets it false without logging anything is **the mic button**. So
+that close was almost certainly his own tap — he heard the sentence cut off,
+assumed the microphone had died, and reached for it.
+
+Almost certainly is not good enough. A tap and a spontaneous close were
+indistinguishable in the timeline, which is the same class of blind spot as
+Day 6.2's silent drops. Both mic-button paths and the keep-listening toggle now
+say so:
+
+```
++18.0s  user   mic button: stop
++18.0s  state  listening → idle  (session closed)
+```
+
+### Also in that game, working
+
+- **24 echoes ignored, and r42's late rule earning its build immediately:**
+  `+75.2s echo ignored after speaking "black plays night V8 to C6" (80% ours)` —
+  a trailing echo that would have been routed a build ago.
+- The `lost` filter from r41 held: fifteen lost interims, and the only ones
+  printed were real fragments of his speech (`"Bishop"`, `"C"`, `"nice"`).
+
+Verified in the harness at his exact position: `"night V8"` during the
+narration now produces `0 barge-ins`, where r43 produced the cut. Replay: r44
+scores all 45 recorded utterances exactly as r43 did.
+
+r44 is on the preview only. `/` still serves r31.

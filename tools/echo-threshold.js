@@ -57,7 +57,19 @@ const SHIPPED = parseFloat(m[1]);
 const fromO = src.indexOf('  function echoOverlapRaw(');
 const toO = src.indexOf('\n  }', fromO) + 4;
 if (fromO === -1 || toO < fromO) throw new Error('Could not slice echoOverlapRaw() out of index.html.');
-const makeOverlap = new Function('speechKey', 'phon', 'echoRecent', 'speakingText',
+
+// heardTokens() is LIFTED too, along with the NOISE_SQUARE it reads. r44 moved
+// part of the scoring into it — the filter that drops a square come back with
+// an impossible file ("V8" for our "b8") — and a bench that kept its own copy
+// of that filter would be measuring a denominator the app does not use. Same
+// fault r36 found here; the answer is the same: take the real one.
+const fromT = src.indexOf('  const NOISE_SQUARE=');
+const toT = src.indexOf('\n  }', src.indexOf('  function heardTokens(', fromT)) + 4;
+if (fromT === -1 || toT < fromT) throw new Error('Could not slice heardTokens()/NOISE_SQUARE out of index.html.');
+const makeTokens = new Function('speechKey', src.slice(fromT, toT) + '\nreturn heardTokens;');
+const heardTokens = makeTokens(speechKey);
+
+const makeOverlap = new Function('speechKey', 'phon', 'echoRecent', 'speakingText', 'heardTokens',
   src.slice(fromO, toO) + '\nreturn echoOverlapRaw;');
 
 function overlap(heard, mineTexts) {
@@ -69,9 +81,10 @@ function overlap(heard, mineTexts) {
     words.forEach(w => { codes[phon(w)] = 1; });
     return { codes, words };
   });
-  const h = speechKey(heard).split(' ').filter(Boolean);
+  // The app's own filter, not a copy of it.
+  const h = heardTokens(heard);
   if (h.length < 2) return 0;                 // a syllable of echo is not an interruption
-  return makeOverlap(speechKey, phon, echoRecent, '')(heard);
+  return makeOverlap(speechKey, phon, echoRecent, '', heardTokens)(heard);
 }
 
 // Real narrations the app produces, as the echo window would hold them.
@@ -102,6 +115,11 @@ const CASTLE = ['White castles kingside: king e1 to g1, rook h1 to f1.'];
 const CASTLE_BLACK = ['Black castles kingside: king e8 to g8, rook h8 to f8.'];
 const MOVES_D  = ['White plays pawn d2 to d4.'];
 const KNIGHT_G = ['Black plays knight g8 to f6.'];
+// r43, live: the app cut its own sentence on "night V8". The square came back
+// with a file that does not exist, so the fragment scored 1/2 = 0.5. The r36
+// rule covers a square cut SHORT ("d" for "d4"); this is a square come back
+// WRONG, and it needs the noise token out of the denominator.
+const KNIGHT_B = ['Black plays knight b8 to c6.'];
 
 // Things the app said, heard back through the microphone. Must read as echo.
 const ECHOES = [
@@ -129,6 +147,8 @@ const ECHOES = [
   ['night g', KNIGHT_G],
   ['plays night g', KNIGHT_G],
   ['black castles kingside king', CASTLE_BLACK],
+  ['night V8', KNIGHT_B],
+  ['black plays night V8 to C6', KNIGHT_B],
 ];
 
 // Things a player says while the app is talking. Must read as an interruption.
@@ -167,7 +187,7 @@ const REAL = [
 // holds, a late arrival can be judged on content alone, and the corpora below
 // are exactly the population to check it against.
 const LONG_WORDS = 4;
-const wordsOf = t => speechKey(t).split(' ').filter(Boolean).length;
+const wordsOf = t => heardTokens(t).length;
 
 function lateReport() {
   const longEcho = ECHOES.filter(([t]) => wordsOf(t) >= LONG_WORDS).map(([t, n]) => ({ t, o: overlap(t, n) }));
@@ -188,8 +208,25 @@ function lateReport() {
   }
 }
 
-const caught = th => ECHOES.filter(([t, n]) => overlap(t, n) >= th).length;
-const kept   = th => REAL.filter(([t, n]) => overlap(t, n) < th).length;
+// What the app actually decides, not the raw number it decides with.
+//
+// considerBargeIn() has TWO steps, and r44 made the difference matter: a
+// transcript that filters down to fewer than two meaningful tokens is dropped
+// outright and never reaches the threshold at all. "night V8" is exactly that
+// — the noise token goes, "night" is left, and the sentence survives no matter
+// what ECHO_MIN is. Scoring it as raw overlap reported 0% and called it a
+// missed echo, which is the bench describing a decision the app does not make.
+//
+// Mirrored rather than lifted because the real function ends in cancelSpeech()
+// and micEvent(). It is two lines; if considerBargeIn() changes shape, change
+// this with it.
+const cuts = (th, t, n) => {
+  const o = overlap(t, n);
+  if (o === 0 && heardTokens(t).length < 2) return false;   // dropped, never an interruption
+  return o < th;
+};
+const caught = th => ECHOES.filter(([t, n]) => !cuts(th, t, n)).length;
+const kept   = th => REAL.filter(([t, n]) => cuts(th, t, n)).length;
 
 console.log('ECHO_MIN in index.html: ' + SHIPPED + '\n');
 console.log('threshold   echo caught   interruptions kept');
@@ -204,8 +241,8 @@ for (let th = 0.40; th <= 0.85001; th += 0.05) {
               (Math.abs(r - SHIPPED) < 1e-9 ? '   <== shipped' : ''));
 }
 
-const missedEcho = ECHOES.filter(([t, n]) => overlap(t, n) < SHIPPED);
-const swallowed  = REAL.filter(([t, n]) => overlap(t, n) >= SHIPPED);
+const missedEcho = ECHOES.filter(([t, n]) => cuts(SHIPPED, t, n));
+const swallowed  = REAL.filter(([t, n]) => !cuts(SHIPPED, t, n));
 
 if (missedEcho.length) {
   console.log('\nOur own voice NOT recognised as echo at ' + SHIPPED + ' (app will cut itself off, then route it):');

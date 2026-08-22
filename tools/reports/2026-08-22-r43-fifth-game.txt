@@ -1,0 +1,163 @@
+=== Mind Chess problem report ===
+build: v2-r43 (refusing a coin flip should mean asking)
+when:  2026-08-22T20:21:55.896Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=system  ·  hearing=system  ·  voice=Google US English  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: r1b1kbnr/ppqp1ppp/2n1p3/2p1P3/2B5/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 5
+  pgn: 1. e4 e6 2. e5 c5 3. Bc4 Nc6 4. Nf3 Qc7
+
+--- last said ---
+  You    E4
+           heard: also heard: e-4 / G4
+  Board  White plays pawn e2 to e4.
+  Board  Black plays pawn e7 to e6.
+  You    E5
+           heard: also heard: A5 / E55
+  Board  White plays pawn e4 to e5.
+  Board  Black plays pawn c7 to c5.
+  You    Bishop C4
+           heard: also heard: C4
+  Board  White plays bishop f1 to c4.
+  Board  Black plays knight b8 to c6.
+  You    Knight to F3
+           heard: also heard: nice to have three / nice to have 3
+  Board  White plays knight g1 to f3.
+  Board  Black plays queen d8 to c7.
+
+--- what was heard (5) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r43 (refusing a coin flip should mean asking)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "reveal board"
+   heard: "reveal board" (0.90)  |  "review board" (0.58)  |  "rebuild board" (0.90)  |  "revealboard" (0.85)  |  "Revere board" (0.91)  |  "River board" (0.80)  |  "reveal bored" (0.87)  |  "revered" (0.88)
+   normalised: "reveal board"
+   result: command  (score 6)
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "E4"
+   heard: "E4" (0.94)  |  "e-4" (0.82)  |  "G4" (0.89)  |  "ev4" (0.72)  |  "A4" (0.79)  |  "e 4" (0.91)  |  "E for" (0.91)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  e3 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#3  [voice]  chose: "E5"
+   heard: "E5" (0.71)  |  "A5" (0.78)  |  "E55" (0.71)  |  "5" (0.84)  |  "e 5" (0.76)  |  "V5" (0.79)  |  "e five" (0.80)
+   normalised: "e5"
+   result: move → e5  (score 9.5)
+   ranked: e5 9.5*  |  Qe2 -0.35  |  Ke2 -0.35  |  Be2 -0.35   margin 9.85
+   turn: white  legal: 30
+   fen: rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2
+
+#4  [voice]  chose: "Bishop C4"
+   heard: "Bishop C4" (0.79)  |  "C4" (0.78)
+   normalised: "bishop c4"
+   result: move → Bc4  (score 10.4)
+   ranked: Bc4 10.4*  |  Be2 0.7  |  Bd3 0.7  |  Bb5 0.7   margin 9.7
+   turn: white  legal: 29
+   fen: rnbqkbnr/pp1p1ppp/4p3/2p1P3/8/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 3
+
+#5  [voice]  chose: "Knight to F3"
+   heard: "nice to have three" (0.91)  |  "nice to have 3" (0.88)  |  "nice to F3" (0.86)  |  "nice to have tree" (0.93)  |  "night to have three" (0.88)  |  "night to F3" (0.81)  |  "nice to have free" (0.93)  |  "Knight to F3" (0.84)  |  "nice to have 3:00" (0.91)
+   normalised: "knight f3"
+   result: move → Nf3  (score 10.4)
+   ranked: Nf3 10.4*  |  Na3 0.7  |  Nc3 0.7  |  Ne2 0.7   margin 9.7
+   turn: white  legal: 32
+   fen: r1bqkbnr/pp1p1ppp/2n1p3/2p1P3/2B5/8/PPPP1PPP/RNBQK1NR w KQkq - 2 4
+
+--- mic timeline · state=listening · 2 mic sessions · 1 barge-ins · 24 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · 21 heard · 15 lost · 20 dropped · span 102s ---
+  +0.0s  tts  speech unlocked by first gesture
+  +25.7s  state  idle → listening  (session open)
+  +25.7s  session  opened
+  +28.8s  state  listening → thinking  (routing "reveal board")
+  +28.8s  state  thinking → listening  (nothing to narrate)
+  +33.9s  state  listening → thinking  (routing "E4")
+  +33.9s  state  thinking → speaking  (narration started)
+  +37.0s  state  speaking → listening  (narration ended)
+  +37.0s  state  listening → speaking  (narration started)
+  +40.3s  state  speaking → listening  (narration ended)
+  +41.8s  echo  ignored one-word echo "black" (1493ms after speaking)
+  +45.1s  state  listening → thinking  (routing "E5")
+  +45.1s  state  thinking → speaking  (narration started)
+  +48.1s  state  speaking → listening  (narration ended)
+  +48.1s  state  listening → speaking  (narration started)
+  +51.4s  state  speaking → listening  (narration ended)
+  +67.5s  lost  "Bishop" never became a final result (a different utterance began)
+  +67.7s  lost  "C" never became a final result (a different utterance began)
+  +67.7s  lost  "Bishop" never became a final result (a different utterance began)
+  +68.4s  state  listening → thinking  (routing "Bishop C4")
+  +68.4s  state  thinking → speaking  (narration started)
+  +70.1s  echo  ignored "white plays" (100% ours)
+  +70.4s  echo  ignored "white plays bish" (67% ours)
+  +70.4s  echo  ignored "white plays Bishop" (100% ours)
+  +70.5s  echo  ignored "plays Bishop" (100% ours)
+  +70.7s  echo  ignored "plays Bishop f" (100% ours)
+  +70.8s  echo  ignored "white plays" (100% ours)
+  +70.8s  echo  ignored "Bishop f" (100% ours)
+  +70.9s  echo  ignored "white plays" (100% ours)
+  +70.9s  echo  ignored "Bishop F1" (100% ours)
+  +71.1s  echo  ignored "white plays Bishop" (100% ours)
+  +71.1s  echo  ignored "white plays Bishop" (100% ours)
+  +71.4s  echo  ignored "white plays Bishop" (100% ours)
+  +71.4s  echo  ignored "F1 to C" (100% ours)
+  +71.5s  echo  ignored "white plays Bishop F1" (100% ours)
+  +71.6s  state  speaking → listening  (narration ended)
+  +71.6s  state  listening → speaking  (narration started)
+  +71.7s  echo  ignored "white plays Bishop F1 to" (100% ours)
+  +73.4s  echo  ignored "black plays" (100% ours)
+  +73.6s  echo  ignored "plays night" (100% ours)
+  +73.9s  echo  ignored "plays night B" (100% ours)
+  +73.9s  echo  ignored "black plays" (100% ours)
+  +73.9s  echo  ignored "night B" (100% ours)
+  +74.1s  echo  ignored "black plays" (100% ours)
+  +74.1s  barge-in  voice: "night V8"  cut: "Black plays knight b8 to c6."
+  +74.1s  state  speaking → listening  (narration ended)
+  +74.3s  lost  "V8" never became a final result (a different utterance began)
+  +74.5s  lost  "V8 to" never became a final result (a different utterance began)
+  +74.7s  lost  "V8 to C" never became a final result (a different utterance began)
+  +74.7s  lost  "black plays night V8" never became a final result (a different utterance began)
+  +74.9s  lost  "black plays night V8 to" never became a final result (a different utterance began)
+  +75.2s  echo  ignored after speaking "black plays night V8 to C6" (80% ours)
+  +86.1s  session  closed after 60.3s
+  +86.1s  state  listening → idle  (session closed)
+  +89.5s  state  idle → listening  (session open)
+  +89.5s  session  opened  (3378ms deaf)
+  +95.1s  lost  "nice" never became a final result (a different utterance began)
+  +95.2s  lost  "to have three" never became a final result (a different utterance began)
+  +95.2s  lost  "nice to" never became a final result (a different utterance began)
+  +95.7s  state  listening → thinking  (routing "Knight to F3")
+  +95.7s  state  thinking → speaking  (narration started)
+  +98.7s  state  speaking → listening  (narration ended)
+  +98.7s  state  listening → speaking  (narration started)
+  +101.9s  state  speaking → listening  (narration ended)
+  +102.5s  echo  ignored one-word echo "black" (541ms after speaking)
+
+--- verified labels ---
+# Adni, 2026-08-22: "sound cut of for a sec. i had to turn mic on and off.
+# there was few other issues". The cut is the +74.1s barge-in on "night V8" —
+# the app cutting its OWN sentence. The +86.1s close had no error, no restart
+# and no gave-up, so wantLoop was already false; the only unlogged path that
+# does that is the mic button, i.e. almost certainly his own tap. r44 logs it
+# so the next report does not have to be reasoned about.
+#
+# NOT STATED BY HIM — inferred, and flagged as such. The four below are the
+# unambiguous ones: each either names its piece outright or is a bare square
+# with a margin above 9.5 and no second reading. They are here so the corpus
+# counts its hits as well as its misses, which a corpus that only records
+# failures cannot do. Anything with a narrow margin was left unlabelled on
+# purpose — see --needs-label.
+  #2  MEANT e4
+  #3  MEANT e5
+  #4  MEANT Bc4
+  #5  MEANT Nf3
+
+--- describe what went wrong (please type here) ---
+sound cut of for a sec. i had to turn mic on and off. there was few other issues
