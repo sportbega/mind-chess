@@ -1020,7 +1020,21 @@
     if(speechWatchdog){ clearInterval(speechWatchdog); speechWatchdog=null; }
     lastMicActivity=Date.now();
     if(!(wantLoop&&handsFree)) setMicState('idle','narration ended, not looping');
-    else setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },fast?0:160);
+    else{
+      // Say the state, don't infer it from a restart that may not happen.
+      //
+      // This used to only schedule startListening() and let that repaint the
+      // label — which works precisely when the session was closed for the
+      // narration. With "Talk over it" on it deliberately is not, so
+      // startListening() returns early on `listening`, setListening() (the
+      // only other caller of setMicState('listening')) never runs, and the mic
+      // reads `speaking` while it is in fact listening. It self-healed the
+      // next time the browser closed the session, which is why it survived:
+      // Chrome closes one every few quiet seconds, so the lie was short and
+      // nobody caught it until the harness held a session open.
+      setMicState(listening?'listening':'restarting','narration ended');
+      setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },fast?0:160);
+    }
     releaseSpeechIdle();
   }
 
@@ -2045,7 +2059,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r29 (the game could deadlock with nobody to move)';
+  const BUILD='v2-r30 (the mic label stopped lying about listening)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

@@ -2143,16 +2143,41 @@ re-run clean: `phon-collisions` 15 collisions all neutralised and no command
 word colliding with a piece, `make-puzzles --audit` 200/200, `echo-threshold`
 still clean at the shipped 0.6.
 
-**What is left, and it is the app's, not the harness's:** with "Talk over it"
-on, `micState` reads `speaking` from the end of a narration until the next time
-the session closes — so the mic label lies for up to one silence timeout after
-every narration. It self-heals, it is cosmetic (input routes correctly
-throughout — measured), and "Talk over it" ships **off**, so it is nowhere near
-the default beta path. But it is real, and the honest fix is one line:
-`endSpeaking()` should *state* the mic state rather than delegate it to a
-restart that may not happen. **Not done here, deliberately** — r29 is a release
-candidate waiting on a verification game, and quietly minting r30 to fix a
-label would throw that away.
+### And then the app's half of it (r30)
+
+The harness found a real one on its way past: with "Talk over it" on,
+`micState` reads `speaking` from the end of a narration until the next time the
+session closes — so the mic label lies for up to one silence timeout, every
+narration. It self-heals, it is cosmetic (input routes correctly throughout —
+measured), and "Talk over it" ships **off**.
+
+I had left it alone on the grounds that r29 was a release candidate. Adni's
+call was to take it now, so r30 does:
+
+```js
+setMicState(listening?'listening':'restarting','narration ended');
+```
+
+**Say the state; don't infer it from a restart that may not happen.** The old
+line only scheduled `startListening()` and let that repaint, which works
+exactly when the session was closed for the narration — and with "Talk over it"
+on it deliberately is not.
+
+**Why it survived this long is the interesting part.** Chrome closes a
+recognition session every few quiet seconds, so the lie was always short and
+always fixed itself before anyone finished looking at it. It took a harness
+that could hold a session open indefinitely to make it stand still long enough
+to see. That is the same shape as the harness bug itself, pointed the other
+way: the old fake modelled a world with no session ever closing and hid a bug
+by *never* healing; the real browser hid the same bug by healing too fast.
+
+Verified on r30 with `autoEndMs=0` — narration completes with the session held
+open the whole time, zero session closes, and the mic reads `listening` where
+r29 read `speaking`. And with `bargeIn` **off**, the shipping default, three
+moves by voice with the mic settling to `listening` after each.
+
+**r30 is now the release candidate, not r29.** The verification game covers
+this build.
 
 **The lesson is the Day 3.12 one for the third time, and it now has a sharper
 edge.** A fake does not only rot by throwing on load. It rots by continuing to
