@@ -29,7 +29,7 @@ Then open http://localhost:8000
 
 **2.1 (`v2-r31`) is the current release**, tagged `v2.1` and serving at `/`. It adds puzzles, tips and one difficulty ladder, and fixes bugs that affected every move of every game — the computer's reply cutting off your own move narration, the app routing its own voice, a seat deadlock, and verbose narration describing castling as a lone king move without the rook. **Every one of those was found by playing a game out loud, and none by any other means.** See [DEVLOG.md](DEVLOG.md) and `git show v2.1` for the full list, including what is knowingly still open.
 
- The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
+The whole voice plan shipped — recognition rebuilt around a constrained matcher, always-on listening, an engine-backed assistant you can ask about the position, a natural voice, and on-device recognition — at zero running cost, which was the binding constraint throughout. See [VOICE-2.0-PLAYBOOK.md](VOICE-2.0-PLAYBOOK.md) for the plan and what measurement changed about it.
 
 What 2.0 added on top of v1.0:
 
