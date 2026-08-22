@@ -27,7 +27,9 @@ Then open http://localhost:8000
 
 ## Status
 
-**2.2 (`v2-r47`) is the current release**, tagged `v2.2` and serving at `/`. It is sixteen builds of listening — nearly all of them produced by one person playing a game out loud and sending back what went wrong.
+**2.3 (`v2-r48`) is the current release**, tagged `v2.3` and serving at `/`. It adds one thing to 2.2: the problem report has a **Send** button, so a report reaches us without being copied and pasted anywhere. It uploads exactly the text in the box — which is editable, so what you see is what you send — and nothing else. Reports are write-only: nobody, including another visitor, can read one back.
+
+2.2 (`v2-r47`) is what everything below describes, and it It is sixteen builds of listening — nearly all of them produced by one person playing a game out loud and sending back what went wrong.
 
 What 2.2 fixes that 2.1 got wrong, every one of it invisible on a hidden board:
 
@@ -83,7 +85,7 @@ Both versions stay online, permanently:
 
 | | URL | What it is |
 |---|---|---|
-| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.2** (`v2-r47`). |
+| **Current** | https://sportbega.github.io/mind-chess/ | The release. **This is 2.3** (`v2-r48`). |
 | **v1.0 (frozen)** | https://sportbega.github.io/mind-chess/v1/ | A permanent, byte-identical copy of the `v1.0` tag. Never changes. |
 | **Preview** | https://sportbega.github.io/mind-chess/v2/ | The `v2` branch, refreshed every session. Byte-identical to the release right now, and drifts ahead as soon as work resumes — **share `/`, never this.** |
 
