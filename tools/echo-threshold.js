@@ -120,6 +120,10 @@ const KNIGHT_G = ['Black plays knight g8 to f6.'];
 // rule covers a square cut SHORT ("d" for "d4"); this is a square come back
 // WRONG, and it needs the noise token out of the denominator.
 const KNIGHT_B = ['Black plays knight b8 to c6.'];
+// r45, live: "black boys" for our "Black plays" cut off the word "Check."
+// Neither a truncation nor an impossible square — two ordinary words that
+// simply differ. The colour opener is what separates it.
+const BISHOP_CHECK = ['Black plays bishop a1 to c3. Captures the knight. Check.'];
 
 // Things the app said, heard back through the microphone. Must read as echo.
 const ECHOES = [
@@ -148,6 +152,8 @@ const ECHOES = [
   ['plays night g', KNIGHT_G],
   ['black castles kingside king', CASTLE_BLACK],
   ['night V8', KNIGHT_B],
+  ['black boys', BISHOP_CHECK],
+  ['black plays the night', BISHOP_CHECK],
   ['black plays night V8 to C6', KNIGHT_B],
 ];
 

@@ -1318,6 +1318,27 @@
     const allowPrefix=heard.length>1;
     const isTruncatedSquare=w=>allowPrefix&&/^[a-h]$/.test(w)
       &&mineWords.some(m=>m.length>1&&m[0]===w&&/^[a-h][1-8]$/.test(m));
+    // FIFTH sighting of the two-word 0.5 arithmetic, and the first that no
+    // amount of widening "what counts as a match" can reach: "black boys" came
+    // back for our "Black plays", and cut off the word "Check."
+    //
+    // "boys" and "plays" are both ordinary English words. This is not a
+    // truncation (r36) and not an impossible square (r44) — phon() is simply
+    // right that "bs" and "pls" differ. One match of two = 0.5, under
+    // ECHO_MIN, and the app read its own sentence as an interruption.
+    //
+    // What is constant across all five is the OPENING. Every reply the app
+    // speaks begins with a colour — "Black plays…", "White castles…",
+    // "White: king e1…" — and a player never begins an utterance that way.
+    // tools/echo-timing.js has labelled echoes by exactly this rule since Day
+    // 5.5 and has not been wrong once; the app itself had never used it. Of
+    // the fifteen real interruptions in tools/echo-threshold.js, not one opens
+    // with a colour, and that is measured on every run rather than asserted
+    // here.
+    //
+    // Single words are excluded, as everywhere else in this function: a bare
+    // "black" is already handled by the one-word tail rule, on time.
+    if(heard.length>1&&/^(black|white)$/.test(heard[0])&&mine[phon(heard[0])]) return 1;
     return heard.filter(w=>mine[phon(w)]||isTruncatedSquare(w)).length/heard.length;
   }
   function echoOverlap(transcript){
@@ -2263,7 +2284,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r45 (a tie is the scorer saying it has no opinion)';
+  const BUILD='v2-r46 (a player never starts a sentence with a colour)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

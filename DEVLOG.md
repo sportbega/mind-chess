@@ -3819,3 +3819,91 @@ Both `wrong` entries are now fixed builds: `"Pawn to Beta 3"` → a3 (r38) and
 fix behind it.
 
 r45 is on the preview only. `/` still serves r31.
+
+## 2026-08-22 — Day 6.9: a player never starts a sentence with a colour (r46)
+
+Seventh game. r45's tie rule was not exercised, and the wrong-piece bug did not
+recur. What did:
+
+> *"last thing it happend, voice didnt say "check" stoped short i heard
+> milisecond of it"*
+
+```
++94.5s  echo      ignored "plays Bishop" (100% ours)
++94.7s  echo      ignored "black plays" (100% ours)
++96.8s  drop      one word while speaking: "boys"
++97.4s  barge-in  voice: "black boys"  cut: "Check."
+```
+
+The narration was *"Black plays bishop a1 to c3. Captures the knight. Check."*
+Two fragments of it were correctly ignored, and then a third — `"black boys"` —
+cut off the one word in the sentence that mattered.
+
+### Fifth sighting, and the first that widening a match cannot reach
+
+The arithmetic is the same one for the fifth time: two words, one matches, 1/2
+= **0.5**, under `ECHO_MIN` 0.6, read as an interruption. Every previous fix
+widened *what counts as a match*:
+
+| | came back as | fixed by |
+|---|---|---|
+| `"Pawn to D"` | square cut short | r36 |
+| `"night G"` | square cut short | r36 |
+| `"King for"` | "from" → "for" | r33, by changing the phrase |
+| `"night V8"` | impossible file | r44 |
+| **`"black boys"`** | **an ordinary word for another ordinary word** | — |
+
+```
+phon("plays") = pls      phon("boys") = bs
+```
+
+There is nothing to widen. They are two real English words that genuinely
+differ, and `phon()` is right about it.
+
+### What is constant across all five is the opening
+
+Every reply the app speaks begins with a colour — *"Black plays…"*, *"White
+castles…"*, *"White: king e1…"* — and **a player never begins an utterance that
+way.** `tools/echo-timing.js` has labelled echoes by exactly this rule since Day
+5.5 and has not been wrong once. The app itself had never used it.
+
+```js
+if(heard.length>1&&/^(black|white)$/.test(heard[0])&&mine[phon(heard[0])]) return 1;
+```
+
+Single words are excluded, as everywhere else in that function — a bare
+`"black"` is already handled by the one-word tail rule, on time.
+
+The claim that makes this safe is measurable, so it is measured on every run
+rather than asserted in a comment: of the fifteen real interruptions in
+`echo-threshold.js`, **not one opens with a colour.**
+
+```
+  0.55        26/26          15/15   <- clean
+  0.60        26/26          15/15   <- clean   <== shipped
+```
+
+Both new cases caught, nothing lost. Verified end to end at his exact position:
+`"black boys"` during that narration now reads `echo ignored "black boys" (100%
+ours)` with **`0 barge-ins`**, and the sentence finishes — *"Black plays bishop
+a1 to c3. Captures the knight. Check."* Control, same harness, same shape:
+`"take back"` still cuts.
+
+It also closes `#10`. The same echo came back 1.2 seconds later as `"black
+plays the night"`, reached `route()`, and was answered with *"I didn't catch a
+move."* That is inside `ECHO_TAIL_MS`, so the colour rule catches it on the
+trailing path too — one change, both doors.
+
+### Also in that game
+
+- **`#9 "nice to see three" → Nc3`.** The constrained matcher finding a knight
+  move inside a sentence about niceness is the best thing it has done all week.
+- **`#2 "A3"`, `#6 "E3"`, `#8 "F3"`** — all the 0.3 pawn-default shape, all
+  played, none complained about. Eleven of forty-four moves in the corpus now
+  have two exact readings; the pawn preference is carrying most of them
+  correctly, which is the argument for having left it alone.
+- `"7"` twice, rejected twice — RE:A003, the leading letter, still unexplained.
+
+Replay: r46 scores all 63 recorded utterances exactly as r45 did.
+
+r46 is on the preview only. `/` still serves r31.

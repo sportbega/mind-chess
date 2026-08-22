@@ -1,0 +1,192 @@
+=== Mind Chess problem report ===
+build: v2-r45 (a tie is the scorer saying it has no opinion)
+when:  2026-08-22T21:12:56.270Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=computer  ·  level=2  ·  speech=system  ·  hearing=system  ·  voice=Google US English  ·  rate=0.9  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: r1bqk1nr/pppnpp1p/3p2p1/8/8/PPbPPP2/2P3PP/2BQKBNR w Kkq - 0 7
+  pgn: 1. a3 d6 2. b3 Nd7 3. d3 g6 4. e3 Bg7 5. f3 Bxa1 6. Nc3 Bxc3+
+
+--- last said ---
+  Board  White plays pawn e2 to e3.
+  Board  Black plays bishop f8 to g7.
+  You    7
+  System That didn’t sound like a chess move — try spelling it out, like "alpha three" instead of "a three", or type it in the box below.
+  You    F3
+  Board  White plays pawn f2 to f3.
+  Board  Black plays bishop g7 to a1. Captures the rook.
+  You    nice to see three
+           heard: also heard: nice to see 3 / nice to see tree
+  Board  White plays knight b1 to c3.
+  Board  Black plays bishop a1 to c3. Captures the knight. Check.
+  You    black plays the night
+           heard: also heard: black boys / black
+  System I didn’t catch a move. Try "knight to f3", "e4", or "castle kingside".
+
+--- what was heard (10) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r45 (a tie is the scorer saying it has no opinion)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "show board"
+   heard: "show bored" (0.82)  |  "show board" (0.78)  |  "showboard" (0.87)  |  "show boards" (0.84)  |  "so bored" (0.76)  |  "so board" (0.71)  |  "Showboat" (0.91)  |  "showboared" (0.91)
+   normalised: "show board"
+   result: command  (score 6)
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "A3"
+   heard: "A3" (0.85)  |  "83" (0.69)  |  "83" (0.81)  |  "a tree" (0.83)  |  "a 3" (0.83)  |  "8:3" (0.66)  |  "8 3" (0.66)
+   normalised: "a3"
+   result: move → a3  (score 9.5)
+   ranked: a3 9.5*  |  Na3 9.2*  |  a4 -0.05  |  b3 -0.7   margin 0.3
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#3  [voice]  chose: "Ponto B3"
+   heard: "Ponto B3" (0.81)  |  "Ponto Beach" (0.70)  |  "Ponte V3" (0.76)  |  "Ponte B3" (0.80)  |  "Ponte" (0.85)  |  "Punta B3" (0.81)  |  "Ponte B 3" (0.79)  |  "Ponto B 3" (0.80)
+   normalised: "ponto b3"
+   result: move → b3  (score 6.69)
+   ranked: b3 2.23  |  b4 0.85  |  a4 0.52  |  c3 0.52   margin 1.38
+   turn: white  legal: 19
+   fen: rnbqkbnr/ppp1pppp/3p4/8/8/P7/1PPPPPPP/RNBQKBNR w KQkq - 0 2
+
+#4  [voice]  chose: "7"
+   heard: "7" (0.84)
+   normalised: "7"
+   result: none  (score 0)   ← REJECTED
+   ranked: a4 -0.7  |  b4 -0.7  |  c3 -0.7  |  c4 -0.7   margin 0
+   turn: white  legal: 19
+   fen: r1bqkbnr/pppnpppp/3p4/8/8/PP6/2PPPPPP/RNBQKBNR w KQkq - 1 3
+
+#5  [voice]  chose: "Pawn to D3"
+   heard: "Ponto D3" (0.92)  |  "Ponte D3" (0.89)  |  "Ponta D3" (0.89)  |  "Pawn to D3" (0.84)  |  "pontad3" (0.87)  |  "ponti 3" (0.90)  |  "Ponto D 3" (0.90)
+   normalised: "pawn d3"
+   result: move → d3  (score 10.4)
+   ranked: d3 10.4*  |  d4 1.02  |  a4 0.7  |  b4 0.7   margin 9.37
+   turn: white  legal: 19
+   fen: r1bqkbnr/pppnpppp/3p4/8/8/PP6/2PPPPPP/RNBQKBNR w KQkq - 1 3
+
+#6  [voice]  chose: "E3"
+   heard: "E3" (0.80)  |  "83" (0.63)  |  "83" (0.80)  |  "e3" (0.81)  |  "e33" (0.71)
+   normalised: "e3"
+   result: move → e3  (score 9.5)
+   ranked: e3 9.5*  |  Be3 9.2*  |  e4 -0.05  |  a4 -0.7   margin 0.3
+   turn: white  legal: 26
+   fen: r1bqkbnr/pppnpp1p/3p2p1/8/8/PP1P4/2P1PPPP/RNBQKBNR w KQkq - 0 4
+
+#7  [voice]  chose: "7"
+   heard: "7" (0.68)
+   normalised: "7"
+   result: none  (score 0)   ← REJECTED
+   ranked: a4 -0.7  |  b4 -0.7  |  d4 -0.7  |  e4 -0.7   margin 0
+   turn: white  legal: 28
+   fen: r1bqk1nr/pppnppbp/3p2p1/8/8/PP1PP3/2P2PPP/RNBQKBNR w KQkq - 1 5
+
+#8  [voice]  chose: "F3"
+   heard: "F3" (0.78)
+   normalised: "f3"
+   result: move → f3  (score 9.5)
+   ranked: f3 9.5*  |  Qf3 9.2*  |  Nf3 9.2*  |  f4 -0.05   margin 0.3
+   turn: white  legal: 28
+   fen: r1bqk1nr/pppnppbp/3p2p1/8/8/PP1PP3/2P2PPP/RNBQKBNR w KQkq - 1 5
+
+#9  [voice]  chose: "nice to see three"
+   heard: "nice to see three" (0.93)  |  "nice to see 3" (0.86)  |  "nice to see tree" (0.93)  |  "nice to C3" (0.94)  |  "nice to see 3:00" (0.91)  |  "nights to see three" (0.83)  |  "nice to see3" (0.96)  |  "nice to see III" (0.95)
+   normalised: "nice c3"
+   result: move → Nc3  (score 6.85)
+   ranked: Nc3 1.9  |  Nd2 0.2  |  Ne2 0.2  |  Nh3 0.2   margin 1.7
+   turn: white  legal: 23
+   fen: r1bqk1nr/pppnpp1p/3p2p1/8/8/PP1PPP2/2P3PP/bNBQKBNR w Kkq - 0 6
+
+#10  [voice]  chose: "black plays the night"
+   heard: "black boys" (0.72)  |  "black" (0.90)  |  "black play" (0.71)  |  "black plays" (0.73)  |  "black plays the night" (0.79)  |  "black boys the night" (0.78)
+   normalised: "black plays night"
+   result: none  (score 0)   ← REJECTED
+   ranked: Bd2 -1.98  |  Qd2 -2.2  |  Ke2 -2.2  |  Kf2 -2.2   margin 0.22
+   turn: white  legal: 4
+   fen: r1bqk1nr/pppnpp1p/3p2p1/8/8/PPbPPP2/2P3PP/2BQKBNR w Kkq - 0 7
+
+--- mic timeline · state=listening · 1 mic sessions · 1 barge-ins · 3 echoes ignored · 0 restarts · 0 watchdog saves · 0 errors · 18 heard · 10 lost · 27 dropped · span 99s ---
+  +0.0s  tts  speech unlocked by first gesture
+  +3.4s  user  mic button: start
+  +3.4s  state  idle → listening  (session open)
+  +3.4s  session  opened
+  +5.8s  lost  "show board" never became a final result (a different utterance began)
+  +6.6s  state  listening → thinking  (routing "show board")
+  +6.6s  state  thinking → listening  (nothing to narrate)
+  +12.2s  state  listening → thinking  (routing "A3")
+  +12.2s  state  thinking → speaking  (narration started)
+  +15.2s  state  speaking → listening  (narration ended)
+  +15.2s  state  listening → speaking  (narration started)
+  +16.2s  drop  one word while speaking: "B"
+  +16.3s  drop  one word while speaking: "B3"
+  +17.3s  drop  one word while speaking: "B3"
+  +17.9s  drop  one word while speaking: "B3"
+  +18.6s  state  speaking → listening  (narration ended)
+  +19.1s  echo  ignored one-word echo "White please" (524ms after speaking)
+  +27.2s  lost  "B3" never became a final result (a different utterance began)
+  +27.8s  lost  "Ponto" never became a final result (a different utterance began)
+  +28.4s  state  listening → thinking  (routing "Ponto B3")
+  +28.4s  state  thinking → speaking  (narration started)
+  +31.5s  state  speaking → listening  (narration ended)
+  +31.5s  state  listening → speaking  (narration started)
+  +34.6s  drop  one word while speaking: "7"
+  +34.6s  state  speaking → listening  (narration ended)
+  +35.3s  state  listening → thinking  (routing "7")
+  +35.3s  state  thinking → listening  (nothing to narrate)
+  +53.9s  lost  "Ponto" never became a final result (a different utterance began)
+  +54.2s  state  listening → thinking  (routing "Pawn to D3")
+  +54.2s  state  thinking → speaking  (narration started)
+  +57.3s  state  speaking → listening  (narration ended)
+  +57.3s  state  listening → speaking  (narration started)
+  +60.7s  state  speaking → listening  (narration ended)
+  +65.0s  state  listening → thinking  (routing "E3")
+  +65.0s  state  thinking → speaking  (narration started)
+  +67.9s  state  speaking → listening  (narration ended)
+  +67.9s  state  listening → speaking  (narration started)
+  +71.0s  drop  one word while speaking: "7"
+  +71.1s  state  speaking → listening  (narration ended)
+  +71.7s  state  listening → thinking  (routing "7")
+  +71.7s  state  thinking → listening  (nothing to narrate)
+  +73.2s  state  listening → thinking  (routing "F3")
+  +73.2s  state  thinking → speaking  (narration started)
+  +76.2s  state  speaking → listening  (narration ended)
+  +76.2s  state  listening → speaking  (narration started)
+  +80.9s  state  speaking → listening  (narration ended)
+  +88.5s  lost  "nice" never became a final result (a different utterance began)
+  +88.9s  lost  "to see three" never became a final result (a different utterance began)
+  +88.9s  lost  "nice to" never became a final result (a different utterance began)
+  +89.1s  lost  "see three" never became a final result (a different utterance began)
+  +89.1s  lost  "nice to see" never became a final result (a different utterance began)
+  +89.4s  state  listening → thinking  (routing "nice to see three")
+  +89.4s  state  thinking → speaking  (narration started)
+  +92.4s  state  speaking → listening  (narration ended)
+  +92.4s  state  listening → speaking  (narration started)
+  +94.5s  echo  ignored "plays Bishop" (100% ours)
+  +94.7s  echo  ignored "black plays" (100% ours)
+  +96.8s  drop  one word while speaking: "boys"
+  +97.4s  barge-in  voice: "black boys"  cut: "Check."
+  +97.4s  state  speaking → listening  (narration ended)
+  +98.6s  state  listening → thinking  (routing "black plays the night")
+  +98.6s  state  thinking → listening  (nothing to narrate)
+
+--- verified labels ---
+# Adni, 2026-08-22: "last thing it happend, voice didnt say 'check' stoped
+# short i heard milisecond of it". The +97.4s barge-in on "black boys" — the
+# app cutting its own sentence for the FIFTH time on the two-word 0.5
+# arithmetic, and the first one no match-widening could reach: "boys" and
+# "plays" are both ordinary words. Fixed in r46 by the colour opener.
+# #10 is the same echo again, reaching route() 1.2s later and being rejected
+# there; r46 catches it on the trailing path too.
+  #10  MEANT none
+# Unambiguous, inferred not stated — margins above 9.3 or an explicit piece:
+  #5  MEANT d3
+  #9  MEANT Nc3
+
+--- describe what went wrong (please type here) ---
+last thing it happend, voice didnt say "check" stoped short i heard milisecond of it
