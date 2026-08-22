@@ -579,10 +579,31 @@
   // the narration queue, barge-in and the diagnostics timeline all read
   // instead of each re-deriving it from three separate flags.
   let micState='idle', lastMicActivity=Date.now();
+  // "I said e4 and nothing happened" was unanswerable, because the two ways
+  // an utterance dies leave no trace: an interim that never becomes a final
+  // result, and a one-word transcript arriving while we are speaking. Both
+  // are correct behaviour and both are invisible, which means a game where
+  // the app was deaf reads exactly like a game where nobody spoke.
+  //
+  // heardCount is a counter rather than a timeline entry on purpose — speech
+  // starts twice a move plus every echo, and the timeline only shows its last
+  // 80 lines. Losing the window that matters to routine events would be the
+  // same mistake in a new place.
+  let heardCount=0, lostInterim='', lostCount=0;
   const micLog=[];
   function micEvent(kind,detail){
     micLog.push({t:Date.now(),kind:kind,detail:detail||''});
     if(micLog.length>500) micLog.shift();
+  }
+  // Called wherever an utterance can end: a new one starting, the session
+  // closing, or an error. If an interim was in flight and never became final,
+  // that is the microphone losing something the player said, and it is the
+  // one event worth spending a timeline line on.
+  function flushLostInterim(why){
+    if(!lostInterim) return;
+    lostCount++;
+    micEvent('lost','"'+lostInterim.trim().slice(0,40)+'" never became a final result ('+why+')');
+    lostInterim='';
   }
   function setMicState(next,why){
     if(micState===next) return;
@@ -1269,7 +1290,15 @@
   const ECHO_SINGLE_TAIL_MS=2000;
   function considerBargeIn(transcript){
     const overlap=echoOverlap(transcript);
-    if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2) return;
+    if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2){
+      // Correct — one syllable must not cut the sentence off. But a bare pawn
+      // move IS one word, so this is also the door a real "e5" disappears
+      // through when it is spoken over the narration, and it used to close
+      // without a sound. Fourth time a guard has served two consumers whose
+      // needs point opposite ways; the quiet one loses unless it is logged.
+      micEvent('drop','one word while speaking: "'+String(transcript||'').trim().slice(0,40)+'"');
+      return;
+    }
     if(overlap>=ECHO_MIN){ micEvent('echo','ignored "'+transcript.trim().slice(0,40)+'" ('+Math.round(overlap*100)+'% ours)'); return; }
     cancelSpeech('voice: "'+transcript.trim().slice(0,40)+'"');
   }
@@ -2159,7 +2188,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r38 (a3 was hiding inside the word beta)';
+  const BUILD='v2-r39 (the microphone can now say what it lost)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4078,7 +4107,14 @@
     recognition.continuous=true;
 
     recognition.onstart=()=>note('Listening\u2026');
-    recognition.onspeechstart=()=>{ lastMicActivity=Date.now(); note('Hearing you\u2026'); };
+    recognition.onspeechstart=()=>{
+      lastMicActivity=Date.now();
+      // A new utterance starting means the previous one is over. If it never
+      // produced a final result, say so now rather than never.
+      flushLostInterim('next utterance began');
+      heardCount++;
+      note('Hearing you\u2026');
+    };
     recognition.onresult=e=>{
       lastMicActivity=Date.now();
       for(let i=e.resultIndex;i<e.results.length;i++){
@@ -4096,6 +4132,7 @@
         // app ended up answering its own reading of a puzzle.
         if(res.isFinal&&isTrailingEcho(res[0]?res[0].transcript:'')) continue;
         if(res.isFinal){
+          lostInterim='';
           // A session that produced a result was healthy, whatever happened
           // before it; otherwise a few short sessions early in a long game
           // would still be counted against it an hour later.
@@ -4113,6 +4150,9 @@
           if(!handsFree){ wantLoop=false; try{recognition.stop();}catch(e){} }
           route(alts);
         }else{
+          // The only record that Chrome was forming anything at all. Held,
+          // not logged — it becomes a timeline line only if no final follows.
+          lostInterim=res[0].transcript;
           note('\u201C'+res[0].transcript.trim()+'\u201D');
         }
       }
@@ -4127,7 +4167,8 @@
       // early. It used to skip micEvent() on the way out too — so the single
       // most common thing that happens to the microphone left no trace in the
       // diagnostics at all. The UI stays quiet; the timeline does not.
-      if(e.error==='no-speech'&&wantLoop&&handsFree){ micEvent('session','no-speech'); note(''); return; }
+      if(e.error==='no-speech'&&wantLoop&&handsFree){ flushLostInterim('session ended: no-speech'); micEvent('session','no-speech'); note(''); return; }
+      flushLostInterim('session error: '+e.error);
       micEvent('error',e.error);
       // A network blip is not a broken microphone. Counting it toward the
       // give-up threshold meant a few seconds of bad wifi could end listening
@@ -4150,6 +4191,8 @@
       if(e.error==='not-allowed'||e.error==='service-not-allowed') wantLoop=false;
     };
     recognition.onend=()=>{
+      // Last chance: onerror does not fire for every way a session ends.
+      flushLostInterim('session closed');
       if(sessionStartedAt){
         micEvent('session','closed after '+Math.round((Date.now()-sessionStartedAt)/100)/10+'s'
           +(speaking?' (while we were speaking)':''));
@@ -5059,6 +5102,7 @@
     const head='\n--- mic timeline · state='+micState
       +' · '+sessions+' mic sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
       +' · '+count('restart')+' restarts · '+count('watchdog')+' watchdog saves · '+count('error')+' errors'
+      +' · '+heardCount+' spoke · '+lostCount+' lost · '+count('drop')+' dropped'
       +' · span '+Math.round((micLog[micLog.length-1].t-t0)/1000)+'s ---';
     return head+'\n'+micLog.slice(-80).map(m=>
       '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');

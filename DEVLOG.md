@@ -3117,3 +3117,118 @@ So the free row is real and the conclusion it invites is not. Six utterances.
 is thirty deep.
 
 No build change — r38 stands. Tooling and labels only.
+
+## 2026-08-22 — Day 6.2: the microphone can now say what it lost (r39)
+
+Second game on r38, and a regression report: *"problem with moving pawns,
+requiers that i say pawn before the move such as: e5, f4 etc. wasnt like this
+before. this is regress"*.
+
+First job is not to explain it. First job is to find out whether I caused it.
+
+### Ruling r38 in or out, with the app rather than an opinion
+
+`corpus-replay.js` grew a `--index` flag, so a corpus can be replayed against
+**any build**:
+
+```
+git show 8e05ea1:index.html > /tmp/r37.html
+node tools/corpus-replay.js --index /tmp/r37.html --out _corpus-r37.html
+```
+
+Seventeen recorded utterances now, across both games. r37 against r38:
+
+```
+compared: 17
+differences: 2026-08-22-r37-first-game.txt#9   a3 -> none
+```
+
+**One.** The beta3 fix, on the utterance it was written for. Every utterance in
+the r38 game itself scores identically under both builds. And bare pawn moves,
+put through r38's own scorer at the positions from his game:
+
+```
+bare e5 (his move 2)  -> e5   bare f4 (his move 3)  -> f4
+bare d4 (his move 4)  -> d4   bare d5 at final pos  -> d5
+```
+
+All fine. There is also a structural argument that settles it independently:
+r38 touched `constrainedMove()` and `scoreAlternatives()`, both of which run
+*inside* `route()`. Nothing there can decide whether an utterance **arrives**.
+
+So the bare moves never reached the scorer. Which raises the real problem.
+
+### I could not tell whether he had spoken
+
+His report has no diagnostic entry for a single failed bare move. Not a
+rejection — nothing at all. Seventeen seconds pass between one narration ending
+and the next thing routed, and the log has no opinion about what happened in
+them.
+
+Two paths drop an utterance and leave no trace. Both are correct behaviour.
+
+```js
+// considerBargeIn
+if(overlap===0&&speechKey(transcript).split(' ').filter(Boolean).length<2) return;
+```
+
+A one-word transcript arriving **while the app is speaking** is discarded so a
+single syllable cannot cut the sentence off. Right — and **a bare pawn move is
+one word**. That is the exact door an "e5" spoken over the narration goes
+through, silently. Fourth time this shape has appeared: one guard serving two
+consumers whose needs point opposite ways, and the quiet one loses.
+
+```js
+}else{ note('“'+res[0].transcript.trim()+'”'); }
+```
+
+And an **interim result that never becomes final** was written to the UI note
+and then forgotten. It is the only evidence that Chrome was forming anything at
+all, and it was being thrown away every time.
+
+A game where the app was deaf therefore reads exactly like a game where nobody
+spoke. That is the actual defect here, and it is mine, not his.
+
+### r39 — instrumentation only, again
+
+- `N spoke · N lost · N dropped` in the timeline header. **Counters, not
+  timeline lines**, for `spoke`: speech starts twice a move plus every echo,
+  and the timeline only shows its last 80 entries. Spending that window on
+  routine events would be the same mistake in a new place.
+- `lost` — an interim that never became a final result, flushed when the next
+  utterance begins, when the session errors, and when it closes. Three exits,
+  because `onerror` does not fire for all of them.
+- `drop` — the one-word-while-speaking discard, now named.
+
+Verified in the harness:
+
+```
+2 spoke · 1 lost · 1 dropped
+  +2.2s   lost  "e5" never became a final result (session ended: no-speech)
+  +58.7s  drop  one word while speaking: "e5"
+```
+
+`0 barge-ins` alongside it — the discard still does not cut the narration. The
+behaviour is unchanged; only the silence is gone. Replay confirms r39 scores
+all 17 utterances exactly as r38 did.
+
+### What his game did say
+
+- **`1 echoes ignored`** — `+31.6s echo ignored one-word echo "black" (453ms
+  after speaking)`. **First live confirmation that r32 works.** Two games ago
+  that word reached `route()`.
+- **Chrome is formatting numbers, and it eats the letter.** `".3"`, `".24"`,
+  `"84"`, `"E40"`, `"e-4"`, `"f.4"`, `"Pawn to at 4:00"`. A bare letter-digit
+  move is being read as a decimal or a clock time. That is a much better
+  description of RE:A003 than "the audio is clipped" — and it explains why
+  saying "pawn to" first rescues it: the extra word gives the formatter
+  context it otherwise invents.
+
+### Not fixed
+
+His actual complaint. r39 does not make a bare "e5" work; it makes the next
+game able to say which of the two failures happened. If the counter reads
+`dropped`, the fix is in the barge-in guard. If it reads `lost`, the fix is in
+how a short utterance is endpointed, and no amount of scoring will touch it.
+
+r39 is on the preview only. `/` still serves r31.

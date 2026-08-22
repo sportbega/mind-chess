@@ -33,7 +33,21 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const root = path.join(__dirname, '..');
 
-const files = process.argv.slice(2).filter(a => !a.startsWith('-'));
+// --index lets a corpus be replayed against a DIFFERENT build of the app:
+//
+//   git show 8e05ea1:index.html > /tmp/r37.html
+//   node tools/corpus-replay.js --index /tmp/r37.html --out _corpus-r37.html
+//
+// Which turns this into a regression harness. "Did my change alter what the
+// app would have done on every game we have ever recorded?" is answerable in
+// one diff instead of an argument, and the answer is the shipped scorer's,
+// not mine. Added the moment Adni reported a regression I could not otherwise
+// have ruled in or out.
+const argOf = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
+const indexPath = argOf('--index', path.join(root, 'index.html'));
+const outPath = argOf('--out', path.join(root, '_corpus.html'));
+const files = process.argv.slice(2)
+  .filter((a, i, all) => !a.startsWith('-') && all[i - 1] !== '--index' && all[i - 1] !== '--out');
 const corpus = JSON.parse(execFileSync('node',
   [path.join(__dirname, 'corpus.js'), ...files, '--json'], { encoding: 'utf8', maxBuffer: 64e6 }));
 
@@ -44,13 +58,14 @@ if (!usable.length) {
   process.exit(2);
 }
 
-const page = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const page = fs.readFileSync(indexPath, 'utf8');
+const buildOf = (page.match(/const BUILD='([^']*)'/) || [, '(unknown build)'])[1];
 
 // One handle, injected immediately before the app IIFE closes, so everything
 // it names is the real closure binding rather than a copy.
 const CLOSE = '\n})();';
 if (page.split(CLOSE).length !== 2) {
-  throw new Error('Could not find the single app-IIFE close in index.html — it moved or there are now several.');
+  throw new Error('Could not find the single app-IIFE close in ' + indexPath + ' — it moved or there are now several.');
 }
 const HOOK = `
   // ---- injected by tools/corpus-replay.js, never committed ----
@@ -100,7 +115,7 @@ const SHIM = `<script>
 `;
 
 const ANCHOR = '<script>\n(function(){\n  "use strict";';
-if (page.indexOf(ANCHOR) === -1) throw new Error('Could not find the app script in index.html — has its opening changed?');
+if (page.indexOf(ANCHOR) === -1) throw new Error('Could not find the app script in ' + indexPath + ' — has its opening changed?');
 
 // Order matters, and got this wrong once: SHIM is itself an IIFE ending in
 // "\n})();", so inserting it first makes the CLOSE replacement below land on
@@ -164,9 +179,10 @@ window.__replayText = function(){
 `;
 out = out.replace('</body>', DRIVER + '</body>');
 
-const dest = path.join(root, '_corpus.html');
-fs.writeFileSync(dest, out);
-console.log('wrote _corpus.html — ' + usable.length + ' utterances from '
+fs.writeFileSync(outPath, out);
+const base = path.basename(outPath);
+console.log('wrote ' + base + ' — ' + usable.length + ' utterances from '
   + new Set(usable.map(u => u.report)).size + ' report(s)');
-console.log('open  http://localhost:8934/_corpus.html');
+console.log('  app:  ' + buildOf);
+console.log('open  http://localhost:8934/' + base);
 console.log('then  window.__replayText()');
