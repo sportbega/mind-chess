@@ -601,6 +601,27 @@
   // while we are listening: the moment Chrome begins forming a transcript
   // that could become a move. That is the population `lost` is a subset of,
   // so `heard N · lost M` finally reads as one sentence.
+  // Reported live: a mic session sat open for 171.7s with NOTHING in the
+  // timeline — no drop, no lost, no echo — while every other session that
+  // game closed itself after the normal ~8s of silence. Nothing external
+  // happened (confirmed with the player): no tab switch, no lock, no
+  // backgrounding. So the failure is inside this app or inside Chrome's
+  // recognizer, not the OS throttling a hidden tab.
+  //
+  // A real suspect: `lastMicActivity=Date.now()` sits at the TOP of onresult,
+  // unconditionally — before anything is checked about what the result
+  // contains. If Chrome is firing periodic near-empty "keepalive" interim
+  // results while genuinely hearing nothing, every one of them resets the
+  // 90-second watchdog clock without producing a single visible line, which
+  // would explain both the silence AND why the watchdog never fired despite
+  // the session running twice as long as its own trigger.
+  //
+  // That is a hypothesis, not a finding — this project has a standing rule
+  // against patching one of those cold. rawResultCount is the measurement
+  // that settles it: if it climbs during a silent stretch, onresult was firing
+  // and finding nothing; if it does not move, the recognizer really did go
+  // quiet and the question is somewhere else entirely.
+  let rawResultCount=0;
   let heardCount=0, lostInterim='', lostCount=0, droppedCount=0;
   const micLog=[];
   function micEvent(kind,detail){
@@ -2287,7 +2308,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r48 (the report can send itself)';
+  const BUILD='v2-r49 (a silent session may not be a silent recognizer)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4405,6 +4426,7 @@
       note('Hearing you\u2026');
     };
     recognition.onresult=e=>{
+      rawResultCount++;
       lastMicActivity=Date.now();
       for(let i=e.resultIndex;i<e.results.length;i++){
         const res=e.results[i];
@@ -5418,7 +5440,7 @@
     const head='\n--- mic timeline · state='+micState
       +' · '+sessions+' mic sessions · '+count('barge-in')+' barge-ins · '+count('echo')+' echoes ignored'
       +' · '+count('restart')+' restarts · '+count('watchdog')+' watchdog saves · '+count('error')+' errors'
-      +' · '+heardCount+' heard · '+lostCount+' lost · '+droppedCount+' dropped'
+      +' · '+heardCount+' heard · '+lostCount+' lost · '+droppedCount+' dropped · '+rawResultCount+' raw'
       +' · span '+Math.round((micLog[micLog.length-1].t-t0)/1000)+'s ---';
     return head+'\n'+micLog.slice(-80).map(m=>
       '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');

@@ -23,3 +23,7 @@ _corpus-r45.html
 _corpus-r46.html
 _corpus-prev.html
 _corpus-prev-index.html
+tools/.supabase-read-key
+tools/.last-report-id
+.DS_Store
+**/.DS_Store

@@ -111,6 +111,32 @@ const SIGNATURES = [
       const m = raw.match(/(\d+) heard · (\d+) lost/);
       return m && +m[2] > 0 && +m[2] >= +m[1] / 2 ? ['lost ' + m[2] + ' of ' + m[1] + ' heard'] : [];
     }
+  },
+  {
+    id: 'stuck-session',
+    what: 'one mic session ran far longer than the ~8s no-speech close every other session in the game got, with nothing logged inside it',
+    status: '⚠ OPEN, reported once (id6, 2026-08-23). Confirmed NOT a backgrounded tab. '
+      + 'r49 adds a raw onresult counter (`N raw` in the header) to test whether Chrome '
+      + 'was firing empty/near-duplicate interim results that reset the 90s watchdog '
+      + 'without producing anything visible. Needs a SECOND occurrence with r49 or later '
+      + 'to read `raw` against `heard` during the stuck stretch before this can be diagnosed.',
+    bench: 'none yet — the next report with a stuck session is the bench',
+    report: raw => {
+      // A session close far past the normal no-speech window (~8s) is the
+      // shape; ordinary long sessions that were actively narrating throughout
+      // are not, so this only flags a `closed after` figure with no shorter
+      // sibling near it — a crude filter, tightened once a second case exists
+      // to compare against.
+      // 60s produced a false positive: a real game had a 60.3s session that
+      // was legitimately busy the whole time (heavy Kokoro narration, several
+      // "tts" lines). The actual incident was 171.7s with NOTHING logged
+      // inside it. 120s is short of that with room, and still clear of any
+      // observed legitimate session so far — revisit once a second real case
+      // exists to bracket it against.
+      const closes = [...raw.matchAll(/closed after ([\d.]+)s/g)].map(m => +m[1]);
+      const long = closes.filter(s => s > 120);
+      return long.map(s => s.toFixed(1) + 's (normal is ~8s)');
+    }
   }
 ];
 

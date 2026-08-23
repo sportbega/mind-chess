@@ -4203,3 +4203,100 @@ is untrusted text, because the description box is free text and one has already
 arrived carrying an instruction addressed to me.
 
 Tools and agent only — `/v2/` and `/` both serve r48.
+
+## 2026-08-23 — Day 6.14: a silent session may not be a silent recognizer (r49)
+
+First report to arrive entirely through the new pipe — `Send` button, straight
+into `tools/reports/` with no copy-paste on either end. And the first genuinely
+new bug shape since 2.2 shipped.
+
+> *"audio just cut off and that happpend before. that was the main issue with
+> previous report too."*
+
+```
++111.4s  state  speaking → listening  (narration ended)
++179.3s  session  closed after 171.7s
+```
+
+Nothing between those two lines. No `drop`, no `lost`, no `echo`, no state
+change of any kind — 68 seconds of the visible window and, going by the
+session's own reported length, **171.7 seconds total** where the app logged
+nothing at all. Every other session in the same game closed itself after the
+ordinary ~8 seconds of silence. This one ran twenty times longer before
+closing, and the watchdog built specifically to catch a stuck session —
+`STALE_SESSION_MS=90000` — never fired, despite the session running for nearly
+double its own trigger.
+
+Asked directly whether anything external happened — a tab switch, the laptop
+sleeping — because that would point at the OS throttling a backgrounded tab
+rather than a bug in the app. **Confirmed: nothing did.** Whatever this is, it
+lives inside the app or inside Chrome's recognizer.
+
+### A hypothesis, not a fix
+
+```js
+recognition.onresult=e=>{
+  lastMicActivity=Date.now();
+  ...
+```
+
+`lastMicActivity` resets at the top of `onresult`, unconditionally, before
+anything about the result is examined. If Chrome is firing periodic
+near-duplicate interim results while genuinely hearing nothing — a real,
+documented SpeechRecognition behaviour — every one of them would reset the
+watchdog's clock without producing a single visible line, which would explain
+both halves of what was observed at once: the silence, and why the safety net
+built for exactly this didn't trip.
+
+That is a hypothesis built from reading the code, not a finding. This project
+has a standing rule against patching one of those cold — the two "obvious"
+fixes it has reached for this week (widen the echo window, refuse on a narrow
+margin) were both wrong. So: no fix. An instrument that can tell the difference
+next time.
+
+### r49 — one counter, nothing else
+
+```js
+recognition.onresult=e=>{
+  rawResultCount++;
+  lastMicActivity=Date.now();
+```
+
+`N raw` in the timeline header, counting every `onresult` call regardless of
+content. Verified in the harness against two shapes:
+
+```
+6 empty-string interims        → 6 raw, 6 heard   (both count every one —
+                                                     an empty string is falsy,
+                                                     so the burst-continuation
+                                                     check that should collapse
+                                                     repeats never fires; noted,
+                                                     not chased — doesn't affect
+                                                     what raw is for)
+6 repeats of "uh"               → +6 raw, +1 heard  (raw climbs, heard barely
+                                                     moves — the realistic
+                                                     "keepalive noise" signature)
+```
+
+If the next stuck session shows `raw` climbing through the silent stretch, the
+hypothesis holds and the fix is in what counts as activity. If `raw` stays flat
+too, the recognizer really went quiet and the question moves to Chrome or the
+OS, not this file.
+
+Instrumentation only — replay diff against the previous build is **empty
+across all 85 recorded utterances**, confirming nothing about scoring or
+routing changed.
+
+### tools/signatures.js gained an eighth entry
+
+```
+stuck-session   ⚠ OPEN, reported once (id6). Needs a second occurrence to read
+                raw against heard before this can be diagnosed.
+```
+
+Detector: a session `closed after` figure past 120 seconds. First cut used 60s
+and false-positived on a real game where a 60.3s session was legitimately busy
+narrating the whole time — caught before it went anywhere, tightened to 120,
+clear of every session observed so far except the real one.
+
+r49 is on the preview only. `/` serves 2.3.
