@@ -4300,3 +4300,70 @@ narrating the whole time — caught before it went anywhere, tightened to 120,
 clear of every session observed so far except the real one.
 
 r49 is on the preview only. `/` serves 2.3.
+
+## 2026-08-23 — Day 6.15 (r50): a real opponent, borrowed from Lichess
+
+Adni's own idea: Mind Chess's biggest gap has never been the engine, it's the
+empty lobby — nobody else is in the Supabase online mode. Lichess's Board API
+solves that by design: it's built specifically for a human playing through an
+alternate interface (a physical board, a voice app), with engine assistance
+against its own fair-play rules — exactly this project's constraint already,
+not a workaround needed to satisfy it.
+
+New `lichess` mode, alongside computer/two-player/online/puzzle:
+
+- **Auth**: a personal access token (`board:play` scope), pasted once. Its own
+  localStorage key, deliberately never folded into `saveState()`'s blob or
+  exposed through a bug report — a token is a real credential to the account.
+- **Spectate/play**: the game streams over NDJSON
+  (`fetch(...).body.getReader()`, a genuinely new pattern for this file — the
+  only other `fetch()` here is the static puzzles.json GET). Moves in reuse
+  `describeMove()`/`playMoveSound()` exactly the way `loadOnlinePgn()` already
+  does for a Supabase-backed game; moves out apply optimistically and POST to
+  the Board API, same convention as every other mode.
+- ⚠️ **The one real correctness trap: an echo of your own move is not a second
+  move.** Lichess resends the *entire* move list on every `gameState` event,
+  including the move you just made. `lichessState.moveCount` is bumped
+  synchronously the instant a move is sent — before the POST even resolves —
+  so when that move comes back in the stream, the replay loop sees it as
+  already-applied and skips it. Verified directly against a mocked echo before
+  trusting it on a real game: our own move narrated exactly once, not twice.
+- **Seek**: Correspondence (3 days/move) / Rapid (10+5) / Classical (30+20)
+  only — blitz and bullet excluded on purpose, a voice move takes longer than
+  a click. Hardcoded unrated for now: this integration is new, and a misheard
+  command shouldn't cost a real rating point while it's still being proven.
+  `POST /api/board/seek` holds its connection open until matched; detection is
+  by polling `/api/account/playing` in the background, not by parsing that
+  stream — simpler, and it's also how a reconnect finds a game already in
+  progress.
+- **Fair play**: `tipFor()`, `askEngine()` (the single funnel every coach
+  answer already ran through), and `matchCoachCommand()` all hard-gate on
+  `mode==='lichess'` — regardless of the saved `coach`/`tips` values, which
+  stay whatever they were. Confirmed on a real game: settings said
+  `coach=hints, tips=on`, the transcript had zero coach/tip lines.
+
+⚠️ **THE CLOCK WAS WRONG, and only a real timed game found it.** Adni: *"i
+think clock is not running properly, for both black and white."* The first
+cut displayed `lichessState.wtime`/`btime` straight off the last `gameState`
+event — correct at the instant the event arrives, then frozen until the next
+one, because nothing was deriving elapsed time in between. Every other clock
+in this app ticks; this one sat still between moves. Fixed the same way
+`computeOnlineMs()` already solves it: `computeLichessMs()` derives the live
+remaining time from `lastEventAt` plus real elapsed time, and
+`startLichessClock()` re-renders every 200ms, re-anchored on every event.
+Verified: White's display ticked 9:55 → 9:41 over 3 real seconds mid-move,
+Black's stayed still — correct for whoever the position says is on move.
+
+**Verified on a real Lichess account, not mocks alone**: one full spectated
+game (17 moves, narration and fair-play gating both held up), one full played
+correspondence game (seek → play → checkmate, no issues reported), one played
+untimed game against the computer (this is the one that surfaced the clock
+bug). Committed as `5451b4c` on `v2` — **not pushed, not published**; `/` and
+`/v2/` both still serve 2.3 (r48/r49).
+
+**Still open, in order**: milestone 3 needs the clock fix confirmed against a
+real *timed* (rapid/classical) game specifically — everything played so far
+has been correspondence or untimed. Milestones 4-5 (reconnect/backoff +
+`visibilitychange` staleness watchdog, a `tools/fake-lichess.js` harness with
+recorded fixtures, polish) are still ahead. Full plan at
+`~/.claude/plans/jaunty-singing-gosling.md`.
