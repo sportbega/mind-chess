@@ -202,6 +202,25 @@
     <div class="lobby-list" id="lobbyList"><p class="lobby-empty">Loading…</p></div>
   </div>
 
+  <div class="online-panel" id="lichessPanel">
+    <p class="online-status" id="lichessStatus">Paste a Lichess personal access token with the <code>board:play</code> scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.</p>
+    <div class="online-actions">
+      <input type="password" id="lichessTokenInput" placeholder="Lichess API token" autocomplete="off" style="flex:1;min-width:160px" />
+      <button class="btn" id="lichessSaveTokenBtn" type="button">Save token</button>
+    </div>
+    <div class="online-actions">
+      <select id="lichessTimeSelect" title="Blitz and bullet are excluded — a voice move takes longer than a click.">
+        <option value="corr">Correspondence (3 days/move)</option>
+        <option value="rapid">Rapid (10+5)</option>
+        <option value="classical">Classical (30+20)</option>
+      </select>
+      <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
+      <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
+      <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
+      <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
+    </div>
+  </div>
+
   <div class="hero">
     <div class="mic-wrap" id="micWrap">
       <span class="ring"></span><span class="ring"></span><span class="ring"></span>
@@ -251,6 +270,7 @@
         <option value="computer" selected>Vs. computer</option>
         <option value="two-player">Pass &amp; play</option>
         <option value="online">Play online</option>
+        <option value="lichess">Lichess (beta, spectate only)</option>
         <option value="puzzle">Puzzles</option>
       </select>
     </div>
@@ -480,6 +500,13 @@
   let generation = 0;          // invalidates in-flight computer-move timers
   let onlineState = null;      // {id,color,spectating,waiting,starting,channel,pollTimer,lastUpdated}
   let lobbyChannel = null, lobbyPollTimer = null;
+  // Lichess Board API mode — a real opponent from lichess.org's own player
+  // pool, played through a personal access token. Read-only spectate for now:
+  // move-out (voice -> Lichess) is a later milestone, so route()'s guard
+  // blocks every move attempt while mode==='lichess'.
+  let lichessToken = null;
+  let lichessState = null;     // {gameId,color,moveCount,wtime,btime,status,streamController,lastEventAt}
+  let lichessClockTimer = null;
 
   // Clock: 0 = no clock. Runs off game.turn(), so it works the same for
   // computer/two-player/online without per-mode special-casing — the
@@ -536,7 +563,10 @@
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
         copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn'), lobbyBtn=$('lobbyBtn'),
         stopSpectateBtn=$('stopSpectateBtn'), lobbyPanel=$('lobbyPanel'), lobbyList=$('lobbyList'),
-        closeLobbyBtn=$('closeLobbyBtn');
+        closeLobbyBtn=$('closeLobbyBtn'),
+        lichessPanel=$('lichessPanel'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
+        lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
+        lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn');
 
   // ===============================================================
   // Output
@@ -1563,13 +1593,19 @@
       clockLine.textContent='White '+formatClock(w)+' · Black '+formatClock(b);
       return;
     }
+    if(mode==='lichess'){
+      if(!lichessState||boardHidden){ clockLine.textContent=''; return; }
+      const {w,b}=computeLichessMs();
+      clockLine.textContent='White '+formatClock(w)+' · Black '+formatClock(b);
+      return;
+    }
     if(!clockPreset||boardHidden){ clockLine.textContent=''; return; }
     clockLine.textContent='White '+formatClock(whiteMs)+' · Black '+formatClock(blackMs);
   }
   function stopClock(){ if(clockTimer){ clearInterval(clockTimer); clockTimer=null; } }
   function startClock(){
     stopClock();
-    if(!clockPreset||gameOver||mode==='online') return;
+    if(!clockPreset||gameOver||mode==='online'||mode==='lichess') return;
     let last=Date.now();
     clockTimer=setInterval(()=>{
       const now=Date.now(), dt=now-last; last=now;
@@ -1771,9 +1807,10 @@
     // predicting would spend the tip on a sentence nobody hears. Both append a
     // separate sentence, so the reserved first chunk still matches.
     speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied)+tipFor());
-    if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); }
+    if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); stopLichessClock(); }
     renderAll();
     if(mode==='online') saveOnline();
+    if(mode==='lichess') sendLichessMove(applied);
     if(!gameOver && mode==='computer' && game.turn()!==humanColor){
       const g=generation;
       setTimeout(()=>{ if(g===generation && !gameOver) triggerComputerMove(); },650);
@@ -3012,7 +3049,9 @@
     // ago, so there is nothing to have lost track of. Left on, the very first
     // puzzle announced "both queens are off the board now" about a position
     // that never had queens in it.
-    if(tips!=='on'||mode==='puzzle') return '';
+    // Lichess's fair-play policy forbids engine assistance during a
+    // Board-API game outright, rated or not — no per-game toggle, hard off.
+    if(tips!=='on'||mode==='puzzle'||mode==='lichess') return '';
     // No global cooldown, because it isn't what keeps these rare — every tip
     // above fires on a state change and then never repeats, and the landmarks
     // can each happen only once in a game. A cooldown on top of that would
@@ -3158,6 +3197,10 @@
   // know the engine is 7.3MB, lazily loaded, shared with the Master level and
   // occasionally absent.
   function askEngine(fen,then){
+    // Single funnel for every coach answer — the one check that matters for
+    // fair play. A Lichess game is a real opponent on lichess.org's own
+    // fair-play rules, so this is a hard off, not a per-game toggle.
+    if(mode==='lichess'){ coachOffReply(); return; }
     if(coach==='off'){ coachOffReply(); return; }
     const g=++coachGeneration, gen=generation;
     note('Thinking…');
@@ -3194,7 +3237,7 @@
         &&hasSound(words,['how','who','what','am','is','are','i','my','doing']))
        ||(hasSound(words,['how'])&&hasSound(words,['doing','going','look','looks','looking']))){
       return ()=>{
-        if(coach==='off'){ coachOffReply(); return; }
+        if(coach==='off'||mode==='lichess'){ coachOffReply(); return; }
         askEngine(game.fen(),res=>{
           const notes=positionNotes();
           speak(evalSentence(res)+(notes.length&&verbosity!=='terse'?' '+cap(joinAnd(notes))+'.':''));
@@ -3205,7 +3248,7 @@
     // --- what should I worry about? / what are they threatening? ---
     if(hasSound(words,['worry','worried','threat','threats','threatening','threaten','threatens','danger','plan','planning','coming'])){
       return ()=>{
-        if(coach==='off'){ coachOffReply(); return; }
+        if(coach==='off'||mode==='lichess'){ coachOffReply(); return; }
         if(game.in_check()){
           const ksq=pieceSquares(myColor(),'k')[0];
           const by=ksq?attackersOf(ksq,foeColor()):[];
@@ -3232,7 +3275,7 @@
     // --- is my king safe? ---
     if(hasSound(words,['king','kings'])&&hasSound(words,['safe','safety','ok','okay','fine','exposed','danger','dangerous'])){
       return ()=>{
-        if(coach==='off'){ coachOffReply(); return; }
+        if(coach==='off'||mode==='lichess'){ coachOffReply(); return; }
         if(game.in_check()){ speak('No — you’re in check right now.'); return; }
         const theirTurn=game.turn()!==myColor();
         const fen=theirTurn?game.fen():nullMoveFen();
@@ -3250,6 +3293,7 @@
     if(hasSound(words,['best','should','recommend','suggest','advice'])
        &&hasSound(words,['move','moves','play','do'])){
       return ()=>{
+        if(mode==='lichess'){ coachOffReply(); return; }
         if(coach!=='full'){
           warn(coach==='off'
             ? 'The coach is off. Even on, I’ll only name a move at “coach full”.'
@@ -3515,6 +3559,7 @@
                 :hasSound(words,['full','everything','numbers'])?'full'
                 :hasWord(words,['on','yes'])||hasSound(words,['hints','hint','help'])?'hints':null;
       if(!want){ speak('The coach is '+coach+'.'); return; }
+      if(want!=='off'&&mode==='lichess'){ speak('Coach stays off for a Lichess game — that would be engine assistance in a real game.'); return; }
       coach=want; coachSelect.value=coach; saveState();
       speak(coach==='off'?'Coach off. Board facts only.'
            :coach==='full'?'Coach on, full — numbers, and the best move if you ask for it.'
@@ -3980,6 +4025,11 @@
         if(onlineState.spectating){ warn('You’re spectating — moves are disabled.'); return; }
         if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return; }
         if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return; }
+      }
+      if(mode==='lichess'){
+        if(!lichessState||!lichessState.gameId){ warn('Not connected to a Lichess game — seek or watch one first.'); return; }
+        if(lichessState.status&&lichessState.status!=='started'&&lichessState.status!=='created'){ warn('That game has ended.'); return; }
+        if(game.turn()!==lichessState.color){ warn('It’s your opponent’s move.'); return; }
       }
     }
     // Two exact readings, no piece named, nothing to choose between them.
@@ -4964,6 +5014,267 @@
   }
 
   // ===============================================================
+  // Lichess Board API — read-only spectate of a real game on lichess.org,
+  // played through Adni's own account via a personal access token
+  // (board:play scope). Move-out (voice -> Lichess) is a later milestone;
+  // for now this only STREAMS a game already open on lichess.org and
+  // narrates it, reusing describeMove()/playMoveSound() exactly as
+  // loadOnlinePgn() does for a Supabase-backed game. route()'s guard block
+  // is what actually stops a voice move from being attempted.
+  // ===============================================================
+  function showLichessPanel(){
+    lichessPanel.classList.add('show');
+    // Visible, not just enforced silently in tipFor()/askEngine() — a
+    // disabled control tells the player the setting can't do anything here,
+    // rather than looking live while every answer it would trigger is muted.
+    coachSelect.disabled=true; tipsSelect.disabled=true;
+  }
+  function hideLichessPanel(){
+    lichessPanel.classList.remove('show');
+    coachSelect.disabled=false; tipsSelect.disabled=false;
+  }
+  function lichessNote(text){ lichessStatusEl.textContent=text; }
+
+  async function lichessFetch(path, opts){
+    const r=await fetch('https://lichess.org'+path, Object.assign({},opts,{
+      headers:Object.assign({Authorization:'Bearer '+lichessToken},(opts&&opts.headers)||{})
+    }));
+    if(!r.ok) throw new Error('Lichess API '+r.status);
+    return r;
+  }
+
+  // Applies every UCI move past lichessState.moveCount to `game`, narrating
+  // each one exactly the way loadOnlinePgn() narrates a move that arrived
+  // from outside voice input. Takes the full move list every time (Lichess
+  // resends it whole on `gameFull`) rather than a delta, so a dropped/
+  // reopened stream self-heals without a special reconnect path.
+  function applyLichessMoves(movesStr){
+    const uci=(movesStr||'').split(' ').filter(Boolean);
+    for(let i=lichessState.moveCount;i<uci.length;i++){
+      const mv=uci[i];
+      const applied=game.move({from:mv.slice(0,2),to:mv.slice(2,4),promotion:mv.slice(4)||undefined});
+      if(!applied){ warnSilent('Lichess sent a move this board could not apply: '+mv); break; }
+      lastMove=applied;
+      playMoveSound(!!applied.captured);
+      speak(describeMove(applied,verbosity)+endSuffix());
+    }
+    lichessState.moveCount=uci.length;
+    renderAll();
+  }
+
+  // Called from applyMove() AFTER game.move() has already mutated the board
+  // (same optimistic-apply convention every other mode uses). moveCount is
+  // bumped synchronously, before the POST resolves, so that when the stream
+  // echoes this move back in a later gameState event, applyLichessMoves()
+  // sees it as already-applied and does not replay/re-narrate it.
+  async function sendLichessMove(applied){
+    const priorCount=lichessState.moveCount;
+    lichessState.moveCount=priorCount+1;
+    const uci=applied.from+applied.to+(applied.promotion||'');
+    try{
+      await lichessFetch('/api/board/game/'+lichessState.gameId+'/move/'+uci,{method:'POST'});
+    }catch(err){
+      // Lichess said no (wrong turn, illegal in its own state, game over,
+      // rate limit) — the local board must not disagree with the real game,
+      // so undo exactly what applyMove() just did and put the count back.
+      game.undo();
+      lichessState.moveCount=priorCount;
+      lastMove=game.history({verbose:true}).slice(-1)[0]||null;
+      warn('Lichess rejected that move: '+(err.message||'try again.'));
+      renderAll();
+    }
+  }
+
+  // Display-only clock, same anchor-and-derive shape as computeOnlineMs():
+  // Lichess is the only real clock authority, but wtime/btime only arrive
+  // with a gameState event (i.e. after a move), so between moves this ticks
+  // locally off lastEventAt rather than sitting frozen at the last-received
+  // number — that frozen display is exactly what read as "not running" on
+  // a real timed game.
+  function computeLichessMs(){
+    if(!lichessState) return {w:0,b:0};
+    const running=(!gameOver&&lichessState.status==='started')?game.turn():null;
+    const elapsed=running?Date.now()-lichessState.lastEventAt:0;
+    return{
+      w:Math.max(0,(lichessState.wtime||0)-(running==='w'?elapsed:0)),
+      b:Math.max(0,(lichessState.btime||0)-(running==='b'?elapsed:0))
+    };
+  }
+  function stopLichessClock(){ if(lichessClockTimer){ clearInterval(lichessClockTimer); lichessClockTimer=null; } }
+  function startLichessClock(){
+    stopLichessClock();
+    if(!lichessState||gameOver||lichessState.status!=='started') return;
+    lichessClockTimer=setInterval(renderClock,200);
+  }
+
+  function lichessGameOverText(status){
+    return {mate:'Checkmate.',resign:'Resignation.',stalemate:'Stalemate.',timeout:'Time forfeit.',
+      draw:'Draw.',outoftime:'Time forfeit.',cheat:'Game annulled.',aborted:'Game aborted.'}[status]||('Game over: '+status+'.');
+  }
+
+  function handleLichessEvent(evt){
+    lichessState.lastEventAt=Date.now();
+    if(evt.type==='gameFull'){
+      generation++;
+      game.reset(); lastMove=null; gameOver=false;
+      lichessState.moveCount=0;
+      lichessState.color=evt.white&&evt.white.id===lichessUsername?'w':'b';
+      humanColor=lichessState.color;
+      lichessNote('Playing '+(evt.white.name||evt.white.id||'White')+' vs '+(evt.black.name||evt.black.id||'Black')+'.');
+      transcript.innerHTML='';
+      log('Board','Connected to a live Lichess game — you are '+(lichessState.color==='w'?'White':'Black')+'.');
+      applyLichessMoves(evt.state.moves);
+      lichessState.wtime=evt.state.wtime; lichessState.btime=evt.state.btime;
+      lichessState.status=evt.state.status;
+      renderClock(); startLichessClock();
+    }else if(evt.type==='gameState'){
+      applyLichessMoves(evt.moves);
+      lichessState.wtime=evt.wtime; lichessState.btime=evt.btime;
+      lichessState.status=evt.status;
+      renderClock(); startLichessClock();
+      if(evt.status&&evt.status!=='started'&&evt.status!=='created'){
+        gameOver=true;
+        stopLichessClock();
+        speak(lichessGameOverText(evt.status));
+        renderAll();
+      }
+    }
+  }
+
+  async function openLichessStream(gameId){
+    const controller=new AbortController();
+    lichessState={gameId,color:null,moveCount:0,wtime:0,btime:0,status:'started',
+      streamController:controller,lastEventAt:Date.now()};
+    lichessNote('Connecting…');
+    try{
+      const res=await lichessFetch('/api/board/game/stream/'+gameId,{signal:controller.signal});
+      const reader=res.body.getReader();
+      const decoder=new TextDecoder();
+      let buf='';
+      while(true){
+        const {done,value}=await reader.read();
+        if(done) break;
+        buf+=decoder.decode(value,{stream:true});
+        let idx;
+        while((idx=buf.indexOf('\n'))!==-1){
+          const line=buf.slice(0,idx); buf=buf.slice(idx+1);
+          if(!line.trim()) continue;
+          try{ handleLichessEvent(JSON.parse(line)); }catch(e){}
+        }
+      }
+      if(lichessState&&lichessState.gameId===gameId) lichessNote('Stream ended — game finished or connection closed.');
+    }catch(err){
+      if(err.name!=='AbortError' && lichessState&&lichessState.gameId===gameId){
+        lichessNote('Connection lost: '+(err.message||'stream error')+'.');
+      }
+    }
+  }
+
+  let lichessUsername=null;
+  async function ensureLichessUsername(){
+    if(lichessUsername) return lichessUsername;
+    const acct=await (await lichessFetch('/api/account')).json();
+    lichessUsername=acct.username;
+    return lichessUsername;
+  }
+
+  async function watchLichessGame(){
+    if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
+    try{
+      lichessNote('Looking up your account…');
+      await ensureLichessUsername();
+      lichessNote('Checking for a game in progress…');
+      const playing=await (await lichessFetch('/api/account/playing')).json();
+      const current=(playing.nowPlaying||[])[0];
+      if(!current){ lichessNote('No game in progress on lichess.org right now — seek one below, or start one there and press Resume again.'); return; }
+      lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
+      openLichessStream(current.gameId);
+    }catch(err){
+      lichessNote('Could not connect: '+(err.message||'check your token.'));
+    }
+  }
+
+  // Excludes blitz/bullet on purpose — a voice move takes longer than a
+  // click, so this app only offers time controls slow enough to survive
+  // that round-trip. `rated:false` is hardcoded: this is a new, unproven
+  // integration and a bad move sent by a misheard command should not cost
+  // a real rating point while it's still being shaken out.
+  const LICHESS_TIME_CONTROLS={
+    corr:{days:3,label:'a correspondence'},
+    rapid:{time:10,increment:5,label:'a rapid'},
+    classical:{time:30,increment:20,label:'a classical'}
+  };
+  let lichessSeekController=null, lichessSeekPollTimer=null;
+
+  function cancelLichessSeek(announce){
+    if(lichessSeekPollTimer){ clearInterval(lichessSeekPollTimer); lichessSeekPollTimer=null; }
+    if(lichessSeekController){ try{ lichessSeekController.abort(); }catch(e){} lichessSeekController=null; }
+    lichessSeekBtn.style.display=''; lichessCancelSeekBtn.style.display='none';
+    if(announce!==false) lichessNote('Seek cancelled.');
+  }
+
+  async function seekLichessGame(){
+    if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
+    const cfg=LICHESS_TIME_CONTROLS[lichessTimeSelect.value];
+    try{ await ensureLichessUsername(); }
+    catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
+    const body=new URLSearchParams({rated:'false'});
+    if(cfg.days) body.set('days',String(cfg.days));
+    else{ body.set('time',String(cfg.time)); body.set('increment',String(cfg.increment)); }
+    const controller=new AbortController();
+    lichessSeekController=controller;
+    lichessSeekBtn.style.display='none'; lichessCancelSeekBtn.style.display='';
+    lichessNote('Looking for '+cfg.label+' opponent on Lichess…');
+    // POST /api/board/seek holds its connection open until matched (or it
+    // times out) — closing the connection is how a seek is withdrawn, which
+    // is exactly what cancelLichessSeek()'s abort() does. The match itself
+    // is detected below by polling account/playing, not by reading this
+    // stream's body — it's drained here only so the connection doesn't
+    // stall waiting for a reader that never comes.
+    lichessFetch('/api/board/seek',{method:'POST',signal:controller.signal,
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()})
+      .then(async res=>{
+        const reader=res.body.getReader();
+        while(true){ const r=await reader.read(); if(r.done) break; }
+      }).catch(()=>{});
+    lichessSeekPollTimer=setInterval(async()=>{
+      try{
+        const playing=await (await lichessFetch('/api/account/playing')).json();
+        const current=(playing.nowPlaying||[])[0];
+        if(current){
+          cancelLichessSeek(false);
+          lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
+          openLichessStream(current.gameId);
+        }
+      }catch(e){}
+    },3000);
+  }
+
+  function leaveLichess(){
+    cancelLichessSeek(false);
+    stopLichessClock();
+    if(lichessState){
+      try{ lichessState.streamController?.abort(); }catch(e){}
+    }
+    lichessState=null;
+    lichessWatchBtn.style.display=''; lichessStopBtn.style.display='none';
+    lichessNote('Paste a Lichess personal access token with the board:play scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.');
+  }
+
+  lichessSaveTokenBtn.addEventListener('click',()=>{
+    const v=lichessTokenInput.value.trim();
+    if(!v) return;
+    lichessToken=v; lichessUsername=null;
+    try{ localStorage.setItem(LICHESS_TOKEN_KEY,v); }catch(e){}
+    lichessTokenInput.value='';
+    lichessNote('Token saved. Seek a game, or press Resume if one is already running.');
+  });
+  lichessSeekBtn.addEventListener('click',seekLichessGame);
+  lichessCancelSeekBtn.addEventListener('click',()=>cancelLichessSeek(true));
+  lichessWatchBtn.addEventListener('click',watchLichessGame);
+  lichessStopBtn.addEventListener('click',leaveLichess);
+
+  // ===============================================================
   // Lobby — browse open/in-progress games instead of needing a direct
   // invite link. No new backend access needed: the games table's SELECT
   // policy already allows reading any row ("Anyone can read mind chess
@@ -5049,8 +5360,11 @@
     const prevMode=mode;
     mode=modeSelect.value;
     if(prevMode==='online'&&mode!=='online') leaveOnline();
-    if(mode==='online'){ showOnlinePanel(); return; }
+    if(prevMode==='lichess'&&mode!=='lichess') leaveLichess();
+    if(mode==='online'){ hideLichessPanel(); showOnlinePanel(); return; }
     hideOnlinePanel();
+    if(mode==='lichess'){ showLichessPanel(); return; }
+    hideLichessPanel();
     if(mode==='puzzle'){ enterPuzzles(); return; }
     startNewGame(); warmEngine();
   });
@@ -5282,6 +5596,12 @@
   const SAVE_KEY='mind-chess-v2-save';
   const BOARD_THEME_KEY='mind-chess-v2-board-theme';
   const PIECE_THEME_KEY='mind-chess-v2-piece-theme';
+  // Deliberately its own key, never folded into SAVE_KEY: a Lichess token
+  // grants full board:play access to a real account, and SAVE_KEY's blob is
+  // exactly the kind of thing that gets pasted into a bug report or read back
+  // out of localStorage during debugging. saveState() below must never
+  // reference lichessToken.
+  const LICHESS_TOKEN_KEY='mind-chess-v2-lichess-token';
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
@@ -5340,7 +5660,10 @@
         return true;
       }
       if(saved.pgn) game.load_pgn(saved.pgn);
-      mode=(saved.mode==='online')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
+      // Lichess mode has no reconnect-on-reload yet (unlike online's
+      // reconnectOnline() above) — a reload always drops back to vs-computer
+      // rather than guessing at a game id it never persisted.
+      mode=(saved.mode==='online'||saved.mode==='lichess')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
       // A puzzle isn't a game, so restoring its PGN would restore a half-solved
       // position with no puzzle attached to it. Re-enter the mode properly and
       // let it serve the next unsolved one.
@@ -5623,6 +5946,7 @@
     boardThemeSelect.value=localStorage.getItem(BOARD_THEME_KEY)||'wood';
     pieceThemeSelect.value=localStorage.getItem(PIECE_THEME_KEY)||'classic';
   }catch(e){}
+  try{ lichessToken=localStorage.getItem(LICHESS_TOKEN_KEY)||null; }catch(e){}
   applyTheme();
 
   refreshVoices();
