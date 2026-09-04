@@ -4524,3 +4524,28 @@ real rapid game (which also needs `board:play` to send moves), so the token
 in the browser was likely swapped or regenerated since then, not something
 this app did. Fix is on Lichess's side — issue a fresh personal access token
 with `board:play` checked and re-save it in the app.
+
+## 2026-09-05 — milestone 4 confirmed in the wild, unprompted
+
+Two reports came in from Adni's AI game (id16, r54): **"Reconnected to your
+Lichess game." logged twice, mid-game, with no move re-narrated and the
+transcript intact both times.** Neither was a deliberate wifi-cut test — the
+connection just dropped on its own during a normal AI game (matches
+`architecture/id16` timeline's own "19 errors" of speech-recognition network
+flakiness around the same stretch, so plausibly the same real connectivity
+blip that hit both the mic and the Lichess stream at once) and r51's
+reconnect logic recovered both times without being asked to. This is the
+first real confirmation of milestone 4's core claim — a dropped stream no
+longer "just sits there" — and it happened without a staged test, which is
+about as good a signal as this project gets.
+
+Also archived id15 (a duplicate report from the same wifi-cut session as
+id14, nothing new — see id14) for completeness.
+
+Game itself ended in a real loss (Scholar's-mate-shaped trap, `Qf7#`), not an
+app bug — `tools/signatures.js` found no new failure shapes in either report.
+
+**Still open**: a human-opponent game to confirm the reconnect path (and
+resign/abort) against a real person, not just the always-available AI
+opponent — Adni is trying that next. After that: `tools/fake-lichess.js`
+mock harness + fixtures, then milestone 5 polish.
