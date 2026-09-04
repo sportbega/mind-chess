@@ -4612,3 +4612,24 @@ raw, 16 heard** — neither confirms nor refutes the r49 hypothesis; it looks
 like a legitimately busy long session (same shape as the noted 60.3s false
 positive), not the actual stuck-session bug. Still waiting on a real
 `heard≈0` occurrence to settle that one.
+
+## 2026-09-05 (r56): your own pieces belong on your side
+
+Adni: playing Black meant looking at the board upside-down from every other
+chess site's convention — White's home rank at the bottom regardless of
+which color you're playing.
+
+Added a "Flip board" button next to the turn pill. Defaults to following
+`humanColor` automatically (Black sees Black on the bottom, same as
+Lichess/Chess.com), so nothing changes for anyone who hasn't touched it;
+clicking it sets an explicit override that sticks across games and survives
+a reload (`boardFlippedOverride`, persisted alongside `boardHidden`).
+`renderBoard()` just walks the ranks/files in reverse when flipped — same
+board-building loop, no new state elsewhere, since orientation is purely a
+render-time concern.
+
+Verified in a local headless run: default orientation unflipped shows
+`ranks: 87654321`, clicking Flip board shows `ranks: 12345678` with rank 1
+(White's own row) now at the top of the DOM order — the correct flip.
+
+Build `BUILD='v2-r56 (your own pieces belong on your side)'`.
