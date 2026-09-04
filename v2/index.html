@@ -2363,7 +2363,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r53 (an empty lobby has a computer in it too)';
+  const BUILD='v2-r54 (a bare status code is not a reason)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5065,7 +5065,15 @@
     const r=await fetch('https://lichess.org'+path, Object.assign({},opts,{
       headers:Object.assign({Authorization:'Bearer '+lichessToken},(opts&&opts.headers)||{})
     }));
-    if(!r.ok) throw new Error('Lichess API '+r.status);
+    if(!r.ok){
+      // A bare status code (a 403 with no reason) is nearly useless for
+      // diagnosing WHICH problem it is — wrong/missing scope, rate limit, a
+      // game already in progress. Lichess puts the real reason in the body.
+      let detail='';
+      try{ detail=(await r.clone().json()).error||''; }
+      catch(e){ try{ detail=await r.clone().text(); }catch(e2){} }
+      throw new Error('Lichess API '+r.status+(detail?': '+detail:''));
+    }
     return r;
   }
 
@@ -5336,7 +5344,16 @@
       .then(async res=>{
         const reader=res.body.getReader();
         while(true){ const r=await reader.read(); if(r.done) break; }
-      }).catch(()=>{});
+      }).catch(err=>{
+        // A rejected seek POST (bad scope, rate limit, whatever) used to be
+        // swallowed here entirely — the UI just sat on "Looking for an
+        // opponent…" forever with no way to tell a real failure apart from
+        // "nobody's out there yet." AbortError is cancelLichessSeek()'s own
+        // abort() and must stay silent; anything else is a real failure.
+        if(err.name==='AbortError'||lichessSeekController!==controller) return;
+        cancelLichessSeek(false);
+        lichessNote('Seek failed: '+(err.message||'try again.'));
+      });
     lichessSeekPollTimer=setInterval(async()=>{
       try{
         const playing=await (await lichessFetch('/api/account/playing')).json();
