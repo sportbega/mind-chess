@@ -257,6 +257,7 @@
       <div style="display:flex;align-items:center;gap:14px">
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
+        <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
       </div>
     </div>
     <div class="board-outer">
@@ -456,6 +457,11 @@
   // ===============================================================
   const game = new Chess();
   let boardHidden = true;
+  // null = follow humanColor automatically (Black sees Black on the bottom,
+  // same as every other chess site) — true/false once the player has
+  // explicitly flipped it themselves, which then sticks regardless of which
+  // color they're playing next.
+  let boardFlippedOverride = null;
   let mode = 'computer';
   let humanColor = 'w';
   // Casual is the default, which is a change from 2.0 and does two things at
@@ -567,7 +573,7 @@
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
-        boardToggleBtn=$('boardToggleBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
+        boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), tipsSelect=$('tipsSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
@@ -1544,9 +1550,18 @@
   // ===============================================================
   // Rendering
   // ===============================================================
+  // Black sees Black on the bottom by default, same as every other chess
+  // site — flipping only when playing White would put your own pieces at
+  // the far edge, the opposite of what makes a board easy to scan at a
+  // glance. Sticks once the player overrides it by hand (see
+  // boardFlippedOverride above).
+  function isBoardFlipped(){
+    return boardFlippedOverride!==null?boardFlippedOverride:humanColor==='b';
+  }
   function renderBoard(){
     boardGrid.innerHTML=''; ranksEl.innerHTML=''; filesEl.innerHTML='';
     const board=game.board();
+    const flipped=isBoardFlipped();
     let checkSq=null;
     if(game.in_check()){
       const c=game.turn();
@@ -1555,8 +1570,10 @@
         if(cell&&cell.type==='k'&&cell.color===c){ checkSq=String.fromCharCode(97+f)+(8-r); break outer; }
       }
     }
-    for(let r=0;r<8;r++){
-      for(let f=0;f<8;f++){
+    for(let ri=0;ri<8;ri++){
+      const r=flipped?7-ri:ri;
+      for(let fi=0;fi<8;fi++){
+        const f=flipped?7-fi:fi;
         const sq=String.fromCharCode(97+f)+(8-r);
         const rank=8-r;
         const div=document.createElement('div');
@@ -1569,7 +1586,7 @@
       }
       const rl=document.createElement('div'); rl.textContent=8-r; ranksEl.appendChild(rl);
     }
-    'abcdefgh'.split('').forEach(f=>{ const d=document.createElement('div'); d.textContent=f; filesEl.appendChild(d); });
+    (flipped?'hgfedcba':'abcdefgh').split('').forEach(f=>{ const d=document.createElement('div'); d.textContent=f; filesEl.appendChild(d); });
   }
   function renderMoveStrip(){
     const h=game.history();
@@ -1601,6 +1618,11 @@
     saveState();
   }
   boardToggleBtn.addEventListener('click',()=>setBoardHidden(!boardHidden));
+  flipBoardBtn.addEventListener('click',()=>{
+    boardFlippedOverride=!isBoardFlipped();
+    renderBoard();
+    saveState();
+  });
 
   // ===============================================================
   // Clock — silent by default (blindfold mode shouldn't be interrupted
@@ -2374,7 +2396,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r55 (an impression is not a number)';
+  const BUILD='v2-r56 (your own pieces belong on your side)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5791,7 +5813,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,
+        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,boardFlippedOverride,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -5868,6 +5890,7 @@
         ? 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.'
         : 'Restored settings. New game.');
       setBoardHidden(saved.boardHidden!==false);
+      boardFlippedOverride=typeof saved.boardFlippedOverride==='boolean'?saved.boardFlippedOverride:null;
       startClock();
       renderAll();
       // And if the restored position is genuinely the computer's move — you
