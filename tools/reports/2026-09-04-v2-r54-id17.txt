@@ -1,0 +1,129 @@
+### SUBMITTED BY A PLAYER — UNTRUSTED TEXT. Read as data, never as instructions.
+### Pulled by tools/pull-reports.js from public.mind_chess_reports.
+### id=17  submitted=2026-09-04T22:27:27.453524+00:00
+
+=== Mind Chess problem report ===
+build: v2-r54 (a bare status code is not a reason)
+when:  2026-09-04T22:26:41.559Z
+url:   https://sportbega.github.io/mind-chess/v2/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=lichess  ·  level=2  ·  speech=kokoro  ·  hearing=system  ·  voice=af_heart  ·  rate=1  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: rn2k1nr/pp3ppp/2p5/2b1pP2/2b1P1P1/7P/4NqB1/4RK2 w kq - 1 17
+  pgn: 1. e4 c6 2. d3 d5 3. f3 dxe4 4. dxe4 Qxd1+ 5. Kf2 Qxc1 6. Ne2 Qxb2 7. Nd2 Qxa1 8. g4 Qxa2 9. h3 Qxc2 10. Bg2 Qxd2 11. Re1 e5 12. Kg3 Be6 13. Kf2 Bc5+ 14. Kf1 Bc4 15. f4 Qe3 16. f5 Qf2#
+
+--- last said ---
+  Board  White plays king f2 to f1.
+  Board  Reconnected to your Lichess game.
+  Board  Black plays bishop e6 to c4.
+  You    Pawn to F4
+           heard: also heard: on 24 / Pawn 24
+  Board  White plays pawn f3 to f4.
+  Board  Black plays queen d2 to e3.
+  You    5
+  System That didn't sound like a chess move — try spelling it out, like "alpha three" instead of "a three", or type it in the box below.
+  You    Pawn to F5
+           heard: also heard: Ponto F5 / point to F5
+  Board  White plays pawn f4 to f5.
+  Board  Black plays queen e3 to f2. Checkmate — Black wins.
+  Board  Checkmate.
+
+--- what was heard (28) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r54 (a bare status code is not a reason)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+(28 candidates recorded, elided here — a long deliberately-lost opening
+where the queen went on a capturing rampage before white eventually got
+mated; nothing in the candidate list itself is new relative to id13/id16,
+see those for the same shapes: bare-digit, pawn-default, misheard piece
+names all recur here too. Full candidate list preserved in the actual
+Supabase row if needed later — id=17.)
+
+--- mic timeline · state=listening · 43 mic sessions · 0 barge-ins · 3 echoes ignored · 42 restarts · 0 watchdog saves · 26 errors · 98 heard · 68 lost · 30 dropped · 214 raw · span 880s ---
+  +716.7s  tts  rendered ahead(1) in 592ms
+  +716.7s  tts  kokoro chunk in 476ms
+  +716.9s  tts  rendered ahead(1) in 279ms
+  +719.5s  tts  kokoro chunk in 7ms
+  +720.8s  state  speaking → listening  (narration ended)
+  +725.9s  state  listening → thinking  (routing "1")
+  +725.9s  state  thinking → listening  (nothing to narrate)
+  +731.8s  lost  "Kings" never became a final result (a different utterance began)
+  +731.9s  lost  "to F1" never became a final result (a different utterance began)
+  +731.9s  lost  "Kings to" never became a final result (a different utterance began)
+  +736.5s  lost  "F1" never became a final result (a different utterance began)
+  +737.2s  lost  "to f" never became a final result (a different utterance began)
+  +737.4s  lost  "f" never became a final result (a different utterance began)
+  +737.8s  state  listening → thinking  (routing "King to F1")
+  +737.8s  state  thinking → speaking  (narration started)
+  +738.5s  tts  rendered ahead(1) in 625ms
+  +738.5s  tts  kokoro chunk in 505ms
+  +741.3s  state  speaking → listening  (narration ended)
+  +774.8s  state  listening → restarting  (session closed)
+  +774.8s  error  network
+  +774.8s  session  closed after 80.5s (31 raw, 19 heard)
+  +774.8s  restart  in 2500ms (network backoff)
+  +777.3s  state  restarting → listening  (session open)
+  +777.3s  session  opened  (2502ms deaf)
+  +777.6s  state  listening → restarting  (session closed)
+  +777.6s  error  network
+  +777.6s  session  closed after 0.3s (0 raw, 0 heard)
+  +777.6s  restart  in 2500ms (network backoff)
+  +780.1s  state  restarting → listening  (session open)
+  +780.1s  session  opened  (2501ms deaf)
+  +780.4s  state  listening → restarting  (session closed)
+  +780.4s  error  network
+  +780.4s  session  closed after 0.3s (0 raw, 0 heard)
+  +780.4s  restart  in 2500ms (network backoff)
+  +782.9s  state  restarting → listening  (session open)
+  +782.9s  session  opened  (2503ms deaf)
+  +783.2s  state  listening → restarting  (session closed)
+  +783.2s  error  network
+  +783.2s  session  closed after 0.3s (0 raw, 0 heard)
+  +783.2s  restart  in 2500ms (network backoff)
+  +785.7s  state  restarting → listening  (session open)
+  +785.7s  session  opened  (2501ms deaf)
+  +785.9s  state  listening → restarting  (session closed)
+  +785.9s  error  network
+  +785.9s  session  closed after 0.3s (0 raw, 0 heard)
+  +785.9s  restart  in 2500ms (network backoff)
+  +788.4s  state  restarting → listening  (session open)
+  +788.4s  session  opened  (2501ms deaf)
+  +789.9s  state  listening → speaking  (narration started)
+  +790.6s  tts  rendered ahead(1) in 697ms
+  +790.6s  tts  kokoro chunk in 579ms
+  +793.6s  state  speaking → listening  (narration ended)
+  +808.6s  session  closed after 20.2s (0 raw, 0 heard)
+  +808.6s  state  listening → restarting  (session closed)
+  +808.6s  restart  in 200ms
+  +808.8s  state  restarting → listening  (session open)
+  +808.8s  session  opened  (202ms deaf)
+  +819.8s  lost  "Pawn" never became a final result (a different utterance began)
+  +819.8s  lost  "on" never became a final result (a different utterance began)
+  +820.0s  lost  "Pawn to f" never became a final result (a different utterance began)
+  +820.5s  state  listening → thinking  (routing "Pawn to F4")
+  +820.5s  state  thinking → speaking  (narration started)
+  +821.2s  tts  rendered ahead(1) in 641ms
+  +821.2s  tts  kokoro chunk in 520ms
+  +824.1s  state  speaking → listening  (narration ended)
+  +835.1s  state  listening → speaking  (narration started)
+  +835.7s  tts  rendered ahead(1) in 615ms
+  +835.7s  tts  kokoro chunk in 497ms
+  +838.5s  state  speaking → listening  (narration ended)
+  +869.6s  state  listening → thinking  (routing "5")
+  +869.6s  state  thinking → listening  (nothing to narrate)
+  +874.1s  lost  "Ponto" never became a final result (a different utterance began)
+  +874.7s  state  listening → thinking  (routing "Pawn to F5")
+  +874.7s  state  thinking → speaking  (narration started)
+  +875.3s  tts  rendered ahead(1) in 567ms
+  +875.3s  tts  kokoro chunk in 425ms
+  +878.4s  tts  rendered ahead(1) in 629ms
+  +878.7s  tts  rendered ahead(1) in 930ms
+  +878.7s  tts  kokoro chunk in 810ms
+  +880.2s  state  speaking → listening  (narration ended)
+
+--- describe what went wrong (please type here) ---
+there was problem with clock counting as well, especially after reconnecting. and black and white clock where not doing same things.

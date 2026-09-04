@@ -517,6 +517,17 @@
   let lichessState = null;     // {gameId,color,moveCount,wtime,btime,status,streamController,lastEventAt,reconnectAttempt,resuming}
   let lichessClockTimer = null;
   let lichessReconnectTimer = null;
+  // Mirrors micEvent()/micLog — a report saying "the clock looked wrong,
+  // especially after reconnecting" is a symptom description, not a
+  // diagnosis, the same way "one mic session ran long" was before
+  // sessionRawCount existed. This records the actual wtime/btime/color the
+  // app was working with at every event, so the NEXT such report carries
+  // numbers instead of an impression.
+  const lichessLog = [];
+  function lichessEvent(kind,detail){
+    lichessLog.push({t:Date.now(),kind:kind,detail:detail||''});
+    if(lichessLog.length>200) lichessLog.shift();
+  }
 
   // Clock: 0 = no clock. Runs off game.turn(), so it works the same for
   // computer/two-player/online without per-mode special-casing — the
@@ -2363,7 +2374,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r54 (a bare status code is not a reason)';
+  const BUILD='v2-r55 (an impression is not a number)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5174,11 +5185,15 @@
       applyLichessMoves(evt.state.moves);
       lichessState.wtime=evt.state.wtime; lichessState.btime=evt.state.btime;
       lichessState.status=evt.state.status;
+      lichessEvent('gameFull',(reconnecting?'reconnect':'connect')+' color='+lichessState.color
+        +' wtime='+lichessState.wtime+' btime='+lichessState.btime+' status='+lichessState.status);
       renderClock(); startLichessClock();
     }else if(evt.type==='gameState'){
       applyLichessMoves(evt.moves);
       lichessState.wtime=evt.wtime; lichessState.btime=evt.btime;
       lichessState.status=evt.status;
+      lichessEvent('gameState','turn='+game.turn()+' wtime='+lichessState.wtime
+        +' btime='+lichessState.btime+' status='+lichessState.status);
       renderClock(); startLichessClock();
       if(evt.status&&evt.status!=='started'&&evt.status!=='created'){
         gameOver=true;
@@ -5208,6 +5223,8 @@
       if(!lichessState||lichessState.gameId!==gameId||gameOver) return;
       const resumeState=lichessState;
       resumeState.resuming=true;
+      lichessEvent('reconnect-attempt','#'+attempt+' carrying wtime='+resumeState.wtime
+        +' btime='+resumeState.btime+' color='+resumeState.color);
       openLichessStream(gameId,resumeState);
     },delay);
   }
@@ -5265,6 +5282,8 @@
         lichessNote('Out of sync with Lichess — reconnecting…');
         const gameId=lichessState.gameId, resumeState=lichessState;
         resumeState.resuming=true;
+        lichessEvent('reconcile-reconnect','fen mismatch, carrying wtime='+resumeState.wtime
+          +' btime='+resumeState.btime+' color='+resumeState.color);
         try{ resumeState.streamController?.abort(); }catch(e){}
         openLichessStream(gameId,resumeState);
       }
@@ -5935,6 +5954,12 @@
     return head+'\n'+micLog.slice(-80).map(m=>
       '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');
   }
+  function lichessTimeline(){
+    if(!lichessLog.length) return '';
+    const t0=lichessLog[0].t;
+    return '\n\n--- lichess timeline ---\n'+lichessLog.map(m=>
+      '  +'+((m.t-t0)/1000).toFixed(1)+'s  '+m.kind+(m.detail?'  '+m.detail:'')).join('\n');
+  }
   function renderDebug(){
     if(!debugOut) return;
     // Only follow the tail if the reader was already at it — this now
@@ -6035,7 +6060,7 @@
             // a reader can tell #32 isn't the first thing that happened — but
             // only if they think to check, and a bug report is read in a hurry.
             '--- what was heard '+(diagSeq>DIAG_MAX?'(last '+DIAG_MAX+' of '+diagSeq+')':'('+diagSeq+')')+' ---',
-            debugLog.join('\n')+micTimeline(),
+            debugLog.join('\n')+micTimeline()+(mode==='lichess'?lichessTimeline():''),
             '',
             '--- describe what went wrong (please type here) ---',
             ''].join('\n');

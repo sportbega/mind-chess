@@ -4549,3 +4549,39 @@ app bug — `tools/signatures.js` found no new failure shapes in either report.
 resign/abort) against a real person, not just the always-available AI
 opponent — Adni is trying that next. After that: `tools/fake-lichess.js`
 mock harness + fixtures, then milestone 5 polish.
+
+## 2026-09-05 (r55): an impression is not a number
+
+Report id17 (r54): a real loss (Scholar's-mate-shaped trap), but with a note
+this time — "there was problem with clock counting as well, especially after
+reconnecting. and black and white clock where not doing same things." Asked
+for specifics: "one side was reseting to 10:00 and starting from there,
+sometimes from 9:30, depending on how much time opponent took i guess. wird
+patter."
+
+Read every clock-touching line in `computeLichessMs()`, `openLichessStream()`,
+`scheduleLichessReconnect()`, `reconcileLichess()`, and the `gameFull`/
+`gameState` branches of `handleLichessEvent()` looking for the bug and could
+not find one — every automatic-reconnect path correctly carries
+`wtime`/`btime`/`color` forward via `resumeState`, and the fresh `gameFull`
+event's numbers should always be authoritative anyway. There is also a
+completely benign explanation that fits the description just as well: this
+app's rapid time control is 10+5 (a 5-second incrementeach move) — a player
+who replies faster than 5 seconds gains time every move, so their own clock
+can genuinely climb back toward, or even past, the starting 10:00, and how
+close depends on the opponent's think time. That is exactly what "resetting
+to 10:00, sometimes 9:30, depending on how much time opponent took" describes,
+with no bug required.
+
+Per this project's own rule (two "obvious" clock fixes this week were both
+wrong), did not guess-patch. Instead added the same kind of instrumentation
+that finally cracked the stuck-session mystery: a `lichessLog`/`lichessEvent()`
+pair mirroring `micLog`/`micEvent()`, recording `wtime`/`btime`/`color`/
+`status` at every `gameFull`/`gameState` event and at every automatic
+reconnect attempt (both the backoff path and the FEN-mismatch reconciliation
+path). Surfaced as a new `--- lichess timeline ---` section in the bug
+report, alongside the existing mic timeline, only when `mode==='lichess'`.
+
+Build `BUILD='v2-r55 (an impression is not a number)'`. Published to `/v2/`.
+Next stuck-clock report will carry the actual numbers instead of an
+impression.
