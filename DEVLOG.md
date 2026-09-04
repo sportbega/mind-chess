@@ -4462,3 +4462,29 @@ still match on duration alone, just without the verdict.
 Build `BUILD='v2-r52 (a total is not a session)'`. The fix is instrumentation
 only — nothing about scoring, routing, or the reconnect logic from r51
 changed. Still needs the next real stuck session to actually read.
+
+## 2026-09-04 (r53): an empty lobby has a computer in it too
+
+Report id14 explained itself: Adni was mid-seek, cut wifi on purpose, no
+opponent had matched. "Not connected to a Lichess game" was the correct
+message — `seekLichessGame()` is byte-identical to before r51/r52, confirmed
+by diff. Real cause: this app only offers unrated correspondence/rapid/
+classical open seeks (blitz/bullet excluded — a voice move is too slow for
+them), and per Lichess's own API docs `/api/board/seek` matches into the same
+public pool the website's lobby uses, not a separate bot-only one. Unrated,
+non-blitz open seeks are a thin slice of live traffic; correspondence
+especially mostly comes from direct challenges between people who already
+know each other, not blind seeks. Nothing to fix — just a slow way to test.
+
+Added a **"Play the Lichess computer"** button — `POST /api/challenge/ai`
+(level 1-8, same time-control select, correspondence falls back to rapid
+since the AI has no "days per move" concept). The returned game id feeds
+straight into the same `openLichessStream()` every other Lichess game already
+uses, so reconnect/backoff, reconciliation, narration, and fair-play gating
+all apply identically — this isn't a separate mode, it's just another way to
+get a `gameId`, and now Adni can test the resilience work without waiting on
+a stranger.
+
+Build `BUILD='v2-r53 (an empty lobby has a computer in it too)'`. Committed
+to `v2`, published to `/v2/` only — still needs a real dropped-connection
+test before r51's reconnect logic goes to `/`.
