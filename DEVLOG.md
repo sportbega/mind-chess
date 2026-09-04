@@ -4633,3 +4633,39 @@ Verified in a local headless run: default orientation unflipped shows
 (White's own row) now at the top of the DOM order — the correct flip.
 
 Build `BUILD='v2-r56 (your own pieces belong on your side)'`.
+
+## 2026-09-05 — tools/fake-lichess.js: a scriptable stand-in for the Board API
+
+Built the harness milestone 4's build order always planned for, modeled
+directly on `tools/fake-recognizer.js`'s shape: fake the network, keep every
+line of app code real.
+
+`tools/fake-lichess.js` overrides `window.fetch` for `lichess.org` URLs only
+(everything else passes through to the real fetch), backing the NDJSON
+stream endpoint with a genuine `ReadableStream` rather than a hand-rolled
+reader — `res.body.getReader()` behaves exactly as it does against the real
+API for free. Control surface: `setUsername`/`setPlaying` for the account
+endpoints, `gameFull`/`gameState` to push stream events, `dropStream`/
+`endStream` to kill a connection with or without an error, `failNext` for a
+one-shot rejection on any endpoint (this is what would have caught the real
+403-missing-scope bug in a test instead of a live game). `tools/
+lichess-harness.js` injects it into a throwaway copy of `index.html`
+(`_lichess-harness.html`, gitignored, never committed — same convention as
+`_vad-harness.html`).
+
+**Verified end-to-end against the real app, not just written and hoped**:
+drove a full scenario through the actual browser — connect via "Play the
+Lichess computer" (hits the fake's `/api/challenge/ai`), push a `gameFull`,
+send a real move through the typed-move box, push a `gameState` confirming
+it, **drop the stream**, watch `scheduleLichessReconnect()` fire for real
+("Connection lost — retrying in 1s…", a second stream request ~1.2s later),
+push a fresh `gameFull` with the same move list, and confirm "Reconnected to
+your Lichess game." logs with **no duplicate re-narration** of the move that
+was already applied before the drop. Then resign, confirm the real
+`/resign` POST fires and "Resignation." narrates correctly.
+
+This is the first time any of milestone 4's reconnect logic has been tested
+on demand rather than waited for during a real game. No mic fake layered in
+— the typed-move box already exercises `applyMove()`/`sendLichessMove()`
+exactly like a voice command, so `fake-lichess.js` alone is enough for
+everything except literally speaking into a live game.
