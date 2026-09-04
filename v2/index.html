@@ -216,6 +216,13 @@
       </select>
       <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
       <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
+      <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
+        <option value="1">AI level 1</option><option value="2">AI level 2</option>
+        <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
+        <option value="5">AI level 5</option><option value="6">AI level 6</option>
+        <option value="7">AI level 7</option><option value="8">AI level 8</option>
+      </select>
+      <button class="btn" id="lichessAiBtn" type="button">Play the Lichess computer</button>
       <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
       <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
       <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
@@ -570,7 +577,8 @@
         lichessPanel=$('lichessPanel'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
         lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
-        lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn');
+        lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
+        lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiBtn=$('lichessAiBtn');
 
   // ===============================================================
   // Output
@@ -2355,7 +2363,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r52 (a total is not a session)';
+  const BUILD='v2-r53 (an empty lobby has a computer in it too)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5343,6 +5351,36 @@
     },3000);
   }
 
+  // Human seeks depend on a real stranger having a matching unrated,
+  // non-blitz open seek up at the same moment — thin at the best of times,
+  // since most of Lichess's live traffic is rated blitz/bullet. This gives
+  // an instant, always-available opponent through the same Board API game
+  // object, so it reconnects/narrates/gates fair-play identically to a human
+  // game — genuinely useful for testing, not just a fallback.
+  async function playLichessAI(){
+    if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
+    // The AI replies instantly — there's no "days per move" for it, so a
+    // correspondence time-select falls back to rapid rather than sending a
+    // param the endpoint doesn't support.
+    let cfg=LICHESS_TIME_CONTROLS[lichessTimeSelect.value];
+    if(cfg.days) cfg=LICHESS_TIME_CONTROLS.rapid;
+    try{ await ensureLichessUsername(); }
+    catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
+    const body=new URLSearchParams({level:lichessAiLevelSelect.value,
+      'clock.limit':String(cfg.time*60),'clock.increment':String(cfg.increment)});
+    lichessNote('Starting a game against the Lichess computer…');
+    try{
+      const res=await lichessFetch('/api/challenge/ai',{method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
+      const g=await res.json();
+      lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
+      lichessAbortBtn.style.display=''; lichessResignBtn.style.display='';
+      openLichessStream(g.id);
+    }catch(err){
+      lichessNote('Could not start a game: '+(err.message||'try again.'));
+    }
+  }
+
   function leaveLichess(){
     cancelLichessSeek(false);
     stopLichessClock();
@@ -5380,6 +5418,7 @@
   }
   lichessSeekBtn.addEventListener('click',seekLichessGame);
   lichessCancelSeekBtn.addEventListener('click',()=>cancelLichessSeek(true));
+  lichessAiBtn.addEventListener('click',playLichessAI);
   lichessWatchBtn.addEventListener('click',watchLichessGame);
   lichessStopBtn.addEventListener('click',leaveLichess);
   lichessAbortBtn.addEventListener('click',abortLichessGame);
