@@ -4488,3 +4488,27 @@ a stranger.
 Build `BUILD='v2-r53 (an empty lobby has a computer in it too)'`. Committed
 to `v2`, published to `/v2/` only — still needs a real dropped-connection
 test before r51's reconnect logic goes to `/`.
+
+## 2026-09-04 (r54): a bare status code is not a reason
+
+Adni hit "Could not start a game: Lichess API 403" on the new AI button.
+Checked Lichess's own OpenAPI spec for `/api/challenge/ai`: it accepts
+`board:play` (the scope this app's token already needs for everything else),
+so this isn't a documented scope mismatch — but there's no way to tell from a
+bare status code, because `lichessFetch()` was throwing away the response
+body, which is exactly where Lichess puts the actual reason.
+
+Fixed `lichessFetch()` to read and surface that body (`error` field on a JSON
+error, falling back to raw text). While in there, found a second, worse gap:
+the seek POST's own failure handler was `.catch(()=>{})` — a rejected seek
+(wrong scope, rate limit, anything) was silently swallowed, leaving "Looking
+for an opponent…" on screen forever with no way to distinguish a real failure
+from "nobody's seeking yet." **This means id14's "nobody was seeking"
+explanation is now unconfirmed** — the seek POST could have been failing
+with the same 403 the whole time and we'd have had no way to know. Fixed to
+report real failures through `lichessNote()`, still silent only for a
+deliberate `cancelLichessSeek()` abort.
+
+Build `BUILD='v2-r54 (a bare status code is not a reason)'`. Published to
+`/v2/`. Next step: retry the AI button (and/or seek) and read the actual
+error text this time.
