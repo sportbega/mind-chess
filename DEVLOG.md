@@ -4512,3 +4512,15 @@ deliberate `cancelLichessSeek()` abort.
 Build `BUILD='v2-r54 (a bare status code is not a reason)'`. Published to
 `/v2/`. Next step: retry the AI button (and/or seek) and read the actual
 error text this time.
+
+## 2026-09-04 — the 403 traced to its actual cause
+
+r54's fix worked exactly as intended: reproduced live (via the browser, same
+profile/localStorage as the real session) and confirmed the real Lichess
+response is `{"error":"Missing scope: challenge:write || bot:play || board:play"}`
+— the saved token itself has none of the three scopes the Board API needs.
+Not a code bug: the same token category worked fine earlier today for the
+real rapid game (which also needs `board:play` to send moves), so the token
+in the browser was likely swapped or regenerated since then, not something
+this app did. Fix is on Lichess's side — issue a fresh personal access token
+with `board:play` checked and re-save it in the app.
