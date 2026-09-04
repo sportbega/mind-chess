@@ -4669,3 +4669,37 @@ on demand rather than waited for during a real game. No mic fake layered in
 — the typed-move box already exercises `applyMove()`/`sendLichessMove()`
 exactly like a voice command, so `fake-lichess.js` alone is enough for
 everything except literally speaking into a live game.
+
+## 2026-09-05 (r57): a rematch first has to leave the last game
+
+Milestone 5, and `tools/fake-lichess.js` immediately paid for itself: using
+it to test "click Play-the-computer again after a game ends" for the
+rematch-equivalent found that none of `watchLichessGame()`/`seekLichessGame()`/
+`playLichessAI()` called `leaveLichess()` first. The old stream's reader loop
+kept running, never aborted, so its events went on calling
+`handleLichessEvent()` against a `lichessState` that now pointed at a
+completely different game — a live state-corruption bug, not a hypothetical
+one, confirmed by literally pushing an event to the old game and watching it
+overwrite the new one's status line.
+
+Fixed by adding `if(lichessState) leaveLichess();` to the top of all three —
+which doubles as the rematch flow itself: no dedicated "rematch" button
+needed, clicking Seek/Watch/Play-the-computer again now always starts clean.
+
+**The harness caught its own blind spot in the process.** The first test run
+gave a false pass — the leak was still there, but `fake-lichess.js`'s
+`streamResponse()` never wired the fetch's `AbortSignal` to the
+`ReadableStream`, so `leaveLichess()`'s `streamController.abort()` did
+nothing in the fake even though it does something real in a browser against
+the genuine API. Fixed the fake to error the stream on abort (matching what
+Chrome actually does), re-ran the same scenario, and confirmed pushing to
+the old game's stream now throws ("Cannot enqueue a chunk into an errored
+readable stream") instead of corrupting state. A fake that doesn't model
+abort can't be trusted to test the one thing `leaveLichess()` exists to do.
+
+Also added opponent name/rating narration: `describeLichessPlayer()` reads
+Lichess's own player-object shape — `name`/`rating` for a human, `aiLevel`
+for the built-in computer — so "Connected to a live Lichess game" now says
+who you're playing, not just what color you are.
+
+Build `BUILD='v2-r57 (a rematch first has to leave the last game)'`.

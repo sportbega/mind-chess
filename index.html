@@ -2396,7 +2396,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r56 (your own pieces belong on your side)';
+  const BUILD='v2-r57 (a rematch first has to leave the last game)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5094,6 +5094,15 @@
   }
   function lichessNote(text){ lichessStatusEl.textContent=text; }
 
+  // An AI opponent's player object carries aiLevel instead of id/name/rating
+  // (Board API shape, not a bug in what we read) — everything else is a
+  // human with a real Lichess rating worth saying out loud.
+  function describeLichessPlayer(p){
+    if(!p) return 'opponent';
+    if(p.aiLevel) return 'the Lichess computer, level '+p.aiLevel;
+    return (p.name||p.id||'opponent')+(p.rating?' ('+p.rating+')':'');
+  }
+
   async function lichessFetch(path, opts){
     const r=await fetch('https://lichess.org'+path, Object.assign({},opts,{
       headers:Object.assign({Authorization:'Bearer '+lichessToken},(opts&&opts.headers)||{})
@@ -5201,9 +5210,11 @@
       }
       lichessState.color=evt.white&&evt.white.id===lichessUsername?'w':'b';
       humanColor=lichessState.color;
-      lichessNote('Playing '+(evt.white.name||evt.white.id||'White')+' vs '+(evt.black.name||evt.black.id||'Black')+'.');
+      const opponent=describeLichessPlayer(lichessState.color==='w'?evt.black:evt.white);
+      lichessNote('Playing '+describeLichessPlayer(evt.white)+' vs '+describeLichessPlayer(evt.black)+'.');
       log('Board',reconnecting?'Reconnected to your Lichess game.'
-        :'Connected to a live Lichess game — you are '+(lichessState.color==='w'?'White':'Black')+'.');
+        :'Connected to a live Lichess game — you are '+(lichessState.color==='w'?'White':'Black')
+          +' against '+opponent+'.');
       applyLichessMoves(evt.state.moves);
       lichessState.wtime=evt.state.wtime; lichessState.btime=evt.state.btime;
       lichessState.status=evt.state.status;
@@ -5328,6 +5339,12 @@
 
   async function watchLichessGame(){
     if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
+    // Leaving any existing game/seek first is what makes clicking Seek/Watch/
+    // Play-the-computer again after a game ends work as a rematch — without
+    // it, the OLD stream's reader loop kept running (never aborted), so its
+    // events went on calling handleLichessEvent() against a lichessState
+    // that now pointed at a completely different game.
+    if(lichessState) leaveLichess();
     try{
       lichessNote('Looking up your account…');
       await ensureLichessUsername();
@@ -5364,6 +5381,7 @@
 
   async function seekLichessGame(){
     if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
+    if(lichessState) leaveLichess();
     const cfg=LICHESS_TIME_CONTROLS[lichessTimeSelect.value];
     try{ await ensureLichessUsername(); }
     catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
@@ -5417,6 +5435,7 @@
   // game — genuinely useful for testing, not just a fallback.
   async function playLichessAI(){
     if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
+    if(lichessState) leaveLichess();
     // The AI replies instantly — there's no "days per move" for it, so a
     // correspondence time-select falls back to rapid rather than sending a
     // param the endpoint doesn't support.

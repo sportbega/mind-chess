@@ -128,9 +128,23 @@
   // A stream response backed by a REAL ReadableStream, so res.body.getReader()
   // behaves exactly as it does against the genuine Lichess API — no hand-
   // rolled reader object to keep in sync with the fetch spec.
-  function streamResponse(gameId){
+  // Wiring the AbortSignal to the stream is not optional: leaveLichess()'s
+  // whole cleanup path is streamController.abort(), and the app tells a
+  // deliberate abort apart from a real drop by checking err.name==='AbortError'
+  // in the reader loop's catch. A fake that let the old stream keep
+  // delivering events after abort() would give a false pass on exactly the
+  // bug this exists to catch — found live: a second "Play the Lichess
+  // computer" click while already connected left the first game's stream
+  // able to overwrite lichessState until this was added.
+  function streamResponse(gameId, signal){
     let controller;
-    const body = new ReadableStream({ start(c){ controller = c; } });
+    const body = new ReadableStream({ start(c){
+      controller = c;
+      if (signal) {
+        const abort = () => { try{ c.error(new DOMException('The operation was aborted.', 'AbortError')); }catch(e){} };
+        if (signal.aborted) abort(); else signal.addEventListener('abort', abort);
+      }
+    }});
     const encoder = new TextEncoder();
     state.streams[gameId] = {
       push(evt){ controller.enqueue(encoder.encode(JSON.stringify(evt) + '\n')); },
@@ -155,14 +169,14 @@
 
     let m;
     if ((m = path.match(/^\/api\/board\/game\/stream\/([^/]+)$/))) {
-      return Promise.resolve(streamResponse(m[1]));
+      return Promise.resolve(streamResponse(m[1], opts && opts.signal));
     }
     if (path === '/api/board/seek') {
       // Real behaviour: holds the connection open until matched or it times
       // out. The app only drains this body, never reads it — so an
       // open-forever stream (closed only by the app's own abort() when the
       // seek is cancelled) is a faithful fake with no extra bookkeeping.
-      return Promise.resolve(streamResponse('seek:' + Date.now()));
+      return Promise.resolve(streamResponse('seek:' + Date.now(), opts && opts.signal));
     }
     if (path === '/api/challenge/ai') {
       const gameId = 'ai-' + Date.now();
