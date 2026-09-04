@@ -4437,3 +4437,28 @@ harness alone.
 **Still open**: `tools/fake-lichess.js` mock harness + recorded fixtures
 (build-order item 4's second half), then polish (opponent name/rating
 narration, rematch-equivalent) — milestone 5.
+
+## 2026-09-04 (r52): a total is not a session
+
+Fixed the gap r51's investigation surfaced: `rawResultCount` (added r49) was
+only ever exposed as one cumulative total for the entire game, so even a
+second `stuck-session` occurrence (id13) couldn't answer the question it was
+built to answer — was Chrome firing results during the silent stretch, or was
+the recognizer genuinely quiet?
+
+Added `sessionRawCount`/`sessionHeardCount`, reset at the top of each session
+(`startListening()`) alongside `sessionStartedAt`, incremented next to their
+whole-game counterparts (`onresult`, the interim-burst heard check). The
+`closed after Xs` timeline line now carries `(N raw, M heard)` for that
+session specifically.
+
+`tools/signatures.js`'s `stuck-session` detector reads the new fields when
+present and states the verdict outright — `raw>0, heard=0` confirms the r49
+hypothesis (empty/near-duplicate interim results resetting the watchdog with
+nothing visible); `raw=0` means the recognizer genuinely went silent and the
+question moves to Chrome or the OS. Older reports without the new fields
+still match on duration alone, just without the verdict.
+
+Build `BUILD='v2-r52 (a total is not a session)'`. The fix is instrumentation
+only — nothing about scoring, routing, or the reconnect logic from r51
+changed. Still needs the next real stuck session to actually read.

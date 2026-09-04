@@ -657,6 +657,12 @@
   // quiet and the question is somewhere else entirely.
   let rawResultCount=0;
   let heardCount=0, lostInterim='', lostCount=0, droppedCount=0;
+  // Per-session counterparts of rawResultCount/heardCount, reset at the top
+  // of each session — the whole-game totals above answer "how much overall,"
+  // not "what happened during THIS silent stretch," which is exactly what
+  // the stuck-session hypothesis needs (see the note on "session closed
+  // after" below).
+  let sessionRawCount=0, sessionHeardCount=0;
   const micLog=[];
   function micEvent(kind,detail){
     micLog.push({t:Date.now(),kind:kind,detail:detail||''});
@@ -2349,7 +2355,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r51 (a dropped stream must not just sit there)';
+  const BUILD='v2-r52 (a total is not a session)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4480,7 +4486,7 @@
       note('Hearing you\u2026');
     };
     recognition.onresult=e=>{
-      rawResultCount++;
+      rawResultCount++; sessionRawCount++;
       lastMicActivity=Date.now();
       for(let i=e.resultIndex;i<e.results.length;i++){
         const res=e.results[i];
@@ -4529,10 +4535,10 @@
           // it was abandoned rather than at the end of the session.
           const it=res[0].transcript;
           const held=lostInterim.trim().toLowerCase(), now=it.trim().toLowerCase();
-          if(!lostInterim) heardCount++;
+          if(!lostInterim){ heardCount++; sessionHeardCount++; }
           else if(held&&now&&held.indexOf(now)!==0&&now.indexOf(held)!==0){
             flushLostInterim('a different utterance began');
-            heardCount++;
+            heardCount++; sessionHeardCount++;
           }
           lostInterim=it;
           note('\u201C'+res[0].transcript.trim()+'\u201D');
@@ -4576,7 +4582,14 @@
       // Last chance: onerror does not fire for every way a session ends.
       flushLostInterim('session closed');
       if(sessionStartedAt){
+        // sessionRawCount vs sessionHeardCount is the whole point: if raw
+        // climbs while heard stays flat during a long close, Chrome was
+        // firing empty/near-duplicate interim results that reset the
+        // watchdog without producing anything visible — the stuck-session
+        // hypothesis from Day 6.13. If raw stays flat too, the recognizer
+        // genuinely went silent and the question moves to Chrome/the OS.
         micEvent('session','closed after '+Math.round((Date.now()-sessionStartedAt)/100)/10+'s'
+          +' ('+sessionRawCount+' raw, '+sessionHeardCount+' heard)'
           +(speaking?' (while we were speaking)':''));
         micGapAt=Date.now();
       }
@@ -4646,6 +4659,7 @@
     if(!ok) return;
     try{
       recognition.start(); sessionStartedAt=Date.now();
+      sessionRawCount=0; sessionHeardCount=0;
       // One bad moment of wifi should not slow every restart for the rest of
       // the game. Clearing this on a session that actually opened keeps the
       // backoff attached to the problem instead of to the session count.

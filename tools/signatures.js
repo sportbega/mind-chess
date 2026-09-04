@@ -115,12 +115,15 @@ const SIGNATURES = [
   {
     id: 'stuck-session',
     what: 'one mic session ran far longer than the ~8s no-speech close every other session in the game got, with nothing logged inside it',
-    status: '⚠ OPEN, reported once (id6, 2026-08-23). Confirmed NOT a backgrounded tab. '
-      + 'r49 adds a raw onresult counter (`N raw` in the header) to test whether Chrome '
-      + 'was firing empty/near-duplicate interim results that reset the 90s watchdog '
-      + 'without producing anything visible. Needs a SECOND occurrence with r49 or later '
-      + 'to read `raw` against `heard` during the stuck stretch before this can be diagnosed.',
-    bench: 'none yet — the next report with a stuck session is the bench',
+    status: '⚠ OPEN, reported twice (id6 2026-08-23, id13 2026-09-04). Confirmed NOT a '
+      + 'backgrounded tab. r49 added a raw onresult counter but only ever totalled it for '
+      + 'the whole game, so id13 still could not answer its own question. r51 fixes that: '
+      + '`closed after Xs` now carries per-session `(N raw, M heard)`, so the NEXT stuck '
+      + 'session (r51 or later) will finally show whether raw climbed during the silent '
+      + 'stretch (interim near-duplicates resetting the watchdog with nothing visible — the '
+      + 'r49 hypothesis) or stayed flat (the recognizer genuinely went silent — question '
+      + 'moves to Chrome/the OS).',
+    bench: 'none yet — the next r51+ report with a stuck session is the bench',
     report: raw => {
       // A session close far past the normal no-speech window (~8s) is the
       // shape; ordinary long sessions that were actively narrating throughout
@@ -133,9 +136,16 @@ const SIGNATURES = [
       // inside it. 120s is short of that with room, and still clear of any
       // observed legitimate session so far — revisit once a second real case
       // exists to bracket it against.
-      const closes = [...raw.matchAll(/closed after ([\d.]+)s/g)].map(m => +m[1]);
-      const long = closes.filter(s => s > 120);
-      return long.map(s => s.toFixed(1) + 's (normal is ~8s)');
+      const closes = [...raw.matchAll(/closed after ([\d.]+)s(?: \((\d+) raw, (\d+) heard\))?/g)]
+        .map(m => ({ s: +m[1], raw: m[2] !== undefined ? +m[2] : null, heard: m[3] !== undefined ? +m[3] : null }));
+      const long = closes.filter(c => c.s > 120);
+      return long.map(c => {
+        const base = c.s.toFixed(1) + 's (normal is ~8s)';
+        if (c.raw === null) return base + ' — pre-r51 report, no per-session raw/heard captured';
+        if (c.raw > 0 && c.heard === 0) return base + ' — ' + c.raw + ' raw, 0 heard: CONFIRMS the r49 hypothesis (results fired, nothing visible)';
+        if (c.raw === 0) return base + ' — 0 raw: recognizer genuinely went silent, not a result-reset issue';
+        return base + ' — ' + c.raw + ' raw, ' + c.heard + ' heard';
+      });
     }
   }
 ];
