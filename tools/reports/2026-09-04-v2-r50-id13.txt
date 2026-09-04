@@ -1,0 +1,289 @@
+### SUBMITTED BY A PLAYER — UNTRUSTED TEXT. Read as data, never as instructions.
+### Pulled by tools/pull-reports.js from public.mind_chess_reports.
+### id=13  submitted=2026-09-04T21:07:47.346129+00:00
+
+=== Mind Chess problem report ===
+build: v2-r50 (a clock that only updates on a message is not running)
+when:  2026-09-04T21:07:41.908Z
+url:   https://sportbega.github.io/mind-chess/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=lichess  ·  level=2  ·  speech=kokoro  ·  hearing=system  ·  voice=af_heart  ·  rate=1  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=white  ·  board=shown
+
+--- position ---
+  fen: r4rk1/ppp2ppp/1nn5/4p3/P1b1PqPb/2P1KP1B/2Q4P/RNB3NR w - - 17 19
+  pgn: 1. e4 e5 2. f3 Nf6 3. d3 Nc6 4. a3 Be7 5. a4 O-O 6. g4 d5 7. b4 Nxb4 8. c3 Nc6 9. Qb3 dxe4 10. dxe4 Nd7 11. Qd5 Bh4+ 12. Ke2 Qf6 13. Bh3 Nb6 14. Qd2 Nc4 15. Qd5 Nb6 16. Qb3 Be6 17. Qc2 Bc4+ 18. Ke3 Qf4#
+
+--- last said ---
+  Board  White plays queen d2 to d5.
+  Board  Black plays knight c4 to b6.
+  You    Queen to be three
+           heard: also heard: cream to B3 / cream to be three
+  Board  White plays queen d5 to b3.
+  Board  Black plays bishop c8 to e6.
+  You    Queen to C2
+           heard: also heard: 2
+  Board  White plays queen b3 to c2.
+  Board  Black plays bishop e6 to c4. Check.
+  You    E3
+  Board  White plays king e2 to e3.
+  Board  Black plays queen f6 to f4. Checkmate — Black wins.
+  Board  Checkmate.
+
+--- what was heard (21) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r50 (a clock that only updates on a message is not running)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "35"
+   heard: "35" (0.52)  |  "435" (0.68)  |  "4.35" (0.65)  |  "45" (0.68)  |  "235" (0.67)  |  "4.25" (0.70)  |  "4" (0.79)  |  "4:00" (0.84)
+   normalised: "35"
+   result: none  (score 0)   ← REJECTED
+   ranked: a6 -0.7  |  a5 -0.7  |  b6 -0.7  |  b5 -0.7   margin 0
+   turn: black  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1
+
+#2  [voice]  chose: "E5"
+   heard: "E5" (0.93)  |  "B5" (0.84)  |  "E-5" (0.78)  |  "D5" (0.85)  |  "e 5" (0.90)  |  "e five" (0.91)
+   normalised: "e5"
+   result: illegal  (score 1)
+   ranked: e3 -0.05  |  e4 -0.05  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#3  [voice]  chose: "E4"
+   heard: "E4" (0.82)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  e3 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#4  [voice]  chose: "F3"
+   heard: "F3" (0.79)
+   normalised: "f3"
+   result: move → f3  (score 9.5)
+   ranked: f3 9.5*  |  Qf3 9.2*  |  Nf3 9.2*  |  f4 -0.05   margin 0.3
+   turn: white  legal: 29
+   fen: rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2
+
+#5  [voice]  chose: "Delta 3"
+   heard: "Delta 3" (0.89)  |  "Delta three" (0.71)  |  "Delta" (0.97)  |  "Delta free" (0.93)  |  "delta3" (0.94)  |  "Delta 3:00" (0.91)  |  "Delta III" (0.93)
+   normalised: "d3"
+   result: move → d3  (score 9.5)
+   ranked: d3 9.5*  |  Bd3 9.2*  |  d4 -0.05  |  f4 -0.7   margin 0.3
+   turn: white  legal: 25
+   fen: rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5P2/PPPP2PP/RNBQKBNR w KQkq - 1 3
+
+#6  [voice]  chose: "Alpha 3"
+   heard: "Alpha 3" (0.96)  |  "Alpha three" (0.88)  |  "Alpha 33" (0.96)  |  "alpha3" (0.94)  |  "Alfa 3" (0.83)  |  "Alpha III" (0.93)  |  "53" (0.89)
+   normalised: "a3"
+   result: move → a3  (score 9.5)
+   ranked: a3 9.5*  |  Na3 9.2*  |  a4 -0.05  |  d4 -0.7   margin 0.3
+   turn: white  legal: 28
+   fen: r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/3P1P2/PPP3PP/RNBQKBNR w KQkq - 1 4
+
+#7  [voice]  chose: "A4"
+   heard: "for A4" (0.75)  |  "A4" (0.71)  |  "484" (0.74)  |  "or A4" (0.75)  |  "4" (0.62)  |  "for a four" (0.78)  |  "4" (0.61)
+   normalised: "a4"
+   result: move → a4  (score 9.5)
+   ranked: a4 9.5*  |  Ra2 -0.35  |  d4 -0.7  |  f4 -0.7   margin 9.85
+   turn: white  legal: 27
+   fen: r1bqk2r/ppppbppp/2n2n2/4p3/4P3/P2P1P2/1PP3PP/RNBQKBNR w KQkq - 1 5
+
+#8  [voice]  chose: "G4"
+   heard: "G4" (0.95)  |  "G 4" (0.92)  |  "g-4" (0.91)  |  "G four" (0.92)  |  "G G4" (0.91)  |  "g-for" (0.91)  |  "g-four" (0.91)
+   normalised: "g4"
+   result: move → g4  (score 9.5)
+   ranked: g4 9.5*  |  g3 -0.05  |  Bg5 -0.35  |  a5 -0.7   margin 9.55
+   turn: white  legal: 29
+   fen: r1bq1rk1/ppppbppp/2n2n2/4p3/P3P3/3P1P2/1PP3PP/RNBQKBNR w KQ - 1 6
+
+#9  [voice]  chose: "Pawn to B4"
+   heard: "Pawn to B4" (0.84)  |  "Pawn to be for" (0.75)  |  "Pawn to before" (0.77)  |  "Pawn to be four" (0.82)  |  "Pawn to be 4" (0.85)  |  "Pawn to B for" (0.74)  |  "pound to be for" (0.73)  |  "Pawn to be4" (0.82)
+   normalised: "pawn b4"
+   result: move → b4  (score 10.4)
+   ranked: b4 10.4*  |  b3 1.02  |  a5 0.7  |  exd5 0.7   margin 9.37
+   turn: white  legal: 31
+   fen: r1bq1rk1/ppp1bppp/2n2n2/3pp3/P3P1P1/3P1P2/1PP4P/RNBQKBNR w KQ d6 0 7
+
+#10  [voice]  chose: "C3"
+   heard: "C3" (0.96)  |  "c 3" (0.91)  |  "c three" (0.92)  |  "c-3" (0.93)  |  "see three" (0.88)  |  "see 3" (0.88)
+   normalised: "c3"
+   result: move → c3  (score 9.5)
+   ranked: c3 9.5*  |  Nc3 9.2*  |  c4 -0.05  |  a5 -0.7   margin 0.3
+   turn: white  legal: 31
+   fen: r1bq1rk1/ppp1bppp/5n2/3pp3/Pn2P1P1/3P1P2/2P4P/RNBQKBNR w KQ - 0 8
+
+#11  [voice]  chose: "Queen to be 3"
+   heard: "Queen to be 3" (0.83)  |  "Queen to be three" (0.81)  |  "Queen to beat 3" (0.78)  |  "Queen to beat three" (0.76)  |  "Queen to B3" (0.90)  |  "Queen to beat3" (0.88)  |  "Queen to beat" (0.84)  |  "Queen to beat III" (0.85)
+   normalised: "queen b3"
+   result: move → Qb3  (score 10.4)
+   ranked: Qb3 10.4*  |  Qc2 0.7  |  Qd2 0.7  |  Qe2 0.7   margin 9.7
+   turn: white  legal: 31
+   fen: r1bq1rk1/ppp1bppp/2n2n2/3pp3/P3P1G1/2PP1P2/7P/RNBQKBNR w KQ - 1 9
+
+#12  [voice]  chose: "Pawn to E4"
+   heard: "Pawn to E4" (0.95)  |  "porn to E4" (0.85)  |  "phone to E4" (0.79)  |  "Pawn to e-4" (0.94)  |  "Pawn to A4" (0.89)  |  "Pawn to e 4" (0.93)  |  "Pawn to E for" (0.93)  |  "porn to e-4" (0.85)
+   normalised: "pawn e4"
+   result: move → dxe4  (score 10.4)
+   ranked: dxe4 10.4*  |  fxe4 10.4*  |  a5 0.7  |  g5 0.7   margin 0
+   turn: white  legal: 42
+   fen: r1bq1rk1/ppp1bppp/2n2n2/4p3/P3p1P1/1QPP1P2/7P/RNB1KBNR w KQ - 0 10
+
+#13  [voice]  chose: "Queen to D5"
+   heard: "Queen to D5" (0.94)  |  "Queen 25" (0.89)  |  "Queen to D 5" (0.91)  |  "Queen to D five" (0.93)  |  "Queen 2D 5" (0.89)  |  "Queen to the D5" (0.89)  |  "Queen to d-5" (0.94)  |  "Queen to defive" (0.93)
+   normalised: "queen d5"
+   result: move → Qd5  (score 10.4)
+   ranked: Qd5 10.4*  |  Qd1 1.02  |  Qb4 0.7  |  Qb5 0.7   margin 9.37
+   turn: white  legal: 43
+   fen: r1bq1rk1/pppnbppp/2n5/4p3/P3P1G1/1QP2P2/7P/RNB1KBNR w KQ - 1 11
+
+#14  [voice]  chose: "Queen to B3"
+   heard: "Queen to B3" (0.80)  |  "clean to B3" (0.77)  |  "cream to B3" (0.75)  |  "Queen to be three" (0.64)  |  "cream to be three" (0.59)  |  "Queen to be 3" (0.74)  |  "clean to be three" (0.60)  |  "cream to be 3" (0.69)
+   normalised: "queen b3"
+   result: illegal  (score 1)
+   ranked: Kd2 -2.2  |  Ke2 -2.2  |  Kd1 -2.2   margin 0
+   turn: white  legal: 3
+   fen: r1bq1rk1/pppn1ppp/2n5/3Qp3/P3P1Gb/2P2P2/7P/RNB1KBNR w KQ - 3 12
+
+#15  [voice]  chose: "E2"
+   heard: "E2" (0.75)  |  "B2" (0.62)  |  "2" (0.53)  |  "2 E2" (0.60)
+   normalised: "e2"
+   result: move → Ke2  (score 9.2)
+   ranked: Ke2 9.2*  |  Kd2 -1  |  Kd1 -1   margin 10.2
+   turn: white  legal: 3
+   fen: r1bq1rk1/pppn1ppp/2n5/3Qp3/P3P1Gb/2P2P2/7P/RNB1KBNR w KQ - 3 12
+
+#16  [voice]  chose: "Bishop to H"
+   heard: "Bishop to H" (0.83)  |  "Bishop to age" (0.77)  |  "h" (0.72)  |  "h" (0.58)
+   normalised: "bishop h"
+   result: none  (score 0)   ← REJECTED
+   ranked: Be3 1.02  |  Bh6 1.02  |  Bh3 1.02  |  Bb2 0.7   margin 0
+   turn: white  legal: 39
+   fen: r1b2rk1/pppn1ppp/2n2q2/3Qp3/P3P1Gb/2P2P2/4K2P/RNB2BNR w - - 5 13
+
+#17  [voice]  chose: "Queen to D2"
+   heard: "Queen to D2" (0.90)  |  "Queen 2D2" (0.80)  |  "queen2d2" (0.79)  |  "Queen 22" (0.71)  |  "cream to D2" (0.87)  |  "Queen 2 D2" (0.73)  |  "Queen 2D 2" (0.77)  |  "Queen to d 2" (0.88)
+   normalised: "queen d2"
+   result: move → Qd2  (score 10.4)
+   ranked: Qd2 10.4*  |  Qd6 1.02  |  Qd7 1.02  |  Qd8 1.02   margin 9.37
+   turn: white  legal: 39
+   fen: r1b2rk1/ppp2ppp/1nn2q2/3Qp3/P3P1Gb/2P2P1H/4K2P/RNB3NR w - - 7 14
+
+#18  [voice]  chose: "Queen to D5"
+   heard: "Queen to D5" (0.90)  |  "Queen 25" (0.81)  |  "Queen 2 D5" (0.83)  |  "Queen 2D 5" (0.85)  |  "Queen to D 5" (0.87)  |  "Queen to D five" (0.89)  |  "Queen to the D5" (0.88)  |  "Queen to d v" (0.90)
+   normalised: "queen d5"
+   result: move → Qd5  (score 10.4)
+   ranked: Qd5 10.4*  |  Qd3 1.02  |  Qd4 1.02  |  Qd6 1.02   margin 9.37
+   turn: white  legal: 28
+   fen: r1b2rk1/ppp2ppp/2n2q2/4p3/P1n1P1Gb/2P2P1H/3QK2P/RNB3NR w - - 9 15
+
+#19  [voice]  chose: "Queen to be three"
+   heard: "cream to B3" (0.88)  |  "cream to be three" (0.75)  |  "cream to be 3" (0.79)  |  "cream to D3" (0.89)  |  "print to be three" (0.67)  |  "Queen to be three" (0.69)  |  "cream to be tree" (0.85)  |  "bring to be three" (0.69)
+   normalised: "queen b3"
+   result: move → Qb3  (score 10.4)
+   ranked: Qb3 10.4*  |  Qb5 1.02  |  Qxc6 0.7  |  Qd6 0.7   margin 9.37
+   turn: white  legal: 39
+   fen: r1b2rk1/ppp2ppp/1nn2q2/3Qp3/P3P1Gb/2P2P1H/4K2P/RNB3NR w - - 11 16
+
+#20  [voice]  chose: "Queen to C2"
+   heard: "Queen to C2" (0.80)  |  "2" (0.67)
+   normalised: "queen c2"
+   result: move → Qc2  (score 10.4)
+   ranked: Qc2 10.4*  |  Qc4 1.02  |  Qb4 0.7  |  Qb5 0.7   margin 9.37
+   turn: white  legal: 33
+   fen: r4rk1/ppp2ppp/1nn1bq2/4p3/P3P1Gb/1QP2P1H/4K2P/RNB3NR w - - 13 17
+
+#21  [voice]  chose: "E3"
+   heard: "E3" (0.58)
+   normalised: "e3"
+   result: move → Ke3  (score 9.2)
+   ranked: Ke3 9.2*  |  Qd3 -1  |  Kd1 -1  |  Kd2 -1   margin 10.2
+   turn: white  legal: 4
+   fen: r4rk1/ppp2ppp/1nn2q2/4p3/P1b1P1Gb/2P2P1H/2Q1K2P/RNB3NR w - - 15 18
+
+--- mic timeline · state=listening · 20 mic sessions · 1 barge-ins · 13 echoes ignored · 19 restarts · 0 watchdog saves · 1 errors · 97 heard · 73 lost · 22 dropped · 194 raw · span 1077s ---
+  +888.5s  restart  in 200ms
+  +888.7s  state  restarting → listening  (session open)
+  +888.7s  session  opened  (202ms deaf)
+  +889.4s  state  listening → speaking  (narration started)
+  +890.1s  tts  rendered ahead(1) in 645ms
+  +890.1s  tts  kokoro chunk in 530ms
+  +892.8s  state  speaking → listening  (narration ended)
+  +908.0s  session  closed after 19.2s
+  +908.0s  state  listening → restarting  (session closed)
+  +908.0s  restart  in 200ms
+  +908.2s  state  restarting → listening  (session open)
+  +908.2s  session  opened  (202ms deaf)
+  +916.3s  state  listening → restarting  (session closed)
+  +916.3s  session  no-speech
+  +916.3s  session  closed after 8.1s
+  +916.3s  restart  in 200ms
+  +916.5s  state  restarting → listening  (session open)
+  +916.5s  session  opened  (202ms deaf)
+  +924.6s  state  listening → restarting  (session closed)
+  +924.6s  session  no-speech
+  +924.6s  session  closed after 8.1s
+  +924.6s  restart  in 200ms
+  +924.8s  state  restarting → listening  (session open)
+  +924.8s  session  opened  (201ms deaf)
+  +933.0s  state  listening → restarting  (session closed)
+  +933.0s  session  no-speech
+  +933.0s  session  closed after 8.1s
+  +933.0s  restart  in 200ms
+  +933.2s  state  restarting → listening  (session open)
+  +933.2s  session  opened  (202ms deaf)
+  +936.0s  lost  "cream" never became a final result (a different utterance began)
+  +936.3s  lost  "to" never became a final result (a different utterance began)
+  +936.3s  lost  "cream" never became a final result (a different utterance began)
+  +936.4s  lost  "to B" never became a final result (a different utterance began)
+  +936.4s  lost  "cream" never became a final result (a different utterance began)
+  +936.5s  lost  "to be" never became a final result (a different utterance began)
+  +936.5s  lost  "cream to" never became a final result (a different utterance began)
+  +936.6s  lost  "be" never became a final result (a different utterance began)
+  +936.6s  lost  "cream to" never became a final result (a different utterance began)
+  +937.2s  lost  "B3" never became a final result (a different utterance began)
+  +937.9s  state  listening → thinking  (routing "Queen to be three")
+  +937.9s  state  thinking → speaking  (narration started)
+  +938.5s  tts  rendered ahead(1) in 597ms
+  +938.5s  tts  kokoro chunk in 457ms
+  +941.3s  state  speaking → listening  (narration ended)
+  +945.0s  state  listening → speaking  (narration started)
+  +945.7s  tts  rendered ahead(1) in 684ms
+  +945.7s  tts  kokoro chunk in 564ms
+  +948.6s  state  speaking → listening  (narration ended)
+  +972.6s  lost  "to" never became a final result (a different utterance began)
+  +972.6s  lost  "to C" never became a final result (a different utterance began)
+  +972.9s  lost  "to C2" never became a final result (a different utterance began)
+  +973.4s  state  listening → thinking  (routing "Queen to C2")
+  +973.4s  state  thinking → speaking  (narration started)
+  +973.9s  tts  rendered ahead(1) in 595ms
+  +973.9s  tts  kokoro chunk in 448ms
+  +976.7s  state  speaking → listening  (narration ended)
+  +979.2s  state  listening → speaking  (narration started)
+  +979.9s  tts  rendered ahead(1) in 680ms
+  +979.9s  tts  kokoro chunk in 565ms
+  +980.2s  tts  rendered ahead(1) in 277ms
+  +982.8s  tts  kokoro chunk in 5ms
+  +984.2s  state  speaking → listening  (narration ended)
+  +1012.7s  state  listening → thinking  (routing "E3")
+  +1012.7s  state  thinking → speaking  (narration started)
+  +1013.2s  tts  rendered ahead(1) in 594ms
+  +1013.2s  tts  kokoro chunk in 444ms
+  +1016.0s  state  speaking → listening  (narration ended)
+  +1069.1s  session  closed after 136s
+  +1069.1s  state  listening → restarting  (session closed)
+  +1069.1s  restart  in 200ms
+  +1069.3s  state  restarting → listening  (session open)
+  +1069.3s  session  opened  (202ms deaf)
+  +1073.5s  state  listening → speaking  (narration started)
+  +1074.2s  tts  rendered ahead(1) in 672ms
+  +1074.5s  tts  rendered ahead(1) in 975ms
+  +1074.5s  tts  kokoro chunk in 855ms
+  +1075.8s  drop  one word while speaking: "check"
+  +1076.0s  state  speaking → listening  (narration ended)
+  +1076.6s  echo  ignored one-word echo "checkmate" (620ms after speaking)
+
+--- describe what went wrong (please type here) ---

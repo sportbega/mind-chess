@@ -4367,3 +4367,73 @@ has been correspondence or untimed. Milestones 4-5 (reconnect/backoff +
 `visibilitychange` staleness watchdog, a `tools/fake-lichess.js` harness with
 recorded fixtures, polish) are still ahead. Full plan at
 `~/.claude/plans/jaunty-singing-gosling.md`.
+
+## 2026-09-04 (r51): a dropped stream must not just sit there
+
+Published r50 to both `/` and `/v2/` — Lichess mode is now live on the
+release, not just the preview. `main` at `7499fa2`.
+
+**Milestone 3 confirmed**: Adni played a real 10-minute rapid game against a
+Lichess opponent through the live release. Checkmate, narrated correctly, no
+crash. Both clocks ticked down correctly for whoever was on move — confirmed
+by eye, not instrumented, so treat this as "held up under real play," not
+"proven by a test." First real timed game since the clock bug was found and
+fixed on Day 6.15; everything before this was correspondence or untimed.
+
+A problem report (id13) came in from that same game and archived to
+`tools/reports/2026-09-04-v2-r50-id13.txt`. Running it through
+`tools/signatures.js` turned up a **second occurrence of the open
+`stuck-session` bug** (id6, Day 6.13) — session opened at +933.2s, went
+completely silent (no lost/dropped/echo of any kind) for 53s, closed at
++1069.1s ("closed after 136s"). Same shape as last time. Went looking for the
+r49 `rawResultCount` instrumentation to finally read raw-vs-heard for the
+silent stretch and hit a gap: the counter is only exposed as one cumulative
+total for the whole game (194 raw over 1077s), never broken out per session —
+so even a second occurrence still can't answer the question r49 was built to
+answer. Noted, not yet fixed; the fix is logging `rawResultCount` at the
+moment each session opens/closes rather than only in the game-end header.
+
+### Milestone 4: reconnect/backoff, reconciliation, resign/abort
+
+None of this existed before today — Lichess mode had no recovery path at all
+if the NDJSON stream dropped; the `catch` block just showed a note and gave
+up.
+
+- **`scheduleLichessReconnect()`**: exponential backoff (1s → 2s → 4s → …
+  capped at 30s), guarded on `lichessState.gameId` still matching and
+  `!gameOver` so a deliberate disconnect or a real game-over never fights the
+  timer. Resets to 0 the instant any real event arrives — `handleLichessEvent`
+  is the single place that proves the connection is actually healthy again.
+- **The reconnect had a re-narration trap almost identical to the echo bug
+  from r50.** `gameFull` always unconditionally reset `moveCount=0`, cleared
+  the transcript, and replayed/re-narrated every move — fine for an explicit
+  "Resume," wrong for an automatic reconnect mid-drop, which would have
+  wiped the transcript and re-spoken the entire game so far every time the
+  wifi blipped. Fixed by carrying the pre-drop `lichessState` (moveCount,
+  color, etc.) through `openLichessStream(gameId, resumeState)`, so
+  `applyLichessMoves()` only narrates what happened while disconnected.
+- **Reconciliation, independent of stream health**: `reconcileLichess()`
+  compares the live FEN from `/api/account/playing` against the local board
+  and force-reconnects on any mismatch — on `visibilitychange` (tab
+  foregrounded) and on a 20s interval while visible. Deliberately NOT based
+  on time-since-last-event: a long, legitimate think (rapid, let alone a
+  3-day correspondence game) produces exactly the same silence a real stall
+  would, so a naive staleness timer would either false-positive constantly or
+  miss the real thing — the plan's original "visibilitychange staleness
+  watchdog" language got rewritten around this once it was clear time alone
+  isn't a safe signal for this connection, the same way it wasn't for the
+  mic's stuck-session bug.
+- **Resign / Abort**: new buttons, straight POSTs to Lichess's own
+  `/resign`/`/abort` endpoints. No new narration path needed — the outcome
+  arrives through the same `gameState` terminal-status branch every other
+  game-ending event already goes through.
+
+Build `BUILD='v2-r51 (a dropped stream must not just sit there)'`. Committed
+to `v2`, **not yet published** — this needs a real dropped connection (or at
+least a real played game) before it goes to `/v2/`, per this project's own
+rule that every serious bug here has been found by a real game, never the
+harness alone.
+
+**Still open**: `tools/fake-lichess.js` mock harness + recorded fixtures
+(build-order item 4's second half), then polish (opponent name/rating
+narration, rematch-equivalent) — milestone 5.

@@ -218,6 +218,8 @@
       <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
       <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
       <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
+      <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
+      <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
     </div>
   </div>
 
@@ -501,12 +503,13 @@
   let onlineState = null;      // {id,color,spectating,waiting,starting,channel,pollTimer,lastUpdated}
   let lobbyChannel = null, lobbyPollTimer = null;
   // Lichess Board API mode — a real opponent from lichess.org's own player
-  // pool, played through a personal access token. Read-only spectate for now:
-  // move-out (voice -> Lichess) is a later milestone, so route()'s guard
-  // blocks every move attempt while mode==='lichess'.
+  // pool, played through a personal access token. Both directions of play
+  // are wired (voice -> Lichess via sendLichessMove, Lichess -> voice via
+  // the NDJSON stream), gated on fair play (see tipFor/askEngine).
   let lichessToken = null;
-  let lichessState = null;     // {gameId,color,moveCount,wtime,btime,status,streamController,lastEventAt}
+  let lichessState = null;     // {gameId,color,moveCount,wtime,btime,status,streamController,lastEventAt,reconnectAttempt,resuming}
   let lichessClockTimer = null;
+  let lichessReconnectTimer = null;
 
   // Clock: 0 = no clock. Runs off game.turn(), so it works the same for
   // computer/two-player/online without per-mode special-casing — the
@@ -566,7 +569,8 @@
         closeLobbyBtn=$('closeLobbyBtn'),
         lichessPanel=$('lichessPanel'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
         lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
-        lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn');
+        lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
+        lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn');
 
   // ===============================================================
   // Output
@@ -2345,7 +2349,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r50 (a clock that only updates on a message is not running)';
+  const BUILD='v2-r51 (a dropped stream must not just sit there)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5114,15 +5118,29 @@
 
   function handleLichessEvent(evt){
     lichessState.lastEventAt=Date.now();
+    // Any real message proves the connection is healthy again — this is
+    // what lets the backoff in scheduleLichessReconnect() reset rather than
+    // keep climbing forever once a dropped stream reconnects.
+    lichessState.reconnectAttempt=0;
     if(evt.type==='gameFull'){
       generation++;
-      game.reset(); lastMove=null; gameOver=false;
-      lichessState.moveCount=0;
+      // A reconnect after a drop replays this same event (Lichess always
+      // resends the full move list on gameFull) — resuming state carries
+      // moveCount forward so applyLichessMoves() below only narrates
+      // whatever happened while disconnected, instead of re-narrating the
+      // entire game and blanking the transcript out from under the player.
+      const reconnecting=!!lichessState.resuming;
+      lichessState.resuming=false;
+      if(!reconnecting){
+        game.reset(); lastMove=null; gameOver=false;
+        lichessState.moveCount=0;
+        transcript.innerHTML='';
+      }
       lichessState.color=evt.white&&evt.white.id===lichessUsername?'w':'b';
       humanColor=lichessState.color;
       lichessNote('Playing '+(evt.white.name||evt.white.id||'White')+' vs '+(evt.black.name||evt.black.id||'Black')+'.');
-      transcript.innerHTML='';
-      log('Board','Connected to a live Lichess game — you are '+(lichessState.color==='w'?'White':'Black')+'.');
+      log('Board',reconnecting?'Reconnected to your Lichess game.'
+        :'Connected to a live Lichess game — you are '+(lichessState.color==='w'?'White':'Black')+'.');
       applyLichessMoves(evt.state.moves);
       lichessState.wtime=evt.state.wtime; lichessState.btime=evt.state.btime;
       lichessState.status=evt.state.status;
@@ -5135,17 +5153,42 @@
       if(evt.status&&evt.status!=='started'&&evt.status!=='created'){
         gameOver=true;
         stopLichessClock();
+        lichessAbortBtn.style.display='none'; lichessResignBtn.style.display='none';
         speak(lichessGameOverText(evt.status));
         renderAll();
       }
     }
   }
 
-  async function openLichessStream(gameId){
+  // A dropped stream (network blip, backgrounded-tab throttling, a Lichess
+  // hiccup) must not just sit there — this app has already been burned once
+  // by a long-lived connection that silently stalled with no visible signal
+  // (the mic's still-open "stuck-session" bug). Backoff is capped at 30s and
+  // resets to 0 the moment any real event arrives (handleLichessEvent).
+  // `resumeState` carries the in-progress game state (moveCount etc.) across
+  // the reconnect so gameFull's replay only narrates what was missed.
+  function scheduleLichessReconnect(gameId){
+    if(!lichessState||lichessState.gameId!==gameId||gameOver) return;
+    const attempt=(lichessState.reconnectAttempt||0)+1;
+    lichessState.reconnectAttempt=attempt;
+    const delay=Math.min(30000,1000*Math.pow(2,attempt-1));
+    lichessNote('Connection lost — retrying in '+Math.round(delay/1000)+'s…');
+    clearTimeout(lichessReconnectTimer);
+    lichessReconnectTimer=setTimeout(()=>{
+      if(!lichessState||lichessState.gameId!==gameId||gameOver) return;
+      const resumeState=lichessState;
+      resumeState.resuming=true;
+      openLichessStream(gameId,resumeState);
+    },delay);
+  }
+
+  async function openLichessStream(gameId,resumeState){
     const controller=new AbortController();
-    lichessState={gameId,color:null,moveCount:0,wtime:0,btime:0,status:'started',
-      streamController:controller,lastEventAt:Date.now()};
-    lichessNote('Connecting…');
+    lichessState=resumeState
+      ?Object.assign({},resumeState,{gameId,streamController:controller,lastEventAt:Date.now()})
+      :{gameId,color:null,moveCount:0,wtime:0,btime:0,status:'started',
+        streamController:controller,lastEventAt:Date.now()};
+    lichessNote(resumeState?'Reconnecting…':'Connecting…');
     try{
       const res=await lichessFetch('/api/board/game/stream/'+gameId,{signal:controller.signal});
       const reader=res.body.getReader();
@@ -5162,13 +5205,47 @@
           try{ handleLichessEvent(JSON.parse(line)); }catch(e){}
         }
       }
-      if(lichessState&&lichessState.gameId===gameId) lichessNote('Stream ended — game finished or connection closed.');
+      if(lichessState&&lichessState.gameId===gameId){
+        if(gameOver) lichessNote('Stream ended — game finished.');
+        else scheduleLichessReconnect(gameId);
+      }
     }catch(err){
       if(err.name!=='AbortError' && lichessState&&lichessState.gameId===gameId){
-        lichessNote('Connection lost: '+(err.message||'stream error')+'.');
+        scheduleLichessReconnect(gameId);
       }
     }
   }
+
+  // Belt-and-suspenders reconciliation, independent of stream health —
+  // mirrors the online mode's realtime+poll pattern. A backgrounded tab can
+  // have its stream silently die without ever raising an error (the same
+  // class of failure as the mic's stuck-session bug), so this compares the
+  // live FEN from a plain REST call against the local board and forces a
+  // reconnect on any mismatch, rather than waiting on lastEventAt going
+  // stale — a stale clock is also just what a normal, long, legitimate think
+  // looks like, so time alone is not a safe signal here.
+  function normalizedFen(f){ return (f||'').split(' ').slice(0,4).join(' '); }
+  async function reconcileLichess(){
+    if(!lichessState||gameOver) return;
+    try{
+      const playing=await (await lichessFetch('/api/account/playing')).json();
+      const cur=(playing.nowPlaying||[]).find(g=>g.gameId===lichessState.gameId);
+      if(!cur||!cur.fen) return;
+      if(normalizedFen(cur.fen)!==normalizedFen(game.fen())){
+        lichessNote('Out of sync with Lichess — reconnecting…');
+        const gameId=lichessState.gameId, resumeState=lichessState;
+        resumeState.resuming=true;
+        try{ resumeState.streamController?.abort(); }catch(e){}
+        openLichessStream(gameId,resumeState);
+      }
+    }catch(e){}
+  }
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&mode==='lichess') reconcileLichess();
+  });
+  setInterval(()=>{
+    if(mode==='lichess'&&document.visibilityState==='visible') reconcileLichess();
+  },20000);
 
   let lichessUsername=null;
   async function ensureLichessUsername(){
@@ -5188,6 +5265,7 @@
       const current=(playing.nowPlaying||[])[0];
       if(!current){ lichessNote('No game in progress on lichess.org right now — seek one below, or start one there and press Resume again.'); return; }
       lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
+      lichessAbortBtn.style.display=''; lichessResignBtn.style.display='';
       openLichessStream(current.gameId);
     }catch(err){
       lichessNote('Could not connect: '+(err.message||'check your token.'));
@@ -5244,6 +5322,7 @@
         if(current){
           cancelLichessSeek(false);
           lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
+          lichessAbortBtn.style.display=''; lichessResignBtn.style.display='';
           openLichessStream(current.gameId);
         }
       }catch(e){}
@@ -5253,11 +5332,13 @@
   function leaveLichess(){
     cancelLichessSeek(false);
     stopLichessClock();
+    clearTimeout(lichessReconnectTimer); lichessReconnectTimer=null;
     if(lichessState){
       try{ lichessState.streamController?.abort(); }catch(e){}
     }
     lichessState=null;
     lichessWatchBtn.style.display=''; lichessStopBtn.style.display='none';
+    lichessAbortBtn.style.display='none'; lichessResignBtn.style.display='none';
     lichessNote('Paste a Lichess personal access token with the board:play scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.');
   }
 
@@ -5269,10 +5350,26 @@
     lichessTokenInput.value='';
     lichessNote('Token saved. Seek a game, or press Resume if one is already running.');
   });
+  // Deliberate closes, distinct from "Disconnect" (which only detaches this
+  // tab — the real Lichess game keeps running server-side). The stream's own
+  // gameState event narrates the outcome and hides these buttons once
+  // Lichess confirms the status change; nothing to do here but ask.
+  async function abortLichessGame(){
+    if(!lichessState||!lichessState.gameId) return;
+    try{ await lichessFetch('/api/board/game/'+lichessState.gameId+'/abort',{method:'POST'}); }
+    catch(err){ warn('Could not abort: '+(err.message||'try again.')); }
+  }
+  async function resignLichessGame(){
+    if(!lichessState||!lichessState.gameId) return;
+    try{ await lichessFetch('/api/board/game/'+lichessState.gameId+'/resign',{method:'POST'}); }
+    catch(err){ warn('Could not resign: '+(err.message||'try again.')); }
+  }
   lichessSeekBtn.addEventListener('click',seekLichessGame);
   lichessCancelSeekBtn.addEventListener('click',()=>cancelLichessSeek(true));
   lichessWatchBtn.addEventListener('click',watchLichessGame);
   lichessStopBtn.addEventListener('click',leaveLichess);
+  lichessAbortBtn.addEventListener('click',abortLichessGame);
+  lichessResignBtn.addEventListener('click',resignLichessGame);
 
   // ===============================================================
   // Lobby — browse open/in-progress games instead of needing a direct
