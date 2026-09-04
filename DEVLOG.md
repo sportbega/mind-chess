@@ -4585,3 +4585,30 @@ report, alongside the existing mic timeline, only when `mode==='lichess'`.
 Build `BUILD='v2-r55 (an impression is not a number)'`. Published to `/v2/`.
 Next stuck-clock report will carry the actual numbers instead of an
 impression.
+
+## 2026-09-05 — the clock IS the increment; a tool bug hid the stuck-session verdict
+
+Adni confirmed: the "resetting to 10:00, sometimes 9:30" clock behavior from
+id17 is rapid's own +5s-per-move increment, not a bug — closing that one out
+with no code change.
+
+Played a third human-opponent game (id18) and resigned at the end. Archiving
+it caught a real gap of my own making: I'd elided the 60-candidate list with
+a placeholder comment instead of writing it verbatim, and `tools/
+signatures.js` silently drops any report it can't parse — so id18 (and id15,
+elided the same way) never ran through the corpus at all. Fixed both by
+writing the full candidate lists back in; the project's own convention
+(never elide, a header already marks these files as untrusted/reference
+data) exists for exactly this reason.
+
+With id18 actually parseable, its 124.6s-session `stuck-session` flag turned
+out to be uninformative for a second reason: the print loop in `signatures.js`
+was collapsing every `sig.report()`'s descriptive detail string down to a
+bare count (`1×`) before printing it — so the r55 raw/heard verdict text
+never actually reached the terminal, for ANY report-based signature
+(`mic-lost` had the same problem). Fixed the loop to print `found.join('; ')`
+instead of `found.length+'×'`. With that fixed, id18's session reads **41
+raw, 16 heard** — neither confirms nor refutes the r49 hypothesis; it looks
+like a legitimately busy long session (same shape as the noted 60.3s false
+positive), not the actual stuck-session bug. Still waiting on a real
+`heard≈0` occurrence to settle that one.

@@ -32,12 +32,110 @@ agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML
 build: v2-r52 (a total is not a session)  ·  continuous=true  maxAlternatives=10
 engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
 
-(same three utterances as report id14 — this report was submitted moments
-later, same session, same "Not connected" state — see id14 for full detail)
+#1  [voice]  chose: "E4"
+   heard: "E4" (0.85)  |  "before" (0.54)  |  "A4" (0.76)  |  "e-4" (0.86)  |  "E for" (0.86)  |  "a for" (0.80)  |  "afore" (0.80)  |  "efor" (0.87)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  e3 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#2  [voice]  chose: "E4"
+   heard: "E4" (0.70)
+   normalised: "e4"
+   result: move → e4  (score 9.5)
+   ranked: e4 9.5*  |  e3 -0.05  |  a3 -0.7  |  a4 -0.7   margin 9.55
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+#3  [voice]  chose: "E5"
+   heard: "E5" (0.95)  |  "E-5" (0.90)  |  "85" (0.79)  |  "e 5" (0.92)  |  "A5" (0.86)  |  "E55" (0.95)  |  "e five" (0.92)  |  "e-five" (0.91)
+   normalised: "e5"
+   result: illegal  (score 1)
+   ranked: e3 -0.05  |  e4 -0.05  |  a3 -0.7  |  a4 -0.7   margin 0
+   turn: white  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
 --- mic timeline · state=listening · 29 mic sessions · 0 barge-ins · 0 echoes ignored · 28 restarts · 0 watchdog saves · 19 errors · 3 heard · 0 lost · 0 dropped · 13 raw · span 407s ---
-  (continuation of the same flaky-wifi stretch from id14 — network errors
-  every ~2.5s, self-recovering; no stuck-session shape; see id14 for the
-  full timeline through +271s, this one runs on to +407s)
+  +260.2s  error  network
+  +260.2s  session  closed after 0.3s (0 raw, 0 heard)
+  +260.2s  restart  in 2500ms (network backoff)
+  +262.7s  state  restarting → listening  (session open)
+  +262.7s  session  opened  (2501ms deaf)
+  +263.0s  state  listening → restarting  (session closed)
+  +263.0s  error  network
+  +263.0s  session  closed after 0.3s (0 raw, 0 heard)
+  +263.0s  restart  in 2500ms (network backoff)
+  +265.5s  state  restarting → listening  (session open)
+  +265.5s  session  opened  (2501ms deaf)
+  +265.8s  state  listening → restarting  (session closed)
+  +265.8s  error  network
+  +265.8s  session  closed after 0.3s (0 raw, 0 heard)
+  +265.8s  restart  in 2500ms (network backoff)
+  +268.3s  state  restarting → listening  (session open)
+  +268.3s  session  opened  (2502ms deaf)
+  +268.6s  state  listening → restarting  (session closed)
+  +268.6s  error  network
+  +268.6s  session  closed after 0.3s (0 raw, 0 heard)
+  +268.6s  restart  in 2500ms (network backoff)
+  +271.1s  state  restarting → listening  (session open)
+  +271.1s  session  opened  (2501ms deaf)
+  +279.4s  state  listening → thinking  (routing "E5")
+  +279.4s  state  thinking → speaking  (narration started)
+  +280.3s  tts  rendered ahead(1) in 947ms
+  +280.4s  tts  kokoro chunk in 827ms
+  +284.6s  state  speaking → listening  (narration ended)
+  +309.9s  session  closed after 38.8s (4 raw, 1 heard)
+  +309.9s  state  listening → restarting  (session closed)
+  +309.9s  restart  in 200ms
+  +310.1s  state  restarting → listening  (session open)
+  +310.1s  session  opened  (202ms deaf)
+  +318.2s  state  listening → restarting  (session closed)
+  +318.2s  session  no-speech
+  +318.2s  session  closed after 8.1s (0 raw, 0 heard)
+  +318.2s  restart  in 200ms
+  +318.4s  state  restarting → listening  (session open)
+  +318.4s  session  opened  (202ms deaf)
+  +326.6s  state  listening → restarting  (session closed)
+  +326.6s  session  no-speech
+  +326.6s  session  closed after 8.1s (0 raw, 0 heard)
+  +326.6s  restart  in 200ms
+  +326.8s  state  restarting → listening  (session open)
+  +326.8s  session  opened  (201ms deaf)
+  +365.2s  session  closed after 38.4s (0 raw, 0 heard)
+  +365.2s  state  listening → restarting  (session closed)
+  +365.2s  restart  in 200ms
+  +365.4s  state  restarting → listening  (session open)
+  +365.4s  session  opened  (202ms deaf)
+  +373.5s  state  listening → restarting  (session closed)
+  +373.5s  session  no-speech
+  +373.5s  session  closed after 8.1s (0 raw, 0 heard)
+  +373.5s  restart  in 200ms
+  +373.7s  state  restarting → listening  (session open)
+  +373.7s  session  opened  (202ms deaf)
+  +381.8s  state  listening → restarting  (session closed)
+  +381.8s  session  no-speech
+  +381.8s  session  closed after 8.1s (0 raw, 0 heard)
+  +381.8s  restart  in 200ms
+  +382.0s  state  restarting → listening  (session open)
+  +382.0s  session  opened  (202ms deaf)
+  +390.2s  state  listening → restarting  (session closed)
+  +390.2s  session  no-speech
+  +390.2s  session  closed after 8.1s (0 raw, 0 heard)
+  +390.2s  restart  in 200ms
+  +390.4s  state  restarting → listening  (session open)
+  +390.4s  session  opened  (202ms deaf)
+  +398.5s  state  listening → restarting  (session closed)
+  +398.5s  session  no-speech
+  +398.5s  session  closed after 8.1s (0 raw, 0 heard)
+  +398.5s  restart  in 200ms
+  +398.7s  state  restarting → listening  (session open)
+  +398.7s  session  opened  (202ms deaf)
+  +406.9s  state  listening → restarting  (session closed)
+  +406.9s  session  no-speech
+  +406.9s  session  closed after 8.1s (0 raw, 0 heard)
+  +406.9s  restart  in 200ms
+  +407.1s  state  restarting → listening  (session open)
+  +407.1s  session  opened  (201ms deaf)
 
 --- describe what went wrong (please type here) ---

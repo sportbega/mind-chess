@@ -169,7 +169,7 @@ for (const file of Object.keys(byReport).sort()) {
     }
     if (sig.report && raw) {
       const found = sig.report(raw);
-      if (found.length) hits.push({ sig, detail: found.length + '×' });
+      if (found.length) hits.push({ sig, detail: found.join('; ') });
     }
   }
 
