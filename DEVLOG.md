@@ -5136,3 +5136,48 @@ corruption from the round trip.
 
 Build `BUILD='v2-r64 (fullscreen shows the board, not the buttons)'`.
 Published to `/v2/`.
+
+## 2026-09-05 (r65): pieces scale with the square again
+
+r64 fixed the scope, but Adni's next report was the pieces themselves:
+"pieces render too small relative to their squares... should fill the
+square roughly the same proportion they do in regular mode." Right
+diagnosis on their part, too — this was exactly the same shape of bug r63
+already fixed once for `.files`' width, just in a different corner of the
+same layout.
+
+Piece glyphs are sized with `font-size:min(12cqw,70px)`, a CSS container
+query — 12% of an 8-square-wide container works out to 96% of one square's
+width, at any board size, as long as the `cqw` container really is the
+board grid. It wasn't: `container-type:inline-size` sat on `.board-col`,
+one level up, so every glyph was sized against the *flex column's* width,
+not `.board-grid`'s actual rendered width. In normal mode those two are
+close enough not to notice; in fullscreen `.board-grid` is height-driven
+(sized off the leftover flex space via `aspect-ratio`, per r63) and can
+render meaningfully narrower than the column around it — measured 801.5px
+grid inside a 996px column — so every piece was scaled down to fit a
+container 20% wider than its actual square. Moved `container-type` onto
+`.board-grid` itself, which is the direct parent of every `.sq`, so `cqw`
+now tracks the box the squares are actually drawn in.
+
+That surfaced a second, previously-masked issue: the `70px` hard ceiling on
+`min(12cqw,70px)`. It was sized for the old maximum board width (960px
+slider → 120px squares → 115px glyph, comfortably under 70... no — actually
+under the *old*, wrong container size, so it was silently already capping
+before this fix and nobody had reason to notice on an 680px default board).
+Once `cqw` was tracking the real 801.5px-wide grid, 12cqw came out to
+~96px, hit the 70px ceiling, and pieces stopped growing with the square
+exactly where fullscreen most needs them to. Raised the ceiling to 140px —
+comfortably above the largest square either fullscreen (`.boardpanel`'s own
+1100px cap) or the manual board-size slider (960px max) can produce — so
+the ceiling stops firing at any board size in practical use, and 12cqw
+alone determines the fill ratio.
+
+Verified by measuring the actual computed ratio (glyph font-size ÷ square
+width via `getBoundingClientRect()`+`getComputedStyle()`), not just eyeballing
+it: 0.960 in normal mode, 0.960 in the same simulated-fullscreen state used
+for r63/r64 — identical to three decimal places — then confirmed visually
+with a screenshot that pieces fill their squares the same way in both.
+
+Build `BUILD='v2-r65 (pieces scale with the square again)'`. Published to
+`/v2/`.
