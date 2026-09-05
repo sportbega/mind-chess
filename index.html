@@ -2454,7 +2454,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r60 (a keyed lookup, not a shared hash)';
+  const BUILD='v2-r61 (a flush only shows the last guess, not the ones before it)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4642,11 +4642,26 @@
           // it was abandoned rather than at the end of the session.
           const it=res[0].transcript;
           const held=lostInterim.trim().toLowerCase(), now=it.trim().toLowerCase();
-          if(!lostInterim){ heardCount++; sessionHeardCount++; }
+          const prevHeld=lostInterim;
+          let kind;
+          if(!lostInterim){ heardCount++; sessionHeardCount++; kind='start'; }
           else if(held&&now&&held.indexOf(now)!==0&&now.indexOf(held)!==0){
-            flushLostInterim('a different utterance began');
+            kind='supersede';
             heardCount++; sessionHeardCount++;
+          }else{
+            kind='extend';
           }
+          // Every interim transition, not just the ones that eventually get
+          // flushed as lost \u2014 id11 showed the FINAL discarded text of a burst
+          // ("to", "E5", "to E5", "at") but never the sequence that produced
+          // it, so there was no way to tell whether "e5" was ever actually
+          // HELD as one continuous interim before something superseded it, or
+          // whether Chrome never formed it as a single interim at all. Logged
+          // before flushLostInterim() below clears lostInterim, or the
+          // "held:" side of a supersede line would already be empty.
+          micEvent('interim',kind+': "'+it.trim().slice(0,40)+'"'
+            +(kind!=='start'?'  (held: "'+prevHeld.trim().slice(0,40)+'")':''));
+          if(kind==='supersede') flushLostInterim('a different utterance began');
           lostInterim=it;
           note('\u201C'+res[0].transcript.trim()+'\u201D');
         }

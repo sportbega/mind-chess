@@ -4901,3 +4901,62 @@ not deferred.**
 Build `BUILD='v2-r60 (a keyed lookup, not a shared hash)'`. Published to
 `/v2/` only — a feature this size gets a real game (or in this case, a real
 calibration run) before release, same as everything else here.
+
+## 2026-09-05 (r61): a flush only shows the last guess, not the ones before it
+
+Report id11 (2026-08-29, r50) finally traced: "pawn to e5" never reached
+`phon()` — confirmed, not inferred: no candidate entry exists for it at all
+in "what was heard," so `route()`/`constrainedMove()` were never invoked.
+The `F4` result's margin 0.3 is the same Day 6.0 pawn-preference constant,
+unrelated. `tools/signatures.js` matched no catalogued shape — a real
+uninstrumented gap, not something to guess-patch.
+
+The mic timeline showed four fragments flushed as lost — `"to"`, `"E5"`,
+`"to E5"`, `"at"` — over a single never-restarted 103s session (`0
+restarts`), but only the *final* discarded text of each burst, never the
+sequence that produced it. Added instrumentation before attempting
+reproduction, same discipline as r49→r52's raw-counter story: every interim
+transition (`start`/`extend`/`supersede`) now gets its own `micLog` line,
+not just the terminal flush — logged before `flushLostInterim()` clears
+`lostInterim`, so the "held:" side of a supersede line is never already
+empty. Pure logging addition — the extend/supersede classification logic
+itself is untouched, verified by inspection (the only behavioral change is
+`flushLostInterim()` now firing a beat after the interim-transition log line
+instead of before, which doesn't affect any counter it reads).
+
+**Reproduced synthetically, not guessed**, replaying id11's exact fragment
+sequence through `tools/voice-harness.js`'s fake recognizer (`--fake-kokoro`,
+`bargeIn` on, a single long-lived session matching id11's `0 restarts`
+shape). The new instrumentation shows what the original report couldn't:
+
+```
++0.5s  interim  start: "to"
++1.5s  interim  supersede: "E5"  (held: "to")
++1.5s  lost  "to" never became a final result
++2.5s  interim  supersede: "to E5"  (held: "E5")
++2.5s  lost  "E5" never became a final result
++3.5s  interim  supersede: "at"  (held: "to E5")
++3.5s  lost  "to E5" never became a final result
+```
+
+**The mechanism, now precise rather than "somewhere upstream"**: Chrome
+delivered a fresh, non-prefix-stable interim hypothesis at every tick —
+`"to"` → `"E5"` → `"to E5"` → `"at"` are almost certainly all pieces of one
+continuous attempt at "pawn to e5," but none is a textual extension of the
+one before it. The app's own extend-vs-new-utterance test (a substring
+check) correctly identifies each pair as "different" *by text* — that
+detector is doing exactly its documented job — but Chrome's own interim
+hypothesis for this utterance simply wasn't prefix-stable, so every partial
+guess gets discarded before any of them ever reaches a final result. This is
+a real, known SpeechRecognition behavior class (interim results are not
+guaranteed to be stable prefixes), not a bug in the app's own logic.
+
+**No fix attempted** — instrument-and-observe phase only, per instruction.
+Any future fix has a real, nontrivial question to answer first: how to tell
+"the same utterance, Chrome just revised its guess" apart from "a genuinely
+new utterance," without which the extend/supersede detector can't safely be
+loosened. Worth a `tools/signatures.js` signature once a real second
+occurrence lands with this instrumentation live — nothing to name yet from
+one archived report plus one synthetic replay.
+
+Build `BUILD='v2-r61 (a flush only shows the last guess, not the ones before it)'`.
