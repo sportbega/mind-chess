@@ -154,6 +154,7 @@
 
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
   .board-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .board-size-field{display:flex;align-items:center;gap:6px}
   .board-head h2{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0;font-weight:500}
   .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
   .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
@@ -204,7 +205,13 @@
   .app.fullscreen-active>*{display:none}
   .app.fullscreen-active .board-head h2,
   .app.fullscreen-active .board-head #flipBoardBtn,
-  .app.fullscreen-active .board-head #fullscreenBtn{display:none}
+  .app.fullscreen-active .board-head #fullscreenBtn,
+  .app.fullscreen-active .board-head #boardToggleBtn,
+  /* .board-size-field as a class (not an inline style on the wrapper div)
+     so this rule can actually win the cascade — an inline style always
+     beats a stylesheet rule regardless of specificity, which is exactly
+     what silently defeated an earlier :has()-based version of this line. */
+  .app.fullscreen-active .board-head .board-size-field{display:none}
   .app.fullscreen-active .board-head{justify-content:center;gap:14px}
   .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
   .app.fullscreen-active .exit-fullscreen-btn{display:block}
@@ -278,7 +285,6 @@
       <h1>Mind Chess</h1>
       <p class="status" id="statusLine">White to move — board hidden</p>
     </div>
-    <div><button class="btn" id="boardToggleBtn" type="button">Reveal board</button></div>
   </header>
 
   <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
@@ -354,11 +360,16 @@
   <div class="boardpanel">
     <div class="board-head">
       <h2>Board</h2>
-      <div style="display:flex;align-items:center;gap:14px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
         <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
         <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
+        <div class="board-size-field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
+          <input type="range" id="boardSizeRange" min="420" max="960" step="20" value="680" style="width:110px" />
+          <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
+        </div>
+        <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
       </div>
     </div>
     <div class="board-outer">
@@ -523,13 +534,6 @@
         <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
         <span id="customClockLabel">15 min</span>
         <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
-      </div>
-    </div>
-    <div class="field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
-      <label for="boardSizeRange">Board size</label>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="range" id="boardSizeRange" min="420" max="960" step="20" value="680" style="flex:1" />
-        <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
       </div>
     </div>
     <div class="spacer"></div>
@@ -1885,18 +1889,37 @@
   // ===============================================================
   const BOARD_SIZE_KEY='mind-chess-v2-board-size';
   const BOARD_SIZE_DEFAULT=680;
+  // A dragged range input fires 'input' far more often than the display can
+  // even show — every mousemove tick, easily 60-100+/sec, versus a keyboard
+  // press which fires once per discrete step. The CSS var write below is
+  // cheap and stays synchronous so the grid itself tracks the mouse with no
+  // lag, but syncFilesWidth() calls getBoundingClientRect() (a forced
+  // layout read) and the old code ran that — plus a synchronous
+  // localStorage.setItem — on EVERY one of those events via
+  // setTimeout(fn,0), which doesn't even guarantee landing before the next
+  // paint. That's layout-thrashing and a disk-backed write firing many
+  // times more often than a frame can render, which is exactly what reads
+  // as jitter/tearing between the grid and the rest of the board frame
+  // during a fast drag, while discrete keyboard steps were rare enough to
+  // never expose it. Coalescing both into one requestAnimationFrame — using
+  // whatever the latest value was by the time the frame actually runs —
+  // caps this at one layout read and one write per rendered frame, matching
+  // the CSS-only cost of any other drag-to-resize control.
+  let boardSizePendingPx=null, boardSizeRAF=null;
   function applyBoardSize(px){
     document.documentElement.style.setProperty('--board-max',px+'px');
-    setTimeout(syncFilesWidth,0);
+    boardSizePendingPx=px;
+    if(boardSizeRAF) return;
+    boardSizeRAF=requestAnimationFrame(()=>{
+      boardSizeRAF=null;
+      syncFilesWidth();
+      try{ localStorage.setItem(BOARD_SIZE_KEY,boardSizePendingPx); }catch(e){}
+    });
   }
-  boardSizeRange.addEventListener('input',()=>{
-    applyBoardSize(boardSizeRange.value);
-    try{ localStorage.setItem(BOARD_SIZE_KEY,boardSizeRange.value); }catch(e){}
-  });
+  boardSizeRange.addEventListener('input',()=>{ applyBoardSize(boardSizeRange.value); });
   boardSizeResetBtn.addEventListener('click',()=>{
     boardSizeRange.value=BOARD_SIZE_DEFAULT;
     applyBoardSize(BOARD_SIZE_DEFAULT);
-    try{ localStorage.setItem(BOARD_SIZE_KEY,BOARD_SIZE_DEFAULT); }catch(e){}
   });
   // The file labels ("a"–"h") are a plain block/grid element, not aspect-
   // ratio-sized like the board grid itself, so they stretch to fill
@@ -2757,7 +2780,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r71 (the frame shrinks with the board again)';
+  const BUILD='v2-r72 (board controls grouped, size drag smoothed)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

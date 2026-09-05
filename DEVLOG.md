@@ -5526,3 +5526,76 @@ exit — both untouched by this fix, as they should be.
 
 Build `BUILD='v2-r71 (the frame shrinks with the board again)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r72): board controls grouped, size drag smoothed
+
+Two related changes, both about board-level controls.
+
+**Reorganization.** "Hide board" (`boardToggleBtn`, previously in the page
+header) and the board-size slider + its reset button (previously down in
+the settings grid — not actually in the r68 Appearance panel as described,
+worth noting for the record, but the same relocation either way) both move
+into `.board-head`, joining Flip board and Fullscreen — one row, all four
+board-level controls, right above the board itself. The Appearance panel
+now holds exactly what r68 intended it to: the two theme selects and the
+five filter sliders, nothing structural. Confirmed via
+`querySelectorAll('#appearanceDetails select,input,button')` before and
+after — no board-size or hide-board leftovers.
+
+Moving `#boardToggleBtn` into `.board-head` needed one addition:
+`.board-head` sits inside `.boardpanel`, the one `.app` child fullscreen
+does NOT hide wholesale (r64's "show only the board frame" rule), so
+anything moved in here needs its own explicit fullscreen exclusion or it
+newly leaks into the minimal fullscreen view. Added it alongside the
+existing `#flipBoardBtn`/`#fullscreenBtn` hides. Cost a wrong turn: the
+board-size row's wrapper div had `style="display:flex;..."` as an inline
+attribute, and an inline style always wins over a stylesheet rule
+regardless of specificity — so a first attempt at
+`.board-head div:has(> #boardSizeRange){display:none}` matched correctly
+(confirmed via `querySelectorAll`) but silently never applied, because it
+was fighting a battle stylesheets can't win. Moved the inline style to a
+`.board-size-field` class instead, which fixed it immediately — a stylesheet
+rule beats a stylesheet rule by specificity as normal once neither side is
+inline.
+
+**Drag jitter.** The board-size slider felt smooth on keyboard (discrete
+steps, one 'input' event each) but jittery on a mouse drag. A dragged
+range input fires 'input' far more often than a screen can even render —
+confirmed by instrumenting a synthetic drag: sweeping the full 420-960
+range in steps of 4 fired **136** raw events. The old handler did real
+work on every single one: `getBoundingClientRect()` inside
+`syncFilesWidth()` (a forced-layout read) via `setTimeout(fn,0)`, plus a
+synchronous `localStorage.setItem()`, both once per event. 136 forced
+layouts and 136 disk-backed writes in the time a real drag takes is
+layout-thrashing, not a rendering problem with the CSS itself — the
+`--board-max` write that actually resizes the grid was already a cheap,
+synchronous style write with no lag of its own (ruling out OUR-85's fix
+and the JS width sync being two out-of-sync fixed points, per the third
+lead given — they were never out of sync, one of them was just doing 136x
+the necessary work). Coalesced both the file-width sync and the
+localStorage write into a single `requestAnimationFrame`, deduped so a
+burst of 'input' events schedules at most one pending frame and uses
+whatever the latest value is by the time it runs — the same shape as
+r63's `.files` sync, just extended to also cover the persistence write,
+not only the layout read.
+
+Verified with the same synthetic-drag technique: patched
+`Storage.prototype.setItem` to count calls, fired the 136-event sweep, and
+confirmed exactly **one** scheduled callback and **one** `localStorage`
+write, using the final dragged value — not 136 of either.
+`requestAnimationFrame` itself doesn't fire at all in this CDP-automated
+tab (confirmed separately — the same limitation r63 hit with
+`ResizeObserver`/`requestAnimationFrame`, not new), so this was verified by
+substituting a `setTimeout(fn,0)` for the duration of the test, the same
+workaround pattern used for `.files` in r63. That substitution surfaced
+one test-harness-only trap worth recording: a saved board size from a
+*previous* test run means boot's own `applyBoardSize()` call schedules a
+*real*, unsubstituted, never-firing `requestAnimationFrame` before the
+test patches it — which permanently stuck the dedupe flag non-null for
+that page's entire lifetime, silently no-oping every later call. Not a
+real bug (a real browser's rAF reliably fires within a frame, so the flag
+never actually gets stuck there), but clearing the saved-size localStorage
+key before each fresh test run avoided the false negative going forward.
+
+Build `BUILD='v2-r72 (board controls grouped, size drag smoothed)'`.
+Published to `/v2/`.
