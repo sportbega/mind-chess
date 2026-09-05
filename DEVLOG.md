@@ -5646,3 +5646,45 @@ panel's height is gone rather than just rearranged.
 
 Build `BUILD='v2-r73 (mic control shrunk into the header)'`. Published to
 `/v2/`.
+
+## 2026-09-06 (r74): transcript moved below Appearance, made collapsible
+
+Relocated the narration/recognition transcript (the "Board — ...", "You
+— ...", "System — ..." log) from its old spot above the board to just
+below the r68 Appearance panel, wrapped in the same `<details class="help">`
+collapsible pattern — one consistent expand/collapse affordance across
+both panels instead of Appearance being the only collapsible one.
+
+Left it **open by default**: this is live narration/recognition feedback
+during play, which people are more likely to want visible by default than
+Appearance's occasional theme/filter tweaks — closing it is one click if
+someone wants the space back, but defaulting it closed would hide
+information most players check often.
+
+`.transcript`'s own background/border/padding were dropped — nesting it
+inside `#transcriptDetails` (which, as a `.help` element, already supplies
+that panel chrome) would otherwise double it up into a panel-within-a-panel.
+Kept everything else (the 190px scrolling height, the per-line "who"
+color-coding, the font) unchanged; only the outer chrome and a small
+top margin moved from `.transcript` to the wrapping `<details>`.
+
+No JS changes — `transcript` keeps its id, so every `appendChild`/
+`scrollTop` call and every `transcript.innerHTML=''` reset (new game,
+mode switches, etc.) works exactly as before. A closed `<details>` doesn't
+stop its content from existing or updating; it's the same mechanism a
+closed "Voice commands" block already relies on to hold its content
+without rendering it.
+
+Verified: fresh load places `#transcriptDetails` immediately after
+`#appearanceDetails` in `.app`'s child order and confirms it starts
+`open`; collapsed it via the summary equivalent (`.open=false`), routed a
+move through the text form while collapsed, and confirmed the DOM gained
+new `<p class="line">` entries the whole time (3 children, not stuck at
+1); re-opened it and confirmed all three lines — including the ones added
+while collapsed — were there, nothing lost or paused. Fullscreen still
+hides it via the existing blanket "show only the board frame" rule, same
+as before this move (it was already a top-level `.app` child hidden by
+that rule; wrapping it in `<details>` didn't change which rule applies).
+
+Build `BUILD='v2-r74 (transcript moved below Appearance, made
+collapsible)'`. Published to `/v2/`.
