@@ -4721,3 +4721,44 @@ noticed, which is the right outcome.
 Game ended in a real checkmate loss (`Re4#`), no new failure shapes per
 `tools/signatures.js` (same familiar STT quirks — `mic-lost` at 50/73,
 `pawn-default` ×2, nothing novel).
+
+## 2026-09-05 (r58): a phantom capture is not a real difference
+
+Report id20 was a real bug, not another increment illusion: the player
+resigned a real human game saying the opponent "wasn't making a move" and
+the clock line showed absurd numbers — `White 4318:44 · Black 4320:00`.
+
+The r55 lichess timeline made this fully diagnosable for the first time.
+259200000ms is exactly 3 days — a correspondence allotment — and the
+timeline showed `reconcile-reconnect fen mismatch` firing **every single
+20-second tick for over 3 minutes straight** while the actual position never
+changed (still White's move 2, waiting on a slow opponent). Checked Lichess's
+own API docs first rather than guess: `/api/account/playing`'s `fen` field
+is genuinely a full 6-field FEN, ruling out my first hypothesis (placement-
+only string). Reproduced locally instead: `chess.js` lists an en-passant
+target square after *any* two-square pawn push, regardless of whether an
+opposing pawn is actually positioned to capture it — `1.e4 e5` produces
+`... KQkq e6 0 2` even though no White pawn sits on d5/f5. Lichess's own FEN
+only lists it when a capture is legally possible. That single-field
+difference made `reconcileLichess()` see a permanent "mismatch" on a
+position that hadn't moved for as long as the opponent didn't reply.
+
+Fixed `normalizedFen()` to drop the en-passant field from the comparison
+entirely (placement/turn/castling only) — it's the one FEN component that's
+genuinely implementation-dependent, not real game state. Verified both
+directions with `tools/fake-lichess.js`: an en-passant-only difference no
+longer triggers a reconnect, while a genuine mismatch (opponent actually
+moved) still does.
+
+Also fixed the likely root cause of the confusion itself: the time-control
+`<select>` had no `selected` option, silently defaulting to Correspondence
+(3 days/move) — almost certainly not what was intended for a "seek an
+opponent and play" session. Rapid is now the default; Correspondence and
+Classical are still one click away.
+
+Second data point on the still-open stuck-session bug (OUR-75): same report
+flagged a 127.5s session with **3 raw, 1 heard** — much quieter than id18's
+busy 41/16, though not the clean `heard=0` that would fully confirm the r49
+hypothesis. Noted, not resolved.
+
+Build `BUILD='v2-r58 (a phantom capture is not a real difference)'`.
