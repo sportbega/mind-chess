@@ -216,6 +216,9 @@
   .report-foot a{color:var(--accent-2)}
 
   details.help{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px}
+  .appearance-grid{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:10px}
+  .appearance-grid .field{min-width:120px}
+  .appearance-grid input[type=range]{width:100%}
   details.help summary{cursor:pointer;font-size:13px;color:var(--accent-2);font-weight:500}
   details.help ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
   details.help code{font-family:'IBM Plex Mono',monospace;color:var(--text);background:var(--panel-2);padding:1px 6px;border-radius:4px}
@@ -496,6 +499,33 @@
       <a href="https://github.com/sportbega/mind-chess/issues" target="_blank" rel="noopener">github.com/sportbega/mind-chess/issues</a>.</p>
   </div>
 
+  <details class="help" id="appearanceDetails">
+    <summary>Appearance</summary>
+    <div class="appearance-grid">
+      <div class="field">
+        <label for="apContrastRange">Contrast</label>
+        <input type="range" id="apContrastRange" min="50" max="150" step="1" value="100" />
+      </div>
+      <div class="field">
+        <label for="apSaturateRange">Saturation</label>
+        <input type="range" id="apSaturateRange" min="0" max="200" step="1" value="100" />
+      </div>
+      <div class="field">
+        <label for="apBrightnessRange">Brightness</label>
+        <input type="range" id="apBrightnessRange" min="50" max="150" step="1" value="100" />
+      </div>
+      <div class="field">
+        <label for="apHueRange">Hue</label>
+        <input type="range" id="apHueRange" min="0" max="360" step="1" value="0" />
+      </div>
+      <div class="field">
+        <label for="apOpacityRange" title="Aesthetic only — a lower floor than this would make the board hard to read, not just muted.">Transparency</label>
+        <input type="range" id="apOpacityRange" min="40" max="100" step="1" value="100" />
+      </div>
+      <button class="btn" id="appearanceResetBtn" type="button" title="Reset all five to default">Reset appearance</button>
+    </div>
+  </details>
+
   <details class="help">
     <summary>Voice commands</summary>
     <ul>
@@ -686,6 +716,10 @@
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
         boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'),
+        apContrastRange=$('apContrastRange'), apSaturateRange=$('apSaturateRange'),
+        apBrightnessRange=$('apBrightnessRange'), apHueRange=$('apHueRange'),
+        apOpacityRange=$('apOpacityRange'), appearanceResetBtn=$('appearanceResetBtn'),
+        boardOuter=document.querySelector('.board-outer'),
         verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), tipsSelect=$('tipsSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
@@ -1847,6 +1881,57 @@
   setTimeout(syncFilesWidth,0);
 
   // ===============================================================
+  // Appearance — contrast/saturation/brightness/hue/transparency, layered
+  // ON TOP of whichever board/piece theme is selected (OUR-41's
+  // applyTheme()), not a replacement for it. Deliberately NOT overridden by
+  // fullscreen the way board size is: size is a layout concern fullscreen
+  // has its own opinion about, but a look you dialed in — greyer, brighter,
+  // recolored, faded — is exactly as much yours in fullscreen as out of it,
+  // so this applies straight to .board-outer with nothing fullscreen-
+  // specific in play. Transparency is confirmed (r62 devlog) to be a plain
+  // aesthetic opacity control, not "see behind the board" — the 40% floor
+  // below exists only so it can't be dragged past the point of being
+  // legible, which a literal transparency feature would have no reason to
+  // stop at.
+  // ===============================================================
+  const APPEARANCE_KEY='mind-chess-v2-appearance';
+  const APPEARANCE_DEFAULT={contrast:100,saturate:100,brightness:100,hue:0,opacity:100};
+  function applyAppearance(){
+    const c=apContrastRange.value, s=apSaturateRange.value, b=apBrightnessRange.value, h=apHueRange.value;
+    boardOuter.style.filter='contrast('+c+'%) saturate('+s+'%) brightness('+b+'%) hue-rotate('+h+'deg)';
+    boardOuter.style.opacity=(apOpacityRange.value/100);
+  }
+  function saveAppearance(){
+    try{
+      localStorage.setItem(APPEARANCE_KEY,JSON.stringify({
+        contrast:+apContrastRange.value,saturate:+apSaturateRange.value,
+        brightness:+apBrightnessRange.value,hue:+apHueRange.value,opacity:+apOpacityRange.value
+      }));
+    }catch(e){}
+  }
+  [apContrastRange,apSaturateRange,apBrightnessRange,apHueRange,apOpacityRange].forEach(r=>{
+    r.addEventListener('input',()=>{ applyAppearance(); saveAppearance(); });
+  });
+  appearanceResetBtn.addEventListener('click',()=>{
+    apContrastRange.value=APPEARANCE_DEFAULT.contrast;
+    apSaturateRange.value=APPEARANCE_DEFAULT.saturate;
+    apBrightnessRange.value=APPEARANCE_DEFAULT.brightness;
+    apHueRange.value=APPEARANCE_DEFAULT.hue;
+    apOpacityRange.value=APPEARANCE_DEFAULT.opacity;
+    applyAppearance();
+    saveAppearance();
+  });
+  function restoreAppearance(){
+    let saved=null;
+    try{ saved=JSON.parse(localStorage.getItem(APPEARANCE_KEY)); }catch(e){}
+    const a=Object.assign({},APPEARANCE_DEFAULT,saved||{});
+    apContrastRange.value=a.contrast; apSaturateRange.value=a.saturate;
+    apBrightnessRange.value=a.brightness; apHueRange.value=a.hue;
+    apOpacityRange.value=a.opacity;
+    applyAppearance();
+  }
+
+  // ===============================================================
   // Clock — silent by default (blindfold mode shouldn't be interrupted
   // by routine ticking), but a flag-fall is a game-ending event like
   // checkmate and always gets spoken. Ticks off game.turn() rather than
@@ -2630,7 +2715,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r66 (a wedged voice stops guarding the mic)';
+  const BUILD='v2-r67 (appearance sliders, layered on top of the theme)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6656,6 +6741,7 @@
     const savedSize=localStorage.getItem(BOARD_SIZE_KEY);
     if(savedSize){ boardSizeRange.value=savedSize; applyBoardSize(savedSize); }
   }catch(e){}
+  restoreAppearance();
 
   refreshVoices();
   if('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged',refreshVoices);
