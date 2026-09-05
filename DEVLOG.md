@@ -5417,3 +5417,54 @@ Build `BUILD='v2-r69 (four boards, two piece sets, all original)'`.
 Published to `/v2/`. Appearance backlog from r62 is now fully closed: board
 size, fullscreen scope, appearance sliders, panel placement, and theme
 variations all shipped.
+
+## 2026-09-05 (r70): the size slider finally has room to grow
+
+Adni reported the board-size slider could shrink the board but never
+enlarge it past default. Investigated before touching anything, per the
+two leads given: the slider's own range/mapping, or a container clamping
+at the natural size.
+
+It was the second one, but not quite as literally as either lead
+described. `#boardSizeRange` was already `min=420 max=960 value=680` —
+680 sits at 48% of that range, nowhere near the ceiling, so the *slider's
+own numbers* were never the bug. The real ceiling was one level up:
+`.app{max-width:720px}`, set long before the size slider existed, sized
+for the page's own content column. `.board-grid`'s actual available width
+is `.app`'s width minus `.boardpanel`'s padding (32px), `.board-outer`'s
+own padding (up to 50px at typical desktop widths), the `.ranks` column
+(14px) and its gap (6px) — about 102px of chrome. Against a 720px `.app`,
+that leaves roughly **618px** for the grid — which is *below* the 680px
+default. So the default itself was already being silently clamped down to
+~618px, and the entire top half of the slider (anything past ~618) had
+been a dead no-op since r62: dragging toward "smaller" always worked
+because those values were still below the real 618px ceiling, dragging
+toward "larger" never visibly did anything because the container, not the
+slider, was already maxed out. Confirmed by measurement rather than
+guessing: `getBoundingClientRect()` on `#boardGrid` before the fix showed
+680 requested `!=` what was actually possible with the padding stack in
+place.
+
+Fix was one number: raised `.app`'s max-width from 720px to 1100px —
+matching the ceiling fullscreen's own `.boardpanel` already uses (r63), so
+there's now one consistent idea of "how big the board area is allowed to
+get" instead of two disagreeing ones. That gives `.board-grid` up to
+~998px of real room, comfortably past the slider's existing 960px
+ceiling, so nothing about `#boardSizeRange`'s own min/max/step/default
+needed to change — the numbers were already sensible, they just couldn't
+be reached. `width:100%` on `.app` means a viewport narrower than 1100px
+still just shrinks to fit, so nothing about this affects anyone who never
+touches the slider or who's on a smaller screen.
+
+Verified: default now measures the real 680px it always claimed to be
+(previously ~618px); dragging to 960 now actually renders a 960px grid
+with `document.documentElement.scrollWidth` still under `window.innerWidth`
+— no horizontal overflow; dragging to 420 still shrinks as before; Reset
+returns to the true 680px default and persists it; and fullscreen is
+untouched — it still overrides the manual size (measured 801.5px,
+height-driven per r63) while active and restores the manual value exactly
+on exit, since that override was always a separate, higher-specificity CSS
+rule with no dependency on `.app`'s own max-width.
+
+Build `BUILD='v2-r70 (the size slider finally has room to grow)'`.
+Published to `/v2/`.

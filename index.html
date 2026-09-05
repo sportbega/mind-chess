@@ -53,7 +53,21 @@
     color:var(--text); font-family:'Inter',system-ui,sans-serif; min-height:100vh;
     padding:clamp(16px,4vw,40px); display:flex; justify-content:center;
   }
-  .app{width:100%;max-width:720px;display:flex;flex-direction:column;gap:16px}
+  /* 720px was sized for the page's OWN content column, before the board-
+     size slider existed — but .board-grid's ceiling (--board-max, up to
+     960px via #boardSizeRange) sits inside this column too, behind
+     .boardpanel's padding, .board-outer's own padding, and the .ranks
+     column. With .app capped at 720px there was only ~618px actually left
+     for the grid once that chrome was subtracted, which is BELOW the
+     slider's 680px default — so the default itself was already silently
+     clamped, and every value above ~618px (including the whole top half
+     of the slider) was a dead no-op. 1100px gives the grid room to
+     actually reach 960px (matching the ceiling fullscreen's own
+     .boardpanel already uses, see .app.fullscreen-active .boardpanel
+     below) with headroom to spare; width:100% means a narrower viewport
+     still just shrinks to fit, so this raises the ceiling without
+     affecting anyone who never touches the slider. */
+  .app{width:100%;max-width:1100px;display:flex;flex-direction:column;gap:16px}
 
   /* banner */
   .banner{
@@ -2730,7 +2744,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r69 (four boards, two piece sets, all original)';
+  const BUILD='v2-r70 (the size slider finally has room to grow)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
