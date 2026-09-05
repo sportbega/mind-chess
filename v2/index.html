@@ -253,7 +253,6 @@
   .board-veil svg{width:34px;height:34px;color:var(--accent-2);opacity:.8}
   .board-veil p{font-size:13px;color:var(--text-dim);max-width:30ch;margin:0}
 
-  .settings{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
   .field{display:flex;flex-direction:column;gap:4px}
   .field label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
   select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-family:'Inter',sans-serif}
@@ -261,7 +260,6 @@
   .stepper .btn{padding:4px 12px;font-size:14px;line-height:1;font-weight:600}
   .stepper span{font-size:13px;min-width:44px;text-align:center}
   .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);padding-bottom:6px}
-  .spacer{flex:1}
 
   .report-panel{display:none;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
   .report-panel.show{display:flex}
@@ -272,9 +270,12 @@
   .report-foot a{color:var(--accent-2)}
 
   details.help{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px}
-  .appearance-grid{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:10px}
-  .appearance-grid .field{min-width:120px}
-  .appearance-grid input[type=range]{width:100%}
+  /* Shared by every collapsible settings group (Appearance, Game
+     settings, Voice settings) — a generic flex-wrap field row, not
+     specific to appearance despite the name it started with. */
+  .field-grid{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:10px}
+  .field-grid .field{min-width:120px}
+  .field-grid input[type=range]{width:100%}
   details.help summary{cursor:pointer;font-size:13px;color:var(--accent-2);font-weight:500}
   details.help ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
   details.help code{font-family:'IBM Plex Mono',monospace;color:var(--text);background:var(--panel-2);padding:1px 6px;border-radius:4px}
@@ -311,8 +312,6 @@
       <p class="mic-note" id="micNote"></p>
     </div>
   </header>
-
-  <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
 
   <div class="online-panel" id="onlinePanel">
     <p class="online-status" id="onlineStatus">Create an online game, then send the invite link to a friend on another device.</p>
@@ -394,9 +393,126 @@
     </div>
   </div>
 
+  <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
+
+  <details class="help" id="gameSettingsDetails" open>
+    <summary>Game settings</summary>
+    <div class="field-grid">
+      <div class="field">
+        <label for="modeSelect">Opponent</label>
+        <select id="modeSelect">
+          <option value="computer" selected>Vs. computer</option>
+          <option value="two-player">Pass &amp; play</option>
+          <option value="online">Play online</option>
+          <option value="lichess">Lichess (real opponent)</option>
+          <option value="puzzle">Puzzles</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="levelSelect">Level</label>
+        <select id="levelSelect" title="Casual plays instantly and needs no download. Club and above use a real chess engine — 7.3 MB, fetched once and then cached for offline use.">
+          <option value="1" selected>Casual</option>
+          <option value="2">Club</option>
+          <option value="3">Sharp</option>
+          <option value="master">Master</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="clockSelect">Clock</label>
+        <select id="clockSelect">
+          <option value="0" selected>No clock</option>
+          <option value="3">3 min</option>
+          <option value="5">5 min</option>
+          <option value="10">10 min</option>
+          <option value="20">20 min</option>
+          <option value="30">30 min</option>
+          <option value="custom">Custom…</option>
+        </select>
+        <div class="stepper" id="customClockRow" style="display:none">
+          <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
+          <span id="customClockLabel">15 min</span>
+          <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="coachSelect">Coach</label>
+        <select id="coachSelect">
+          <option value="off">Off</option>
+          <option value="hints" selected>Hints</option>
+          <option value="full">Full</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="tipsSelect">Tips</label>
+        <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
+          <option value="on" selected>On</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+      <button class="btn" id="newGameBtn" type="button">New game</button>
+    </div>
+  </details>
+
+  <details class="help" id="voiceSettingsDetails">
+    <summary>Voice settings</summary>
+    <div class="field-grid">
+      <div class="field">
+        <label for="engineSelect">Speech</label>
+        <select id="engineSelect">
+          <option value="system" selected>System</option>
+          <option value="kokoro">Natural — 326 MB once</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sttSelect">Hearing</label>
+        <select id="sttSelect">
+          <option value="system" selected>Browser</option>
+          <option value="local">On-device — 247 MB once</option>
+        </select>
+      </div>
+      <div class="field" id="voiceProfileField">
+        <label>Voice calibration</label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="online-status" id="voiceProfileStatus" style="margin:0">Off</span>
+          <button class="btn" id="calibrateBtn" type="button" title="Teach the matcher how you say the files, digits and piece names.">Calibrate my voice</button>
+          <button class="btn" id="resetVoiceProfileBtn" type="button" style="display:none">Reset</button>
+        </div>
+        <label class="toggle" id="voiceProfileConfirmRow" style="display:none;margin-top:6px">
+          <input type="checkbox" id="voiceProfileConfirmToggle" /> This is still me — use my calibration
+        </label>
+      </div>
+      <div class="field">
+        <label for="voiceSelect">Voice</label>
+        <select id="voiceSelect"><option value="">Default</option></select>
+      </div>
+      <div class="field">
+        <label for="rateSelect">Speed</label>
+        <select id="rateSelect">
+          <option value="0.7">Slow</option>
+          <option value="0.9" selected>Measured</option>
+          <option value="1">Normal</option>
+          <option value="1.15">Brisk</option>
+          <option value="1.3">Fast</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="verbositySelect">Narration</label>
+        <select id="verbositySelect">
+          <option value="terse" selected>Terse</option>
+          <option value="standard">Standard</option>
+          <option value="verbose">Verbose</option>
+        </select>
+      </div>
+      <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
+      <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
+      <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
+      <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
+    </div>
+  </details>
+
   <details class="help" id="appearanceDetails">
     <summary>Appearance</summary>
-    <div class="appearance-grid">
+    <div class="field-grid">
       <div class="field">
         <label for="boardThemeSelect">Board</label>
         <select id="boardThemeSelect">
@@ -451,113 +567,12 @@
     <div class="transcript" id="transcript" aria-live="polite"></div>
   </details>
 
-  <div class="settings">
-    <div class="field">
-      <label for="modeSelect">Opponent</label>
-      <select id="modeSelect">
-        <option value="computer" selected>Vs. computer</option>
-        <option value="two-player">Pass &amp; play</option>
-        <option value="online">Play online</option>
-        <option value="lichess">Lichess (real opponent)</option>
-        <option value="puzzle">Puzzles</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="levelSelect">Level</label>
-      <select id="levelSelect" title="Casual plays instantly and needs no download. Club and above use a real chess engine — 7.3 MB, fetched once and then cached for offline use.">
-        <option value="1" selected>Casual</option>
-        <option value="2">Club</option>
-        <option value="3">Sharp</option>
-        <option value="master">Master</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="engineSelect">Speech</label>
-      <select id="engineSelect">
-        <option value="system" selected>System</option>
-        <option value="kokoro">Natural — 326 MB once</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="sttSelect">Hearing</label>
-      <select id="sttSelect">
-        <option value="system" selected>Browser</option>
-        <option value="local">On-device — 247 MB once</option>
-      </select>
-    </div>
-    <div class="field" id="voiceProfileField">
-      <label>Voice calibration</label>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span class="online-status" id="voiceProfileStatus" style="margin:0">Off</span>
-        <button class="btn" id="calibrateBtn" type="button" title="Teach the matcher how you say the files, digits and piece names.">Calibrate my voice</button>
-        <button class="btn" id="resetVoiceProfileBtn" type="button" style="display:none">Reset</button>
-      </div>
-      <label class="toggle" id="voiceProfileConfirmRow" style="display:none;margin-top:6px">
-        <input type="checkbox" id="voiceProfileConfirmToggle" /> This is still me — use my calibration
-      </label>
-    </div>
-    <div class="field">
-      <label for="voiceSelect">Voice</label>
-      <select id="voiceSelect"><option value="">Default</option></select>
-    </div>
-    <div class="field">
-      <label for="rateSelect">Speed</label>
-      <select id="rateSelect">
-        <option value="0.7">Slow</option>
-        <option value="0.9" selected>Measured</option>
-        <option value="1">Normal</option>
-        <option value="1.15">Brisk</option>
-        <option value="1.3">Fast</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="coachSelect">Coach</label>
-      <select id="coachSelect">
-        <option value="off">Off</option>
-        <option value="hints" selected>Hints</option>
-        <option value="full">Full</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="tipsSelect">Tips</label>
-      <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
-        <option value="on" selected>On</option>
-        <option value="off">Off</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="verbositySelect">Narration</label>
-      <select id="verbositySelect">
-        <option value="terse" selected>Terse</option>
-        <option value="standard">Standard</option>
-        <option value="verbose">Verbose</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="clockSelect">Clock</label>
-      <select id="clockSelect">
-        <option value="0" selected>No clock</option>
-        <option value="3">3 min</option>
-        <option value="5">5 min</option>
-        <option value="10">10 min</option>
-        <option value="20">20 min</option>
-        <option value="30">30 min</option>
-        <option value="custom">Custom…</option>
-      </select>
-      <div class="stepper" id="customClockRow" style="display:none">
-        <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
-        <span id="customClockLabel">15 min</span>
-        <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
-      </div>
-    </div>
-    <div class="spacer"></div>
-    <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
-    <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
-    <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
-    <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
-    <button class="btn" id="reportBtn" type="button" title="Copy a diagnostic report you can paste into a bug report.">Report a problem</button>
-    <button class="btn" id="newGameBtn" type="button">New game</button>
-  </div>
+  <!-- Doesn't cleanly belong to either Game or Voice settings — a
+       diagnostic/support action, not a game or voice preference — so it
+       stays standalone rather than being force-fit into one group. Placed
+       here, next to the transcript, since the report it copies is built
+       from the same session data (moves, settings, mic timeline). -->
+  <button class="btn" id="reportBtn" type="button" title="Copy a diagnostic report you can paste into a bug report.">Report a problem</button>
 
   <div class="report-panel" id="calibPanel">
     <div class="report-head">
@@ -2794,7 +2809,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r74 (transcript moved below Appearance, made collapsible)';
+  const BUILD='v2-r75 (settings split into Game and Voice groups)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
