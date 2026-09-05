@@ -122,20 +122,30 @@
   .lobby-row .meta b{color:var(--text);font-weight:500}
   .lobby-empty{margin:0;font-size:13px;color:var(--text-dim);font-style:italic;text-align:center;padding:10px 0}
 
-  .hero{display:flex;flex-direction:column;align-items:center;gap:12px;padding:26px 20px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);text-align:center}
-  .mic-wrap{position:relative;width:104px;height:104px;display:flex;align-items:center;justify-content:center}
+  /* Relocated from a standalone full-width panel (26px padding, a 104px
+     mic-wrap around an 84px button) into the header's own row, alongside
+     the title, in the spot the pre-r72 "Hide board" button used to sit —
+     freeing up that whole panel's height so the board renders higher.
+     48px keeps #micBtn at the standard comfortable touch-target floor
+     (Apple HIG / Material both call for ~44-48px) despite shrinking from
+     84px — smaller footprint, not a smaller tap target than convention
+     asks for. The instructional hint paragraph that used to sit under the
+     button ("Tap and speak — 'e4', 'knight to f3'...") doesn't fit this
+     row at any reasonable width, so it moved to the button's own title
+     tooltip instead of disappearing outright — the "Voice commands"
+     details block elsewhere still documents the same phrases at length. */
+  .mic-compact{display:flex;align-items:center;gap:10px}
+  .mic-wrap{position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--accent-2);opacity:0;transform:scale(.6)}
   .mic-wrap.listening .ring{animation:ripple 1.6s ease-out infinite}
   .mic-wrap.listening .ring:nth-child(2){animation-delay:.4s}
   .mic-wrap.listening .ring:nth-child(3){animation-delay:.8s}
   @keyframes ripple{0%{opacity:.55;transform:scale(.6)}100%{opacity:0;transform:scale(1.7)}}
-  #micBtn{position:relative;z-index:1;width:84px;height:84px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);color:var(--accent);display:flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s}
+  #micBtn{position:relative;z-index:1;width:48px;height:48px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);color:var(--accent);display:flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s}
   #micBtn:hover:not(:disabled){border-color:var(--accent)}
   .mic-wrap.listening #micBtn{background:var(--accent-2);border-color:var(--accent-2);color:#0e2320}
-  #micBtn svg{width:30px;height:30px}
-  .hero .hint{font-size:13px;color:var(--text-dim);max-width:38ch;margin:0}
-  .hero .hint b{color:var(--text);font-weight:500}
-  .mic-note{font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0}
+  #micBtn svg{width:20px;height:20px}
+  .mic-note{font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0;max-width:22ch}
   .mic-note.err{color:var(--danger)}
   .mic-note.ok{color:var(--ok)}
 
@@ -285,6 +295,18 @@
       <h1>Mind Chess</h1>
       <p class="status" id="statusLine">White to move — board hidden</p>
     </div>
+    <div class="mic-compact">
+      <div class="mic-wrap" id="micWrap">
+        <span class="ring"></span><span class="ring"></span><span class="ring"></span>
+        <button id="micBtn" type="button" aria-label="Speak your move" title="Tap and speak — try &quot;e4&quot;, &quot;knight to f3&quot;, &quot;queen takes e5&quot;, &quot;castle kingside&quot;.">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
+            <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
+          </svg>
+        </button>
+      </div>
+      <p class="mic-note" id="micNote"></p>
+    </div>
   </header>
 
   <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
@@ -334,20 +356,6 @@
       <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
       <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
     </div>
-  </div>
-
-  <div class="hero">
-    <div class="mic-wrap" id="micWrap">
-      <span class="ring"></span><span class="ring"></span><span class="ring"></span>
-      <button id="micBtn" type="button" aria-label="Speak your move">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-          <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
-          <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
-        </svg>
-      </button>
-    </div>
-    <p class="hint">Tap and speak — <b>"e4"</b>, <b>"knight to f3"</b>, <b>"queen takes e5"</b>, <b>"castle kingside"</b>.</p>
-    <p class="mic-note" id="micNote"></p>
   </div>
 
   <div class="transcript" id="transcript" aria-live="polite"></div>
@@ -2780,7 +2788,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r72 (board controls grouped, size drag smoothed)';
+  const BUILD='v2-r73 (mic control shrunk into the header)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

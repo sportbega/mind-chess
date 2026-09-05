@@ -5599,3 +5599,50 @@ key before each fresh test run avoided the false negative going forward.
 
 Build `BUILD='v2-r72 (board controls grouped, size drag smoothed)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r73): mic control shrunk into the header
+
+The mic button lived in its own standalone `.hero` panel — a full-width
+block with 26px padding, a 104px ring container around an 84px button, a
+static instructional line ("Tap and speak — 'e4', 'knight to f3'..."), and
+the dynamic status note — sitting between the online/Lichess panels and
+the transcript, well above the board. That whole panel's height was
+screen real estate the board wasn't getting, and r72 had just freed up
+the exact opposite problem (a vacated header slot) by moving "Hide board"
+up into `.board-head`.
+
+Shrank the mic control (60px ring container, 48px button — kept at the
+~44-48px floor both Apple HIG and Material call the minimum comfortable
+touch target, so smaller footprint didn't mean a harder tap) and moved it
+into the header itself, in the exact slot "Hide board" used to occupy
+before r72 vacated it — a horizontal `.mic-compact` row (ring+button next
+to the status note) instead of the old centered column. The static
+instructional line didn't fit any reasonable width in a header row, so it
+moved to the button's own `title` tooltip rather than disappearing
+outright — the "Voice commands" `<details>` block elsewhere still
+documents the same example phrases at length, so the information wasn't
+actually lost, just relocated to a lower-traffic spot. Deleted the
+now-empty `.hero` section and its dead CSS entirely.
+
+No JS changes — `micWrap`/`micBtn`/`micNote` keep their ids, so every
+existing listener, state class toggle (`.listening`), and `note()` call
+into `micNote` works exactly as before; only their container and its CSS
+changed.
+
+Verified: clicking the mic button still toggles `.mic-wrap.listening`,
+shows "Listening…"/"Hearing you…" in the status note, and the ripple-ring
+animation still plays (its CSS is `inset:0` relative to `.mic-wrap`'s own
+box, so it scaled down automatically with the container — nothing to
+adjust there). Checked at a genuine 390px mobile width via a same-origin
+iframe (this environment's window-resize doesn't actually change the
+rendered viewport, so an iframe was the only way to get real `vw`-based
+CSS to respond) — the header doesn't even need to wrap at that width with
+the mic idle, and gracefully wraps onto its own line via the existing
+`header{flex-wrap:wrap}` once the listening state's ring/note grow the
+row, with the button still fully visible and tappable in both cases. The
+board panel now starts noticeably higher in the page on both the 1920px
+desktop screenshot and the 390px mobile one, since the whole `.hero`
+panel's height is gone rather than just rearranged.
+
+Build `BUILD='v2-r73 (mic control shrunk into the header)'`. Published to
+`/v2/`.
