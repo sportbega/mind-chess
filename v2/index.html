@@ -1231,6 +1231,19 @@
   // rest of the session and go back to replying immediately. One stall, then
   // it degrades to exactly the pre-r21 behaviour instead of compounding.
   let speechEndTrusted=true;
+  // Once speechEndTrusted goes false, this session has already proven its
+  // browser's speech-completion signal can't be trusted — id23: a genuinely
+  // wedged speechSynthesis leaves `speaking` stuck true forever, and every
+  // mic-restart path (recognition.onend, the stale-session watchdog,
+  // startListening's own guard, scheduleRestart's timer) used to defer to
+  // `speaking` on the assumption that endSpeaking() would eventually own the
+  // restart. It never does, because nothing ever tells it narration is over.
+  // Once the deadline above has already fired once, `speaking` stops being
+  // authoritative for THOSE checks specifically — trading a small chance of
+  // hearing our own tail end of speech (the existing echo-ignore heuristics
+  // already handle that) for the alternative, which is a mic that never
+  // opens again for the rest of the game.
+  function speakingBlocksMic(){ return speaking&&speechEndTrusted; }
   function whenSpeechIdle(fn,maxWaitMs){
     if(!speaking||!voiceOn||!speechEndTrusted){ fn(); return; }
     const entry={done:false};
@@ -2617,7 +2630,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r65 (pieces scale with the square again)';
+  const BUILD='v2-r66 (a wedged voice stops guarding the mic)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4882,7 +4895,9 @@
       if(micNote.textContent==='Listening\u2026'||micNote.textContent==='Hearing you\u2026') note('');
       // The session we just lost was aborted by beginSpeaking(). endSpeaking()
       // owns the restart; reopening here would point the mic at our own voice.
-      if(speaking) return;
+      // That trust ends the moment speechEndTrusted does \u2014 see
+      // speakingBlocksMic() above.
+      if(speakingBlocksMic()) return;
       if(wantLoop&&handsFree) scheduleRestart();
     };
   }
@@ -4904,7 +4919,7 @@
     }
     const delay=lastErrorWasNetwork?2500:(shortSessions>=3?800:200);
     micEvent('restart','in '+delay+'ms'+(lastErrorWasNetwork?' (network backoff)':''));
-    setTimeout(()=>{ if(wantLoop&&handsFree&&!speaking) startListening(); },delay);
+    setTimeout(()=>{ if(wantLoop&&handsFree&&!speakingBlocksMic()) startListening(); },delay);
   }
 
   // Staying on for a 30-minute game means every restart path has to survive
@@ -4913,7 +4928,7 @@
   // says so. This is the only thing that would ever notice.
   const STALE_SESSION_MS=90000;
   setInterval(()=>{
-    if(!wantLoop||!handsFree||speaking) return;
+    if(!wantLoop||!handsFree||speakingBlocksMic()) return;
     const idle=Date.now()-lastMicActivity;
     if(listening){
       // The nastier failure: onend never arrives, so `listening` stays true,
@@ -4939,7 +4954,7 @@
   },5000);
 
   async function startListening(){
-    if(!recognition||listening||speaking) return;
+    if(!recognition||listening||speakingBlocksMic()) return;
     const ok=await primeMic();
     if(!ok) return;
     try{
