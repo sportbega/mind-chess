@@ -5181,3 +5181,76 @@ with a screenshot that pieces fill their squares the same way in both.
 
 Build `BUILD='v2-r65 (pieces scale with the square again)'`. Published to
 `/v2/`.
+
+## 2026-09-05 (r66): a wedged voice stops guarding the mic — id23
+
+id23: playing vs. computer, `speech=system`, "Talk over it" on, first game
+at level 2 (7.3MB engine load). White played e4, Black replied e5, both
+correctly applied and narrated per the position — then the mic never
+listened again for the rest of the game. The timeline showed the 12s
+"narration never ended after 12000ms — moving anyway" watchdog firing as
+designed, followed 1.7s later by "session closed after 19.1s ... (while we
+were speaking)" — and nothing after that.
+
+Traced (not guessed — see below) to a genuine three-way deadlock, not a
+single broken component. `speaking` is a flag only `endSpeaking()` ever
+clears, on the assumption that TTS itself will eventually tell the app it's
+done. Three separate recovery paths lean on that assumption and bail out
+whenever `speaking` is true, each deliberately deferring to one of the
+others: `recognition.onend` skips scheduling a restart ("endSpeaking() owns
+the restart"), the periodic stale-session watchdog skips forcing a new
+session, and `startListening()`/`scheduleRestart()`'s own timer refuse to
+even try. Every one of those deferrals is correct *as long as TTS
+eventually completes*. `whenSpeechIdle()`'s 12s deadline (the thing that
+actually fired here) is scoped only to game progression — it applies the
+move and flips `speechEndTrusted` false, but deliberately never touches
+`speaking` or restarts anything. So once a chunk of system-voice narration
+is genuinely wedged — `speechSynthesis.speaking` stuck reporting `true`
+forever, plausibly from main-thread contention with the first-load 7.3MB
+engine compile, though the mechanism doesn't actually depend on that
+trigger — every one of the three recovery paths keeps deferring to a
+`speaking` flag that will never go false, and the mic stays dead for the
+rest of the game.
+
+Reproduced the exact failure, mechanically, before writing any fix:
+`tools/voice-harness.js`'s fake recognizer plus a hand-patched
+`speechSynthesis` (a `speak()` that never fires `onstart`/`onend`, with
+`speaking` hardcoded `true`) recreated the identical log line — `session
+closed after 32.9s (1 raw, 0 heard) (while we were speaking)` — followed by
+a permanently silent mic. Confirmed the deadlock has nothing to do with the
+engine: this reproduction never touched Stockfish or the local engine at
+all.
+
+The fix: `speechEndTrusted` already exists as a signal meaning "this
+session's own TTS has already proven it won't tell us when it's done" —
+it just wasn't wired to anything but game progression. Added
+`speakingBlocksMic()` (`speaking && speechEndTrusted`) and swapped it in
+everywhere the three deferring paths checked bare `speaking`:
+`recognition.onend`, the stale-session watchdog, `scheduleRestart()`'s
+timer, and `startListening()`'s own guard (needed too — otherwise the
+first three deciding to retry would still be refused by this one). While
+`speechEndTrusted` is true — the common case, TTS behaving normally —
+every one of those checks behaves exactly as before; nothing here changes
+until a session has already earned distrust once.
+
+Verified both directions in the harness: with the same wedged-TTS setup,
+the mic timeline now ends `state=listening` with `2 watchdog saves` and `2
+restarts` instead of stuck at `state=speaking` forever — the stale-session
+watchdog now actually forces the dead session closed and reopens it, since
+it's no longer blocked on a `speaking` flag it can no longer trust. Then
+re-ran the *unpatched* flow (real fake-onend timing, no wedge) and
+confirmed zero behavior change: clean `speaking → listening (narration
+ended)` transitions, `0 restarts`, `0 watchdog saves`, identical to before
+this fix.
+
+Also re-ran `tools/phon-collisions.js` (unchanged: same 15 known,
+neutralised collisions) and `tools/corpus-replay.js` against all 510
+archived utterances (14/510 drifted, unchanged in kind from a routine
+re-run — this fix touches none of `expandAlternatives`/`scoreAlternatives`/
+`speechKey`, confirmed by diff, so the drift count is guaranteed unaffected
+regardless). Skipped `tools/stt-bench.js` — it benches speech-*recognition*
+accuracy and downloads a real STT model; this fix touches none of that
+path.
+
+Build `BUILD='v2-r66 (a wedged voice stops guarding the mic)'`. Published
+to `/v2/`.
