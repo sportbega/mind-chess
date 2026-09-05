@@ -5319,3 +5319,42 @@ through unchanged, confirming the "not overridden" design actually holds.
 Build `BUILD='v2-r67 (appearance sliders, layered on top of the theme)'`.
 Published to `/v2/`. Still open: new board/piece theme variations —
 deferred a second time, by explicit choice, not by default.
+
+## 2026-09-05 (r68): one appearance panel, under the board
+
+Follow-up to r67: move the board/piece theme selects (OUR-41) out of the
+settings grid and into the same "Appearance" panel as the five sliders,
+and move that whole panel from the foot of the page (next to "Voice
+commands") to directly under the board panel — so every appearance control
+gives live feedback against the board without scrolling.
+
+Pure relocation, no data-model change: `boardThemeSelect`/
+`pieceThemeSelect` keep their ids, `applyTheme()` and the
+`BOARD_THEME_KEY`/`PIECE_THEME_KEY` localStorage keys are untouched, only
+the two `.field` divs moved out of `.settings` and into the appearance
+`<details>`. Placed as a sibling right after `.boardpanel` rather than
+nested inside it — `.app.fullscreen-active>*{display:none}` already hides
+every direct child of `.app` except `.boardpanel` and the exit button, so
+this panel disappears in fullscreen for free, consistent with r64's "show
+only the board frame" decision, with no new fullscreen CSS needed.
+
+Reset scope: kept to the five sliders only, not the theme selects — a
+board/piece theme is a deliberate choice a player makes once and keeps,
+the same kind of setting the board-size slider's own "Reset" already
+leaves alone; a filter tweak is the kind of thing you nudge and want an
+easy way back from. Relabeled the button's tooltip to say so explicitly,
+since "Reset appearance" now sits one row above two selects it doesn't
+touch.
+
+Verified live: board theme (Tournament Green) and piece theme (Ivory &
+Onyx) both take effect immediately on the board directly above the panel,
+screenshotted together with no scrolling; confirmed exactly one instance
+each of `boardThemeSelect`/`pieceThemeSelect`/`appearanceDetails` in the
+DOM (no leftover duplicate in the settings grid); Reset appearance zeroed
+the sliders' `filter` back to neutral while leaving `boardThemeSelect`/
+`pieceThemeSelect` at their chosen values; and a real page reload restored
+theme, pieces, and all five slider positions together, from their existing
+separate localStorage keys, with no cross-talk between them.
+
+Build `BUILD='v2-r68 (one appearance panel, under the board)'`. Published
+to `/v2/`.
