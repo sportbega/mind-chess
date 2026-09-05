@@ -211,7 +211,7 @@
     <div class="online-actions">
       <select id="lichessTimeSelect" title="Blitz and bullet are excluded — a voice move takes longer than a click.">
         <option value="corr">Correspondence (3 days/move)</option>
-        <option value="rapid">Rapid (10+5)</option>
+        <option value="rapid" selected>Rapid (10+5)</option>
         <option value="classical">Classical (30+20)</option>
       </select>
       <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
@@ -2396,7 +2396,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r57 (a rematch first has to leave the last game)';
+  const BUILD='v2-r58 (a phantom capture is not a real difference)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5304,7 +5304,17 @@
   // reconnect on any mismatch, rather than waiting on lastEventAt going
   // stale — a stale clock is also just what a normal, long, legitimate think
   // looks like, so time alone is not a safe signal here.
-  function normalizedFen(f){ return (f||'').split(' ').slice(0,4).join(' '); }
+  // Only placement/turn/castling — NOT the en-passant square. chess.js lists
+  // an en-passant target after any two-square pawn push regardless of
+  // whether an opposing pawn is actually positioned to capture there (e.g.
+  // "e6" after 1.e4 e5, even with no White pawn on d5/f5); Lichess's own FEN
+  // only lists it when a capture is legally possible. That single-field
+  // difference made reconcileLichess() see a "mismatch" on a position that
+  // never actually changed for as long as the opponent didn't move — found
+  // live: a real correspondence opponent taking their time triggered a
+  // reconnect every 20s for 200+ seconds straight on a completely static
+  // board (id20, 2026-09-05).
+  function normalizedFen(f){ return (f||'').split(' ').slice(0,3).join(' '); }
   async function reconcileLichess(){
     if(!lichessState||gameOver) return;
     try{
@@ -5315,7 +5325,7 @@
         lichessNote('Out of sync with Lichess — reconnecting…');
         const gameId=lichessState.gameId, resumeState=lichessState;
         resumeState.resuming=true;
-        lichessEvent('reconcile-reconnect','fen mismatch, carrying wtime='+resumeState.wtime
+        lichessEvent('reconcile-reconnect','fen mismatch (lichess: '+cur.fen+' | local: '+game.fen()+'), carrying wtime='+resumeState.wtime
           +' btime='+resumeState.btime+' color='+resumeState.color);
         try{ resumeState.streamController?.abort(); }catch(e){}
         openLichessStream(gameId,resumeState);
