@@ -122,8 +122,16 @@
   .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
   .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
   .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
-  .board-col{flex:1;min-width:0;container-type:inline-size}
-  .board-grid{width:100%;max-width:var(--board-max,680px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
+  .board-col{flex:1;min-width:0}
+  /* container-type lives on .board-grid itself, not .board-col: .sq's
+     font-size below is sized in cqw, and a query container reports its OWN
+     inline size — putting it one level up on .board-col meant every piece
+     was sized against the flex column's width, not the grid's. In normal
+     mode the two are close enough not to notice; in fullscreen the grid is
+     height-driven (aspect-ratio off a flex:1 row, see below) and can render
+     far narrower than the column around it, so pieces shrank well below
+     their normal fill ratio — same shape of bug as r63's .files width. */
+  .board-grid{container-type:inline-size;width:100%;max-width:var(--board-max,680px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
   /* Fullscreen — a first cut sized the board against a fixed vh fraction,
      then a hand-tuned calc() guess at everything else's height, and both
      were fragile: correct only at the one viewport size they were measured
@@ -164,7 +172,18 @@
   .app.fullscreen-active .board-head{justify-content:center;gap:14px}
   .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
   .app.fullscreen-active .exit-fullscreen-btn{display:block}
-  .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,70px)!important;line-height:1;user-select:none}
+  /* 12cqw keeps the glyph at a fixed ~96% fill of its square (12% of an
+     8-square-wide container = 96% of one square) at any board size — the
+     70px ceiling was sized for the old max board width (960px slider ->
+     120px squares -> 115px glyph, comfortably under it) and was never
+     raised when fullscreen started rendering squares past that: past a
+     ~583px board width the glyph stopped growing with the square and the
+     96% ratio broke down, which is what "pieces too small" actually was
+     once the container-query fix above made cqw track the right width.
+     140px covers the largest square either fullscreen (~1030px board,
+     board-outer's own padding/ranks column and the .boardpanel 1100px cap
+     as the ceiling) or the board-size slider (960px max) can produce. */
+  .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,140px)!important;line-height:1;user-select:none}
   .sq.light{background:var(--sq-light)}
   .sq.dark{background:var(--sq-dark)}
   /* solid glyphs for both sides, separated by fill + stroke so both read on any square */
@@ -2598,7 +2617,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r64 (fullscreen shows the board, not the buttons)';
+  const BUILD='v2-r65 (pieces scale with the square again)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
