@@ -5688,3 +5688,76 @@ that rule; wrapping it in `<details>` didn't change which rule applies).
 
 Build `BUILD='v2-r74 (transcript moved below Appearance, made
 collapsible)'`. Published to `/v2/`.
+
+## 2026-09-06 (r75): settings split into Game and Voice groups
+
+The single `.settings` panel held sixteen controls in one flat flex-wrap
+grid — opponent, level, speech engine, hearing, voice calibration, voice
+picker, speed, coach, tips, narration, clock, plus four toggles and three
+action buttons — with no grouping at all. Split it into two collapsible
+sections following the exact `<details class="help">` pattern r68
+(Appearance) and r74 (Transcript) already established, so there's now one
+consistent expand/collapse idiom across every settings surface in the app
+rather than one flat panel plus two collapsible ones.
+
+**Game settings** (open by default): Opponent, Level, Clock, Coach, Tips,
+New game. Matches the reasoning given — these matter before/while
+choosing how to play, so defaulting open costs nothing and saves a click
+at the point they're most likely to be touched.
+
+**Voice settings** (closed by default): Speech, Hearing, Voice
+calibration, Voice, Speed, Narration, Keep listening, Speak aloud, Talk
+over it, Test voice. Set-once-and-forget by nature — closing this by
+default matches Appearance's own precedent (also closed by default) for
+the same reason.
+
+**Audited what was left over, per instruction, rather than force-fitting
+everything**: `reportBtn` ("Report a problem") is a diagnostic/support
+action — it doesn't describe a game preference or a voice preference, and
+forcing it into either group would misdescribe what it does. Left it
+standalone, positioned next to the Transcript panel rather than inside
+either collapsible, since the diagnostic report it copies is built from
+the same session data the transcript displays (moves, settings, mic
+timeline) — the two belong near each other, not inside a settings group.
+`voiceProfileField` (voice calibration) went to Voice settings without
+debate — it's about teaching the recognizer a speaker's pronunciation,
+squarely a voice concern despite sharing a UI action (a button) with the
+diagnostic-flavored `reportBtn`.
+
+**Move history** (`#moveStrip`, the "1. e4 Nc6" strip) moved from above
+the board — where it sat before any of `.boardpanel`, Appearance, or
+Transcript existed — to directly below it, per the requested resulting
+order: board + its control row → move history → Game settings → Voice
+settings → Appearance → Transcript. Confirmed this ordering makes sense
+once laid out: move history reads naturally as "what just happened to the
+board," so it belongs adjacent to the board rather than up in the header
+area with the title and mic control.
+
+Renamed the shared flex-wrap layout class from `.appearance-grid` to the
+already-more-honest `.field-grid`, since it's now doing the same job for
+three unrelated sections, not just Appearance — the class was never
+appearance-specific, only named that way because it started in one place.
+Removed the old `.settings`/`.spacer` CSS rules entirely once nothing
+referenced them.
+
+No JS changes anywhere — every relocated control (`modeSelect`,
+`levelSelect`, `clockSelect`/`customClockRow`, `coachSelect`, `tipsSelect`,
+`newGameBtn`, `engineSelect`, `sttSelect`, `voiceProfileField`,
+`voiceSelect`, `rateSelect`, `verbositySelect`, the three toggles,
+`testVoiceBtn`, `reportBtn`, `moveStrip`) kept its exact id, so every
+listener, every `localStorage` key, and every restore-on-boot call works
+unchanged; only the surrounding markup moved.
+
+Verified: fresh load confirms `.app`'s child order matches the requested
+sequence exactly, `#gameSettingsDetails` starts open and
+`#voiceSettingsDetails` starts closed; changing `levelSelect`/
+`coachSelect` and switching `clockSelect` to "Custom…" still reveals
+`#customClockRow` as before; a real reload shows both settings values and
+the game's move history restored from their existing keys; `reportBtn`
+still opens the report panel; and fullscreen's existing blanket
+"show only the board frame" rule still hides every one of these (all still
+top-level `.app` children, just reordered) with the board itself
+unaffected.
+
+Build `BUILD='v2-r75 (settings split into Game and Voice groups)'`.
+Published to `/v2/`.
