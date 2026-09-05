@@ -4807,3 +4807,97 @@ for `copyInviteBtn` in this file.
 Build `BUILD='v2-r59 (a timeline someone can grab without describing anything)'`.
 Published to `/v2/` — inert for anyone not passing `?debug=1`, safe to
 promote to release whenever.
+
+## 2026-09-05 (r60): a keyed lookup, not a shared hash
+
+Two tracks, both evidence-gated per the project's own standing rule against
+guess-patching. Checked `DEVLOG.md` and `tools/phon-collisions.js` first,
+per instruction, and found real prior art worth knowing before touching
+anything: "refuse on a narrow margin" was tried twice (Day 6.0, Day 6.8) and
+proven wrong both times — the move-score margin is a scoring-formula
+artifact (the 0.3 pawn-preference constant), not a measure of how clearly
+something was heard. `askConfirm()`/`exactTie()`/`askForSquare()` already
+cover the narrow, evidence-backed cases where asking is actually warranted.
+None of that touched accent tolerance or per-speaker calibration, which is
+genuinely unbuilt territory.
+
+**Track 1 (fix the captured mismatch): blocked**, and still is — no
+`?debug=1` transcript was ever supplied. Nothing to trace, nothing to fix
+blind. Still open, waiting on a real capture.
+
+**Track 2 (per-speaker calibration): built, in full, linter included —
+not deferred.**
+
+- `phon()` (index.html:2342) already absorbs most vowel-shift accent
+  variance by construction — it drops every interior vowel except the
+  leading letter. What it does *not* absorb: a variant that changes the
+  *consonant* skeleton itself. Proven live: `phon('nyte')` computes to
+  `'nt'`, `phon('knight')` computes to `'nght'` — genuinely different codes,
+  because "nyte" doesn't start with the `kn`/`gn`/`pn` prefix `phon()`
+  strips. That's a real, narrow gap, not a general weakness.
+- `voiceProfileWordList()` (index.html:4812): the 22-word calibration
+  script — 8 files, 8 digits, `pawn`/`knight`/`bishop`/`rook`/`queen`/`king`.
+  `startCalibration()` and friends drive it through the *real*
+  `startListening()`/`recognition.onresult` plumbing — diverted at the one
+  point in `onresult` that decides `route()` vs. calibration, so a
+  calibration reply can never be misread as a move, and a move attempt
+  during calibration can never happen either. Each sample gets an explicit
+  yes/no confirm before it's ever stored — mirrors `askConfirm()`'s
+  never-commit-unconfirmed convention exactly.
+- Storage: `localStorage['mind-chess-v2-voice-profile']`, keyed by
+  canonical token, holding the *raw* confirmed phrases — never a derived
+  phoneme code, so it can't go stale against a future `phon()`/
+  `tokenDistance()` change.
+- Hook: `tokenDistance()`'s `sounds` boolean gets a second source —
+  `voiceProfileSounds(heardTok, candTok)` — alongside the existing `phon()`
+  check, never replacing it. Because the lookup is `samples[candTok]`, a
+  sample recorded for "knight" is structurally incapable of ever biasing a
+  "bishop" comparison — a keyed dictionary lookup, not `phon()`'s shared
+  hash. That's the actual reason this is lower-risk than widening `phon()`
+  would have been, not just an assertion — verified by construction and
+  confirmed by the linter finding zero cross-vocabulary leakage possible
+  through this path.
+- Two-player/shared-device guard: `voiceProfileActiveThisSession` defaults
+  false the moment `mode==='two-player'` and requires an explicit "this is
+  still me" toggle each time that mode is (re)entered — never persisted, so
+  it can't silently survive a hand-off. `phon-collisions.js`'s own
+  "what"/"white" ownership-collision story is exactly the failure shape this
+  guards against.
+- `tools/voice-profile-lint.js`: built alongside, not after, per the actual
+  ask. Same lift-from-index.html convention as `phon-collisions.js`. Checks
+  two things: same-profile duplicates (two calibration words claiming the
+  same confirmed sound — a real data-quality problem, fails the run) and
+  reserved-word shadowing against `Q_STOP`/`PIECE_WORDS` (advisory only,
+  since the keyed lookup structurally can't leak it into unrelated
+  matching). `--self-test` exercises both failure modes before trusting it
+  against a real profile — caught a real false-positive in its own first
+  draft (flagging "ay"→"a" as shadowing Q_STOP's own "a", when landing on
+  your own token is a *correct* calibration, not a collision) before it
+  ever ran on real data.
+
+**Verified, not just written:**
+- `node tools/phon-collisions.js` — unchanged output; `phon()` itself was
+  never touched.
+- `node tools/corpus-replay.js --against aff03eb` then `await
+  window.__diff()` in a real browser — **0 diffs across all 263 utterances
+  from 18 real reports.** The hook is a provable no-op for anyone without a
+  saved profile, which is everyone today.
+- `tools/voice-profile-lint.js --self-test` catches both failure modes; a
+  clean profile passes with none.
+- Live, in-browser, on the real matching pipeline (not a mock): with no
+  profile, "nyte f3" scores **illegal** (Nf3 isn't even in the ranked top
+  four). With one calibrated sample (`knight → "nyte"`), the identical
+  input resolves to **Nf3, score 6.85, margin 1.7.**
+- A full 22-word calibration click-through via `tools/voice-harness.js`'s
+  `--fake-kokoro`/fake-recognizer driver hit real synchronization friction
+  under scripted automation (CDP's call timeout doesn't actually kill the
+  page's JS, which stacked concurrent orphaned drivers racing each other on
+  a second attempt) — the first several turns' full prompt→sample→confirm→
+  advance cycle were independently confirmed correct before that happened.
+  Not fully re-resolved this session; a real human run with a real mic is
+  the actual test this needs next, consistent with how every UX flow in
+  this project gets its final sign-off.
+
+Build `BUILD='v2-r60 (a keyed lookup, not a shared hash)'`. Published to
+`/v2/` only — a feature this size gets a real game (or in this case, a real
+calibration run) before release, same as everything else here.
