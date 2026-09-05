@@ -5468,3 +5468,61 @@ rule with no dependency on `.app`'s own max-width.
 
 Build `BUILD='v2-r70 (the size slider finally has room to grow)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r71): the frame shrinks with the board again
+
+Found while re-testing r70: enlarge the board, shrink it back down, and
+the board itself shrinks but `.boardpanel`'s wood-textured frame — and
+the Appearance panel below it — stay at the enlarged size, leaving a
+small board inside oversized panels.
+
+Investigated the lead given (an explicit width cached on a parent,
+the same shape as the r63 `.files` bug) by measuring `.app`/`.boardpanel`/
+`.board-outer`/`#appearanceDetails` at min → default → max → back to
+default, expecting to see the max value stick around. It didn't — all
+four measured **exactly 1100px at every single step**, including a fresh
+page load that never touched the slider at all. That ruled out a caching
+bug outright: nothing was "remembering" a previous larger size, because
+nothing was tracking the slider's value in the first place. r70 raised
+`.app{max-width}` from 720px to a flat **1100px** so `.board-grid` (sized
+off `--board-max`) had room to reach 960px — but `.boardpanel`/
+`.board-outer` are plain flex children with no width of their own, so
+they always stretch to fill whatever `.app` gives them, and `.app` was
+now unconditionally 1100px regardless of `--board-max`. Below the max
+slider value that meant a wood-framed panel about 190px too wide on each
+side of the actual grid — present at every setting, not just after a
+grow/shrink round-trip; the round-trip was simply how Adni happened to
+notice it. The same reasoning explains the Appearance panel and header
+"staying enlarged": they're `.app`'s other children, stretching to
+whatever fixed width `.app` now had, with zero connection to the board
+slider at all.
+
+Fix: stopped hardcoding `.app`'s ceiling and tied it to the same
+`--board-max` custom property `.board-grid` already reads —
+`max(720px, calc(var(--board-max,680px) + 52px + (clamp(10px,2.7vw,25px)
+* 2)))`. The added terms are the exact fixed chrome around the grid
+(`.boardpanel`'s 32px of padding, the `.ranks` column plus its gap, and
+`.board-outer`'s own responsive padding, doubled for both sides) — so
+above the 720px floor, `.app` becomes precisely "board + its frame,"
+which means `.boardpanel` stretching to fill `.app` now means stretching
+to fill exactly the board plus a thin, consistent margin at any slider
+position, not just at 960. Below the floor (roughly slider values
+under ~600px) `.app` stays at its original 720px so the settings/mic UI
+never gets any narrower than it was already tested at. No JS touched —
+this is a CSS custom property already updated on every slider `input`
+event, so `.app`'s width recomputes the same tick `.board-grid`'s does,
+with nothing new to keep in sync.
+
+Verified by sweeping the slider through 420 → 680 → 800 → 960 → 680 → 420
+and measuring all four elements at each step: `.app`/`.boardpanel`/
+`#appearanceDetails` moved together in lockstep at every value (782 at
+680, 902 at 800, 1062 at 960, back down to 782 and 720 on the return
+trip) — no leftover from the larger settings passed through. Screenshotted
+the default size and confirmed the wood frame now hugs the board with no
+visible dead space. Re-confirmed reset (680/782, matching the sweep) and
+fullscreen — still overrides to its own height-driven size while active
+(1920×802 in the test viewport) and restores the manual value exactly on
+exit — both untouched by this fix, as they should be.
+
+Build `BUILD='v2-r71 (the frame shrinks with the board again)'`.
+Published to `/v2/`.
