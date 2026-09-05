@@ -4960,3 +4960,58 @@ occurrence lands with this instrumentation live — nothing to name yet from
 one archived report plus one synthetic replay.
 
 Build `BUILD='v2-r61 (a flush only shows the last guess, not the ones before it)'`.
+
+## 2026-09-05 (r62): fullscreen the room, not just the board
+
+First batch of a four-part appearance backlog (more themes, fullscreen,
+board size, contrast/saturation/brightness/hue/transparency sliders) —
+checked first, per instruction, whether Giga Chess (`~/Documents/ChatGPT/
+chess project/chess.html`) had any board/piece themes that never got ported
+in OUR-41. It doesn't — Giga Chess has exactly the same 5 board themes
+(wood/green/blue/midnight/rose) and 4 piece themes (classic/ivory/midnight/
+gold) Mind Chess already has, byte-for-byte the same values. Nothing left
+to port; new variations need designing from scratch. Scoped the batch order
+and the transparency slider's purpose with Adni before building: shipping
+fullscreen + board size now, more themes + appearance sliders as a separate
+follow-up, transparency confirmed as a plain aesthetic opacity control (not
+"see behind the board").
+
+**Fullscreen fullscreens the whole `.app` container, not just the board** —
+weighed both in the scoping question and came down on the side that avoids
+any risk to the mic/narration wiring: no element to duplicate or reparent,
+so an active mic session and the speech queue are untouched by entering or
+leaving fullscreen, by construction rather than by care taken. What actually
+frees up room for the board is CSS hiding the settings grid and secondary
+panels while `.fullscreen-active` is set — the mic button, transcript, and
+move strip stay exactly where they are. `fullscreenchange` (plus the
+`webkit` variant) drives the UI state, so it stays correct however
+fullscreen ends — the app's own button, Escape, or the browser's own exit
+control — not just the path our code took to get there. A floating "Exit
+fullscreen ✕" button covers the case a kiosk/embedded context hides the
+browser's native fullscreen affordance.
+
+**Board size** is a `<input type=range>` (420–960px) writing a `--board-max`
+custom property, persisted to its own localStorage key alongside
+`BOARD_THEME_KEY`/`PIECE_THEME_KEY`'s existing pattern — no new save
+mechanism invented. Fullscreen overrides it via a higher-specificity CSS
+rule (`.app.fullscreen-active .board-grid`) rather than any JS save/restore
+dance — exiting fullscreen just lets the ordinary, lower-specificity rule
+apply again, so there's nothing to get out of sync.
+
+Verified live: the slider actually becomes the binding constraint on the
+rendered board (proved with a value below the available space, not just
+that the CSS variable was set), reset restores the 680px default, and the
+fullscreen CSS layer (settings hidden, exit button shown, size override,
+restore-on-exit back to the manually-set value rather than snapping to
+default or staying at the fullscreen size) all checked out correctly. The
+real `requestFullscreen()` call itself couldn't be exercised through
+CDP-driven automation — Chrome requires a genuinely trusted user gesture,
+which a scripted click doesn't count as (the same class of restriction the
+clipboard API hit earlier this session) — but it failed cleanly with a
+clear message in the transcript rather than silently, which is what
+actually matters for that failure mode; a real click will work normally.
+
+Build `BUILD='v2-r62 (fullscreen the room, not just the board)'`. Published
+to `/v2/`. Still open: more board/piece theme variations, and the
+contrast/saturation/brightness/hue/transparency sliders — a separate batch,
+by design.

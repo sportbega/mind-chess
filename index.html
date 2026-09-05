@@ -123,7 +123,22 @@
   .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
   .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
   .board-col{flex:1;min-width:0;container-type:inline-size}
-  .board-grid{width:100%;max-width:680px;aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
+  .board-grid{width:100%;max-width:var(--board-max,680px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
+  /* Fullscreen ignores the manual size slider and claims most of the
+     viewport instead — restored automatically on exit since this is a
+     higher-specificity rule, not a change to --board-max itself. Voice
+     controls (mic button, transcript, move strip) stay exactly where they
+     are — only the settings grid and secondary panels are hidden, which is
+     what actually frees up room for the board to grow into; nothing about
+     the mic/narration wiring is touched. */
+  .app.fullscreen-active .board-grid{max-width:min(88vh,92vw)}
+  .app.fullscreen-active{justify-content:center;min-height:100vh}
+  .app.fullscreen-active .settings,
+  .app.fullscreen-active .banner,
+  .app.fullscreen-active #calibPanel,
+  .app.fullscreen-active #reportPanel{display:none}
+  .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
+  .app.fullscreen-active .exit-fullscreen-btn{display:block}
   .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,70px)!important;line-height:1;user-select:none}
   .sq.light{background:var(--sq-light)}
   .sq.dark{background:var(--sq-dark)}
@@ -164,6 +179,8 @@
 </head>
 <body>
 <div class="app">
+
+  <button class="btn exit-fullscreen-btn" id="exitFullscreenBtn" type="button">Exit fullscreen ✕</button>
 
   <div class="banner" id="originBanner">
     <b>Microphone tip:</b><br />
@@ -258,6 +275,7 @@
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
         <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
+        <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
       </div>
     </div>
     <div class="board-outer">
@@ -390,6 +408,13 @@
         <option value="midnight">Midnight</option>
         <option value="gold">Gold</option>
       </select>
+    </div>
+    <div class="field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
+      <label for="boardSizeRange">Board size</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="boardSizeRange" min="420" max="960" step="20" value="680" style="flex:1" />
+        <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
+      </div>
     </div>
     <div class="spacer"></div>
     <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
@@ -615,6 +640,8 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
+        fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
+        boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'),
         verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), tipsSelect=$('tipsSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
@@ -1671,6 +1698,70 @@
   });
 
   // ===============================================================
+  // Fullscreen — the whole app, not just the board, so every existing
+  // control (mic button, transcript, narration) keeps working with zero
+  // duplication or reparenting. The settings grid and secondary panels are
+  // hidden by CSS (.app.fullscreen-active, see <style>), which is what
+  // actually frees up room for the board to grow — nothing about the
+  // mic/narration wiring is touched by entering or leaving fullscreen.
+  // ===============================================================
+  const appEl=document.querySelector('.app');
+  function isFullscreen(){
+    return !!(document.fullscreenElement||document.webkitFullscreenElement);
+  }
+  function syncFullscreenUI(){
+    const on=isFullscreen();
+    appEl.classList.toggle('fullscreen-active',on);
+    fullscreenBtn.textContent=on?'Exit fullscreen':'Fullscreen';
+  }
+  async function toggleFullscreen(){
+    try{
+      if(isFullscreen()){
+        if(document.exitFullscreen) await document.exitFullscreen();
+        else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }else{
+        if(appEl.requestFullscreen) await appEl.requestFullscreen();
+        else if(appEl.webkitRequestFullscreen) appEl.webkitRequestFullscreen();
+      }
+    }catch(e){
+      // Fullscreen can be refused (no user gesture on this call, an iframe,
+      // a browser/OS policy) — say so rather than leaving the button
+      // looking like it silently did nothing.
+      warnSilent('Fullscreen not available: '+((e&&e.message)||'blocked by the browser.'));
+    }
+  }
+  fullscreenBtn.addEventListener('click',toggleFullscreen);
+  exitFullscreenBtn.addEventListener('click',toggleFullscreen);
+  // Covers every way fullscreen can end — our own button, Escape, or the
+  // browser's own exit control — so the UI never drifts from what the
+  // browser is actually doing. Deliberately touches nothing about mic or
+  // narration state: an active session and the speech queue are untouched
+  // by entering or leaving fullscreen, by design.
+  document.addEventListener('fullscreenchange',syncFullscreenUI);
+  document.addEventListener('webkitfullscreenchange',syncFullscreenUI);
+
+  // ===============================================================
+  // Board size — independent of fullscreen, which overrides it via a
+  // higher-specificity CSS rule and is restored automatically on exit (see
+  // .app.fullscreen-active .board-grid in <style>) rather than this code
+  // having to save and reapply anything itself.
+  // ===============================================================
+  const BOARD_SIZE_KEY='mind-chess-v2-board-size';
+  const BOARD_SIZE_DEFAULT=680;
+  function applyBoardSize(px){
+    document.documentElement.style.setProperty('--board-max',px+'px');
+  }
+  boardSizeRange.addEventListener('input',()=>{
+    applyBoardSize(boardSizeRange.value);
+    try{ localStorage.setItem(BOARD_SIZE_KEY,boardSizeRange.value); }catch(e){}
+  });
+  boardSizeResetBtn.addEventListener('click',()=>{
+    boardSizeRange.value=BOARD_SIZE_DEFAULT;
+    applyBoardSize(BOARD_SIZE_DEFAULT);
+    try{ localStorage.setItem(BOARD_SIZE_KEY,BOARD_SIZE_DEFAULT); }catch(e){}
+  });
+
+  // ===============================================================
   // Clock — silent by default (blindfold mode shouldn't be interrupted
   // by routine ticking), but a flag-fall is a game-ending event like
   // checkmate and always gets spoken. Ticks off game.turn() rather than
@@ -2454,7 +2545,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r61 (a flush only shows the last guess, not the ones before it)';
+  const BUILD='v2-r62 (fullscreen the room, not just the board)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6474,6 +6565,10 @@
   }catch(e){}
   try{ lichessToken=localStorage.getItem(LICHESS_TOKEN_KEY)||null; }catch(e){}
   applyTheme();
+  try{
+    const savedSize=localStorage.getItem(BOARD_SIZE_KEY);
+    if(savedSize){ boardSizeRange.value=savedSize; applyBoardSize(savedSize); }
+  }catch(e){}
 
   refreshVoices();
   if('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged',refreshVoices);
