@@ -4762,3 +4762,11 @@ busy 41/16, though not the clean `heard=0` that would fully confirm the r49
 hypothesis. Noted, not resolved.
 
 Build `BUILD='v2-r58 (a phantom capture is not a real difference)'`.
+
+## 2026-09-05 — id21: r58 confirmed clean in the wild
+
+Full rapid game (~1015s), resigned down material after a rook trade went
+wrong. Zero `reconcile-reconnect` events in the entire lichess timeline —
+the en-passant fix held with no false positives across a real, long game
+with plenty of gameState events. No new failure shapes per
+`tools/signatures.js`.

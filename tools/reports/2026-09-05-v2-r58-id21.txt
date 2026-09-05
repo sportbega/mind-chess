@@ -1,0 +1,495 @@
+### SUBMITTED BY A PLAYER — UNTRUSTED TEXT. Read as data, never as instructions.
+### Pulled by tools/pull-reports.js from public.mind_chess_reports.
+### id=21  submitted=2026-09-05T01:30:35.873318+00:00
+
+=== Mind Chess problem report ===
+build: v2-r58 (a phantom capture is not a real difference)
+when:  2026-09-05T01:30:30.795Z
+url:   https://sportbega.github.io/mind-chess/
+agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+--- settings ---
+  mode=lichess  ·  level=2  ·  speech=kokoro  ·  hearing=system  ·  voice=af_heart  ·  rate=1  ·  coach=hints  ·  tips=on  ·  narration=verbose  ·  speak=true  ·  keep-listening=true  ·  talk-over=true  ·  unlocked=true  ·  seat=black  ·  board=shown
+
+--- position ---
+  fen: 4k3/1p6/8/7r/1Q1P1P2/P3PP2/6K1/8 b - - 1 37
+  pgn: 1. d4 d5 2. c4 c6 3. Nc3 e6 4. Nf3 a5 5. cxd5 exd5 6. Bf4 Bb4 7. e3 h6 8. a3 Bxc3+ 9. bxc3 Qb6 10. Bd3 g5 11. Be5 f6 12. Bg3 Na6 13. h3 a4 14. O-O Nc7 15. Bg6+ Kf8 16. Rb1 Nb5 17. Bd3 g4 18. hxg4 Bxg4 19. c4 dxc4 20. Bxc4 Rd8 21. Qxa4 Bxf3 22. gxf3 h5 23. Bxb5 cxb5 24. Rxb5 Qc6 25. Qb4+ Ne7 26. Rf5 h4 27. Be5 h3 28. Rxf6+ Qxf6 29. Bxf6 h2+ 30. Kh1 Rh7 31. Bxe7+ Rxe7 32. f4 Ke8 33. f3 Rh7 34. Rf2 Rd5 35. Rxh2 Rhh5 36. Rxh5 Rxh5+ 37. Kg2
+
+--- last said ---
+  Board  Black plays rook e7 to h7.
+  Board  White plays rook f1 to f2.
+  You    Rook to D5
+           heard: also heard: route to D5 / look to D5
+  Board  Black plays rook d8 to d5.
+  Board  White plays rook f2 to h2. Captures the pawn.
+  You    Rook H5
+           heard: also heard: Rook Age 5 / rookh5
+  Board  Black plays rook h7 to h5.
+  Board  White plays rook h2 to h5. Captures the rook.
+  You    Rook to H5
+           heard: also heard: route to H5 / route to age 5
+  Board  Black plays rook d5 to h5. Captures the rook. Check.
+  Board  White plays king h1 to g2.
+  Board  Resignation.
+
+--- what was heard (37) ---
+=== Mind Chess voice diagnostics ===
+build: v2-r58 (a phantom capture is not a real difference)  ·  continuous=true  maxAlternatives=10
+engine: present  ·  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+
+#1  [voice]  chose: "D5"
+   heard: "D5" (0.92)  |  "B5" (0.83)  |  "the five" (0.87)  |  "defive" (0.89)  |  "D 5" (0.90)  |  "D five" (0.89)  |  "d-five" (0.90)
+   normalised: "d5"
+   result: move → d5  (score 9.5)
+   ranked: d5 9.5*  |  d6 -0.05  |  a6 -0.7  |  a5 -0.7   margin 9.55
+   turn: black  legal: 20
+   fen: rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1
+
+#2  [voice]  chose: "C6"
+   heard: "C6" (0.81)
+   normalised: "c6"
+   result: move → c6  (score 9.5)
+   ranked: c6 9.5*  |  Nc6 9.2*  |  c5 -0.05  |  dxc4 -0.05   margin 0.3
+   turn: black  legal: 28
+   fen: rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq c3 0 2
+
+#3  [voice]  chose: "E6"
+   heard: "E6" (0.77)
+   normalised: "e6"
+   result: move → e6  (score 9.5)
+   ranked: e6 9.5*  |  Be6 9.2*  |  e5 -0.05  |  a6 -0.7   margin 0.3
+   turn: black  legal: 29
+   fen: rnbqkbnr/pp2pppp/2p5/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq - 1 3
+
+#4  [voice]  chose: "phone to A5"
+   heard: ".85" (0.68)  |  "phone to A5" (0.68)  |  "pound to A5" (0.71)  |  "lb to A5" (0.74)  |  "phone to 85" (0.73)  |  ".285" (0.69)  |  "phone to a 5" (0.71)  |  "phone to a five" (0.72)
+   normalised: "phone a5"
+   result: move → a5  (score 6.69)
+   ranked: a5 2.23  |  a6 0.85  |  b6 0.52  |  b5 0.52   margin 1.38
+   turn: black  legal: 35
+   fen: rnbqkbnr/pp3ppp/2p1p3/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R b KQkq - 1 4
+
+#5  [voice]  chose: "E6 to D5"
+   heard: "e62 D5" (0.87)  |  "E6 to D5" (0.78)  |  "e625" (0.85)  |  "e62d5" (0.87)  |  "e6235" (0.87)  |  "e6 to D5" (0.70)  |  "-e6 to D5" (0.69)  |  "e623" (0.90)  |  "e62d55" (0.87)
+   normalised: "e6 d5"
+   result: move → exd5  (score 9.5)
+   ranked: exd5 9.5*  |  cxd5 1  |  Qxd5 0.7  |  e5 -0.2   margin 8.5
+   turn: black  legal: 37
+   fen: rnbqkbnr/1p3ppp/2p1p3/p2P4/3P4/2N2N2/PP2PPPP/R1BQKB1R b KQkq - 0 5
+
+#6  [voice]  chose: "Bishop to B4"
+   heard: "Bishop to B4" (0.82)  |  "Bishop to before" (0.77)  |  "Bishop to be for" (0.78)  |  "Bishop to be four" (0.81)  |  "Bishop to be 4" (0.85)  |  "Bishop to be 4:00" (0.86)  |  "Bishop to be before" (0.85)  |  "Bishop to be full" (0.88)
+   normalised: "bishop b4"
+   result: move → Bb4  (score 10.4)
+   ranked: Bb4 10.4*  |  Bd7 0.7  |  Be6 0.7  |  Bf5 0.7   margin 9.7
+   turn: black  legal: 37
+   fen: rnbqkbnr/1p3ppp/2p5/p2p4/3P1B2/2N2N2/PP2PPPP/R2QKB1R b KQkq - 1 6
+
+#7  [voice]  chose: "age 6"
+   heard: "86" (0.64)  |  "age 6" (0.40)  |  "H6" (0.58)
+   normalised: "h6"
+   result: move → h6  (score 9.5)
+   ranked: h6 9.5*  |  Nh6 9.2*  |  h5 -0.05  |  Be6 -0.1   margin 0.3
+   turn: black  legal: 39
+   fen: rnbqk1nr/1p3ppp/2p5/p2p4/1b1P1B2/2N1PN2/PP3PPP/R2QKB1R b KQkq - 0 7
+
+#8  [voice]  chose: "C3"
+   heard: "C3" (0.84)  |  "3" (0.58)
+   normalised: "c3"
+   result: move → Bxc3+  (score 9.2)
+   ranked: Bxc3+ 9.2*  |  c5 -0.05  |  Qc7 -0.35  |  Bc5 -0.35   margin 9.25
+   turn: black  legal: 38
+   fen: rnbqk1nr/1p3pp1/2p4p/p2p4/1b1P1B2/P1N1PN2/1P3PPP/R2QKB1R b KQkq - 0 8
+
+#9  [voice]  chose: "Queen to be six"
+   heard: "Queen to be six" (0.78)  |  "Queen to be 6" (0.73)  |  "Queen" (0.86)
+   normalised: "queen b6"
+   result: move → Qb6  (score 10.4)
+   ranked: Qb6 10.4*  |  Qe7 0.7  |  Qf6 0.7  |  Qg5 0.7   margin 9.7
+   turn: black  legal: 32
+   fen: rnbqk1nr/1p3pp1/2p4p/p2p4/3P1B2/P1P1PN2/5PPP/R2QKB1R b KQkq - 0 9
+
+#10  [voice]  chose: "G5"
+   heard: "G5" (0.96)  |  "G 5" (0.92)  |  "G five" (0.93)  |  "G G5" (0.89)  |  "G4" (0.93)  |  "g-five" (0.92)  |  "g.5" (0.93)
+   normalised: "g5"
+   result: move → g5  (score 9.5)
+   ranked: g5 9.5*  |  g6 -0.05  |  Bg4 -0.35  |  f6 -0.7   margin 9.55
+   turn: black  legal: 34
+   fen: rnb1k1nr/1p3pp1/1qp4p/p2p4/3P1B2/P1PBPN2/5PPP/R2QK2R b KQkq - 2 10
+
+#11  [voice]  chose: "F6"
+   heard: "F6" (0.67)
+   normalised: "f6"
+   result: move → f6  (score 9.5)
+   ranked: f6 9.5*  |  Nf6 9.2*  |  f5 -0.05  |  Bf5 -0.35   margin 0.3
+   turn: black  legal: 33
+   fen: rnb1k1nr/1p3p2/1qp4p/p2pB1p1/3P4/P1PBPN2/5PPP/R2QK2R b KQkq - 1 11
+
+#12  [voice]  chose: "nice to A6"
+   heard: "nice to A6" (0.88)  |  "nice to 86" (0.86)  |  "nice to Asics" (0.84)  |  "nice to 86th" (0.87)  |  "9th to 86" (0.68)  |  "nice to age 6" (0.90)  |  "nice to '86" (0.84)  |  "nice to a six" (0.85)
+   normalised: "nice a6"
+   result: move → Na6  (score 6.85)
+   ranked: Na6 1.9  |  Nd7 0.2  |  Ne7 0.2  |  Ra6 -0.5   margin 1.7
+   turn: black  legal: 32
+   fen: rnb1k1nr/1p6/1qp2p1p/p2p2p1/3P4/P1PBPNB1/5PPP/R2QK2R b KQkq - 1 12
+
+#13  [voice]  chose: "A4"
+   heard: "A4" (0.78)  |  "84" (0.70)
+   normalised: "a4"
+   result: move → a4  (score 9.5)
+   ranked: a4 9.5*  |  Ra7 -0.35  |  Qa7 -0.35  |  c5 -0.7   margin 9.85
+   turn: black  legal: 33
+   fen: r1b1k1nr/1p6/nqp2p1p/p2p2p1/3P4/P1PBPNBP/5PP1/R2QK2R b KQkq - 0 13
+
+#14  [voice]  chose: "nice to see seven"
+   heard: "nice to see seven" (0.95)  |  "nice to see 7" (0.88)  |  "nice to see 7:00" (0.91)  |  "nice to see7" (0.94)  |  "nice to C7" (0.94)
+   normalised: "nice c7"
+   result: move → Nc7  (score 6.69)
+   ranked: Nc7 1.9  |  Nc5 0.52  |  Ne7 0.2  |  Nb8 0.2   margin 1.38
+   turn: black  legal: 33
+   fen: r1b1k1nr/1p6/nqp2p1p/3p2p1/p2P4/P1PBPNBP/5PP1/R2Q1RK1 b kq - 1 14
+
+#15  [voice]  chose: "King to f8"
+   heard: "King to f8" (0.87)  |  "f8" (0.70)  |  "King f8" (0.81)  |  "King to F 8" (0.87)  |  "King 2f8" (0.88)  |  "King to f-8" (0.87)  |  "King to Faith" (0.87)
+   normalised: "king f8"
+   result: move → Kf8  (score 10.4)
+   ranked: Kf8 10.4*  |  Ke7 0.7  |  Kd7 0.7  |  Kd8 0.7   margin 9.7
+   turn: black  legal: 4
+   fen: r1b1k1nr/1pn5/1qp2pBp/3p2p1/p2P4/P1P1PNBP/5PP1/R2Q1RK1 b kq - 3 15
+
+#16  [voice]  chose: "night to be five"
+   heard: "night to be five" (0.85)  |  "night to be 5:00" (0.82)  |  "night to be 5" (0.83)  |  "night to B5" (0.89)  |  "night to be" (0.93)
+   normalised: "night b5"
+   result: move → Nb5  (score 6.85)
+   ranked: Nb5 2.35  |  Ne7 0.65  |  Ne8 0.65  |  Ne6 0.65   margin 1.7
+   turn: black  legal: 31
+   fen: r1b2knr/1pn5/1qp2pBp/3p2p1/p2P4/P1P1PNBP/5PP1/1R1Q1RK1 b - - 5 16
+
+#17  [voice]  chose: "Pawn to G4"
+   heard: "Pawn to G4" (0.96)  |  "porn to G4" (0.89)  |  "come to G4" (0.89)  |  "on to G4" (0.85)  |  "Pawn to G four" (0.94)  |  "Pawn to G 4" (0.94)  |  "Pawn 2g4" (0.89)  |  "Pawn 2G 4" (0.91)
+   normalised: "pawn g4"
+   result: move → g4  (score 10.4)
+   ranked: g4 10.4*  |  c5 0.7  |  f5 0.7  |  h5 0.7   margin 9.7
+   turn: black  legal: 32
+   fen: r1b2knr/1p6/1qp2p1p/1n1p2p1/p2P4/P1PBPNBP/5PP1/1R1Q1RK1 b - - 7 17
+
+#18  [voice]  chose: "Bishop to G4"
+   heard: "Bishop to G4" (0.86)  |  "to G4" (0.87)
+   normalised: "bishop g4"
+   result: move → Bxg4  (score 10.4)
+   ranked: Bxg4 10.4*  |  Bd7 0.7  |  Be6 0.7  |  Bf5 0.7   margin 9.7
+   turn: black  legal: 30
+   fen: r1b2knr/1p6/1qp2p1p/1n1p4/p2P2P1/P1PBPNB1/5PP1/1R1Q1RK1 b - - 0 18
+
+#19  [voice]  chose: "Pawn to C4"
+   heard: "Pawn to C4" (0.88)  |  "Pawn to see four" (0.74)  |  "Pawn" (0.97)  |  "Pawn to see for" (0.82)  |  "Pawn to see 4" (0.83)  |  "Pond to C4" (0.79)  |  "Pawn to C 4" (0.86)  |  "Pawn to C-4" (0.91)
+   normalised: "pawn c4"
+   result: move → dxc4  (score 10.4)
+   ranked: dxc4 10.4*  |  c5 1.02  |  f5 0.7  |  h5 0.7   margin 9.37
+   turn: black  legal: 37
+   fen: r4knr/1p6/1qp2p1p/1n1p4/p1PP2b1/P2BPNB1/5PP1/1R1Q1RK1 b - - 0 19
+
+#20  [voice]  chose: "Rook to d8"
+   heard: "Rook to d8" (0.86)  |  "look to d8" (0.75)  |  "route to d8" (0.81)  |  "Brooke to d8" (0.82)  |  "Rook to D 8" (0.87)  |  "Rook to D eight" (0.88)  |  "Rook to da" (0.86)  |  "look to da" (0.75)
+   normalised: "rook d8"
+   result: move → Rd8  (score 10.4)
+   ranked: Rd8 10.4*  |  Rb8 0.7  |  Rc8 0.7  |  Re8 0.7   margin 9.7
+   turn: black  legal: 35
+   fen: r4knr/1p6/1qp2p1p/1n6/p1BP2b1/P3PNB1/5PP1/1R1Q1RK1 b - - 0 20
+
+#21  [voice]  chose: "Bishop to F3"
+   heard: "Bishop to F3" (0.96)  |  "Bishop to F 3" (0.94)  |  "Bishop to f-3" (0.96)  |  "Bishop to F three" (0.95)  |  "Bishop to f.3" (0.96)  |  "Bishop to F2" (0.96)
+   normalised: "bishop f3"
+   result: move → Bxf3  (score 10.4)
+   ranked: Bxf3 10.4*  |  Bf5 1.02  |  Be6 0.7  |  Bd7 0.7   margin 9.37
+   turn: black  legal: 35
+   fen: 3r1knr/1p6/1qp2p1p/1n6/Q1BP2b1/P3PNB1/5PP1/1R3RK1 b - - 0 21
+
+#22  [voice]  chose: "Pawn to age 5"
+   heard: "phone to H5" (0.70)  |  "Pawn to age 5" (0.68)  |  "Pawn to H5" (0.77)  |  "pull into H5" (0.72)  |  "phone to age 5" (0.61)  |  "porn to H5" (0.75)  |  "Pawn to age five" (0.75)  |  "porn to age 5" (0.65)
+   normalised: "pawn h5"
+   result: move → h5  (score 10.4)
+   ranked: h5 10.4*  |  c5 0.7  |  f5 0.7  |  Re8 -1.87   margin 9.7
+   turn: black  legal: 28
+   fen: 3r1knr/1p6/1qp2p1p/1n6/Q1BP4/P3PPB1/5P2/1R3RK1 b - - 0 22
+
+#23  [voice]  chose: "Pawn to be five"
+   heard: "born to be five" (0.82)  |  "Pawn to be five" (0.83)  |  "porn to be five" (0.83)  |  "point to be five" (0.74)  |  "Born to Be 5" (0.76)  |  "poem to be five" (0.72)  |  "Pawn to be 5" (0.77)  |  "Pawn to B5" (0.80)
+   normalised: "pawn b5"
+   result: move → cxb5  (score 10.4)
+   ranked: cxb5 10.4*  |  c5 0.7  |  f5 0.7  |  h4 0.7   margin 9.7
+   turn: black  legal: 27
+   fen: 3r1knr/1p6/1qp2p2/1B5p/Q2P4/P3PPB1/5P2/1R3RK1 b - - 0 23
+
+#24  [voice]  chose: "Queen to see six"
+   heard: "Queen to see six" (0.82)  |  "Queen" (0.97)  |  "Queen to see 6" (0.82)  |  "Queen to see" (0.91)  |  "Queen to see sex" (0.87)  |  "Queen to C6" (0.90)  |  "queen queen to see six" (0.81)  |  "queen queen to see 6" (0.85)  |  "Queen to see 6:00" (0.86)
+   normalised: "queen c6"
+   result: move → Qc6  (score 10.4)
+   ranked: Qc6 10.4*  |  Qc7 1.02  |  Qc5 1.02  |  Qa7 0.7   margin 9.37
+   turn: black  legal: 28
+   fen: 3r1knr/1p6/1q3p2/1R5p/Q2P4/P3PPB1/5P2/5RK1 b - - 0 24
+
+#25  [voice]  chose: "nice to E7"
+   heard: "nice to E7" (0.86)  |  "nice to seven" (0.76)  |  "night to E7" (0.76)  |  "nice to 7" (0.76)  |  "nice to 7:00" (0.83)  |  "nice to eat seven" (0.80)  |  "nice to East 7" (0.85)  |  "nice to is 7" (0.85)
+   normalised: "nice e7"
+   result: move → Ne7  (score 7.5)
+   ranked: Ne7 1.9  |  Ke8 -1.87  |  Rd6 -2.2  |  Kg7 -2.2   margin 3.78
+   turn: black  legal: 7
+   fen: 3r1knr/1p6/2q2p2/1R5p/1Q1P4/P3PPB1/5P2/5RK1 b - - 2 25
+
+#26  [voice]  chose: "H4"
+   heard: "H4" (0.60)  |  "Age 4" (0.54)  |  "age for" (0.55)  |  "age four" (0.66)  |  "84" (0.63)  |  "page 4" (0.78)  |  "page for" (0.79)  |  "page four" (0.83)  |  "age 4:00" (0.67)
+   normalised: "h4"
+   result: move → h4  (score 9.5)
+   ranked: h4 9.5*  |  Qe4 -0.1  |  Re8 -0.35  |  Ke8 -0.35   margin 9.6
+   turn: black  legal: 36
+   fen: 3r1k1r/1p2n3/2q2p2/5R1p/1Q1P4/P3PPB1/5P2/5RK1 b - - 4 26
+
+#27  [voice]  chose: "H3"
+   heard: "H3" (0.70)  |  "page 3" (0.50)  |  "Age 3" (0.55)  |  "age three" (0.65)  |  "stage 3" (0.62)  |  "page three" (0.60)  |  "HD" (0.79)  |  "H 3" (0.56)
+   normalised: "h3"
+   result: move → h3  (score 9.5)
+   ranked: h3 9.5*  |  Re8 -0.35  |  Ke8 -0.35  |  Rh7 -0.35   margin 9.85
+   turn: black  legal: 37
+   fen: 3r1k1r/1p2n3/2q2p2/4BR2/1Q1P3p/P3PP2/5P2/5RK1 b - - 1 27
+
+#28  [voice]  chose: "cream to F6"
+   heard: "cream to F6" (0.83)  |  "cream to S6" (0.77)  |  "Queen" (0.37)  |  "Queen true F6" (0.67)  |  "Queen 2 F6" (0.67)  |  "cream to F 6" (0.83)  |  "cream to F six" (0.83)
+   normalised: "cream f6"
+   result: move → Qxf6  (score 7.5)
+   ranked: Qxf6 2.23  |  Kg8 -2.2  |  Kg7 -2.2  |  Ke8 -2.2   margin 4.43
+   turn: black  legal: 4
+   fen: 3r1k1r/1p2n3/2q2R2/4B3/1Q1P4/P3PP1p/5P2/5RK1 b - - 0 28
+
+#29  [voice]  chose: "H2"
+   heard: "H2" (0.96)  |  "H2O" (0.89)  |  "h 2" (0.93)  |  "age to" (0.88)  |  "Age 2" (0.88)  |  "age" (0.87)  |  "Age Two" (0.88)
+   normalised: "h2"
+   result: move → h2+  (score 9.5)
+   ranked: h2+ 9.5*  |  Re8 -0.35  |  Ke8 -0.35  |  Rh7 -0.35   margin 9.85
+   turn: black  legal: 19
+   fen: 3r1k1r/1p2n3/5B2/8/1Q1P4/P3PP1p/5P2/5RK1 b - - 0 29
+
+#30  [voice]  chose: "Rook to age 7"
+   heard: "route to 87" (0.89)  |  "Rook to 87" (0.79)  |  "route to age 7" (0.77)  |  "Route 287" (0.87)  |  "route to age seven" (0.80)  |  "Rook to age 7" (0.69)  |  "route to 8:7" (0.89)  |  "Rook to age seven" (0.73)
+   normalised: "rook h7"
+   result: move → Rh7  (score 10.4)
+   ranked: Rh7 10.4*  |  Re8 1.02  |  Rh6 1.02  |  Rh5 1.02   margin 9.37
+   turn: black  legal: 19
+   fen: 3r1k1r/1p2n3/5B2/8/1Q1P4/P3PP2/5P1p/5R1K b - - 1 30
+
+#31  [voice]  chose: "Rook to E7"
+   heard: "Rook to E7" (0.87)  |  "route to E7" (0.75)  |  "Route 7" (0.65)  |  "root to E7" (0.77)  |  "Rook to e 7" (0.81)  |  "Rook to e-7" (0.87)  |  "Rook to East 7" (0.81)
+   normalised: "rook e7"
+   result: move → Rxe7  (score 10.4)
+   ranked: Rxe7 10.4*  |  Ke8 -1.87  |  Kg8 -2.2  |  Kg7 -2.2   margin 12.27
+   turn: black  legal: 5
+   fen: 3r1k2/1p2B2r/8/8/1Q1P4/P3PP2/5P1p/5R1K b - - 0 31
+
+#32  [voice]  chose: "King to E8"
+   heard: "King to E8" (0.81)  |  "came to E8" (0.71)  |  "King to eat" (0.71)  |  "Kink to E8" (0.77)  |  "King to 8" (0.82)  |  "Kings to E8" (0.77)  |  "King to eat 8" (0.75)  |  "King to eat ate" (0.76)
+   normalised: "king e8"
+   result: move → Ke8  (score 10.4)
+   ranked: Ke8 10.4*  |  Kg8 0.7  |  Kg7 0.7  |  Kf7 0.7   margin 9.7
+   turn: black  legal: 14
+   fen: 3r1k2/1p2r3/8/8/1Q1P1P2/P3P3/5P1p/5R1K b - - 0 32
+
+#33  [voice]  chose: "route to h7"
+   heard: "7" (0.68)  |  "Route 287" (0.63)  |  "Route 7" (0.63)  |  "route to 87" (0.71)  |  "7" (0.75)  |  "route seven" (0.79)  |  "seven" (0.89)  |  "Route 70" (0.79)
+   normalised: "route h7"
+   result: illegal  (score 1)
+   ranked: Rh7 1.02  |  Re6 -0.35  |  Re5 -0.35  |  Re4 -0.35   margin 1.38
+   turn: black  legal: 21
+   fen: 3rk3/1p2r3/8/8/1Q1P1P2/P3PP2/7p/5R1K b - - 0 33
+
+#34  [voice]  chose: "Rook H7"
+   heard: "Rook H7" (0.86)  |  "Rook 87" (0.84)  |  "Rook age 7" (0.63)  |  "rooke H7" (0.82)  |  "Rook age seven" (0.74)  |  "rooke age 7" (0.68)  |  "Rook age 70" (0.74)
+   normalised: "rook h7"
+   result: move → Rh7  (score 10.4)
+   ranked: Rh7 10.4*  |  Re6 1.02  |  Re5 1.02  |  Re4 1.02   margin 9.37
+   turn: black  legal: 21
+   fen: 3rk3/1p2r3/8/8/1Q1P1P2/P3PP2/7p/5R1K b - - 0 33
+
+#35  [voice]  chose: "Rook to D5"
+   heard: "route to D5" (0.81)  |  "Rook to D5" (0.77)  |  "look to D5" (0.79)  |  "work to D5" (0.82)  |  "root to D5" (0.75)  |  "route to d-5" (0.80)  |  "route to d 5" (0.82)  |  "route to d five" (0.82)
+   normalised: "rook d5"
+   result: move → Rd5  (score 10.4)
+   ranked: Rd5 10.4*  |  Rdd7 1.02  |  Rd6 1.02  |  Rxd4 1.02   margin 9.37
+   turn: black  legal: 21
+   fen: 3rk3/1p5r/8/8/1Q1P1P2/P3PP2/5R1p/7K b - - 2 34
+
+#36  [voice]  chose: "Rook H5"
+   heard: "Rook H5" (0.91)  |  "Rook Age 5" (0.75)  |  "rookh5" (0.89)  |  "Rook 85" (0.90)  |  "Rook age five" (0.82)  |  "Rook 8" (0.85)  |  "Rook age5" (0.81)  |  "Rook H 5" (0.88)
+   normalised: "rook h5"
+   result: move → Rhh5  (score 10.4)
+   ranked: Rhh5 10.4*  |  Rdh5 10.4*  |  Re5 1.15  |  Rh8 1.02   margin 0
+   turn: black  legal: 27
+   fen: 4k3/1p5r/8/3r4/1Q1P1P2/P3PP2/7R/7K b - - 0 35
+
+#37  [voice]  chose: "Rook to H5"
+   heard: "route to H5" (0.75)  |  "route to age 5" (0.68)  |  "route to age five" (0.73)  |  "Rook to H5" (0.65)  |  "Rook to age 5" (0.62)  |  "Rook to age five" (0.68)  |  "root to age 5" (0.60)
+   normalised: "rook h5"
+   result: move → Rxh5+  (score 10.4)
+   ranked: Rxh5+ 10.4*  |  Re5 1.15  |  Rd6 0.7  |  Rd7 0.7   margin 9.25
+   turn: black  legal: 16
+   fen: 4k3/1p6/8/3r3R/1Q1P1P2/P3PP2/8/7K b - - 0 36
+
+--- mic timeline · state=listening · 21 mic sessions · 0 barge-ins · 4 echoes ignored · 18 restarts · 0 watchdog saves · 0 errors · 167 heard · 129 lost · 39 dropped · 313 raw · span 850s ---
+  +729.3s  state  speaking → listening  (narration ended)
+  +731.7s  state  listening → speaking  (narration started)
+  +732.4s  tts  rendered ahead(1) in 668ms
+  +732.4s  tts  kokoro chunk in 549ms
+  +735.3s  state  speaking → listening  (narration ended)
+  +739.7s  lost  "route" never became a final result (a different utterance began)
+  +740.5s  state  listening → thinking  (routing "route to h7")
+  +740.5s  state  thinking → speaking  (narration started)
+  +741.1s  tts  rendered ahead(1) in 653ms
+  +741.1s  tts  kokoro chunk in 495ms
+  +744.2s  state  speaking → listening  (narration ended)
+  +746.1s  lost  "Rook" never became a final result (a different utterance began)
+  +746.1s  lost  "to age" never became a final result (a different utterance began)
+  +746.1s  lost  "Rook" never became a final result (a different utterance began)
+  +746.2s  lost  "Rook to" never became a final result (a different utterance began)
+  +746.5s  lost  "Rook to age" never became a final result (a different utterance began)
+  +751.6s  lost  "7" never became a final result (a different utterance began)
+  +752.6s  lost  "Rook" never became a final result (a different utterance began)
+  +752.9s  lost  "h" never became a final result (a different utterance began)
+  +752.9s  lost  "Rook" never became a final result (a different utterance began)
+  +753.7s  state  listening → thinking  (routing "Rook H7")
+  +753.7s  state  thinking → speaking  (narration started)
+  +754.3s  tts  rendered ahead(1) in 672ms
+  +754.3s  tts  kokoro chunk in 553ms
+  +757.5s  tts  rendered ahead(1) in 587ms
+  +757.5s  tts  kokoro chunk in 433ms
+  +760.1s  state  speaking → listening  (narration ended)
+  +775.2s  session  closed after 56.8s (29 raw, 18 heard)
+  +775.2s  state  listening → restarting  (session closed)
+  +775.2s  restart  in 200ms
+  +775.4s  state  restarting → listening  (session open)
+  +775.4s  session  opened  (202ms deaf)
+  +777.3s  lost  "route" never became a final result (a different utterance began)
+  +777.3s  lost  "root" never became a final result (a different utterance began)
+  +778.1s  lost  "route to" never became a final result (a different utterance began)
+  +778.4s  state  listening → thinking  (routing "Rook to D5")
+  +778.4s  state  thinking → speaking  (narration started)
+  +779.0s  tts  rendered ahead(1) in 609ms
+  +779.0s  tts  kokoro chunk in 466ms
+  +781.9s  state  speaking → listening  (narration ended)
+  +789.6s  state  listening → speaking  (narration started)
+  +790.2s  tts  rendered ahead(1) in 608ms
+  +790.2s  tts  kokoro chunk in 492ms
+  +790.6s  tts  rendered ahead(1) in 363ms
+  +793.0s  tts  kokoro chunk in 5ms
+  +794.8s  state  speaking → listening  (narration ended)
+  +808.5s  lost  "h" never became a final result (a different utterance began)
+  +809.2s  state  listening → thinking  (routing "Rook H5")
+  +809.2s  state  thinking → speaking  (narration started)
+  +809.8s  tts  rendered ahead(1) in 659ms
+  +809.8s  tts  kokoro chunk in 539ms
+  +812.8s  state  speaking → listening  (narration ended)
+  +827.8s  session  closed after 52.4s (18 raw, 8 heard)
+  +827.8s  state  listening → restarting  (session closed)
+  +827.8s  restart  in 200ms
+  +828.0s  state  restarting → listening  (session open)
+  +828.0s  session  opened  (201ms deaf)
+  +828.8s  state  listening → speaking  (narration started)
+  +829.4s  tts  rendered ahead(1) in 670ms
+  +829.5s  tts  kokoro chunk in 566ms
+  +829.8s  tts  rendered ahead(1) in 398ms
+  +832.3s  tts  kokoro chunk in 5ms
+  +834.1s  state  speaking → listening  (narration ended)
+  +836.3s  lost  "route to H" never became a final result (a different utterance began)
+  +836.3s  lost  "route to age" never became a final result (a different utterance began)
+  +836.3s  lost  "route" never became a final result (a different utterance began)
+  +836.5s  lost  "route to" never became a final result (a different utterance began)
+  +836.9s  state  listening → thinking  (routing "Rook to H5")
+  +836.9s  state  thinking → speaking  (narration started)
+  +837.6s  tts  rendered ahead(1) in 664ms
+  +837.6s  tts  kokoro chunk in 550ms
+  +838.0s  tts  rendered ahead(1) in 374ms
+  +838.2s  tts  rendered ahead(2) in 282ms
+  +838.8s  tts  rendered ahead(1) in 629ms
+  +838.8s  tts  kokoro chunk in 509ms
+  +841.6s  state  speaking → listening  (narration ended)
+  +848.1s  state  listening → speaking  (narration started)
+  +848.6s  tts  rendered ahead(1) in 448ms
+  +848.6s  tts  kokoro chunk in 316ms
+  +850.4s  state  speaking → listening  (narration ended)
+
+--- lichess timeline ---
+  +0.0s  gameFull  connect color=b wtime=600000 btime=600000 status=started
+  +1.2s  gameState  turn=b wtime=600000 btime=600000 status=started
+  +24.5s  gameState  turn=w wtime=600000 btime=600000 status=started
+  +39.1s  gameState  turn=b wtime=590510 btime=600000 status=started
+  +49.4s  gameState  turn=w wtime=590510 btime=594680 status=started
+  +51.9s  gameState  turn=b wtime=593120 btime=594680 status=started
+  +62.2s  gameState  turn=w wtime=593120 btime=589380 status=started
+  +65.0s  gameState  turn=b wtime=595480 btime=589380 status=started
+  +88.1s  gameState  turn=w wtime=595480 btime=571290 status=started
+  +93.6s  gameState  turn=b wtime=595060 btime=571290 status=started
+  +122.6s  gameState  turn=w wtime=595060 btime=547310 status=started
+  +127.9s  gameState  turn=b wtime=594870 btime=547310 status=started
+  +147.4s  gameState  turn=w wtime=594870 btime=532790 status=started
+  +149.4s  gameState  turn=b wtime=598020 btime=532790 status=started
+  +166.9s  gameState  turn=w wtime=598020 btime=520280 status=started
+  +168.0s  gameState  turn=b wtime=602030 btime=520280 status=started
+  +179.0s  gameState  turn=w wtime=602030 btime=514210 status=started
+  +179.2s  gameState  turn=b wtime=607030 btime=514210 status=started
+  +189.9s  gameState  turn=w wtime=607030 btime=508410 status=started
+  +199.1s  gameState  turn=b wtime=603020 btime=508410 status=started
+  +211.0s  gameState  turn=w wtime=603020 btime=501520 status=started
+  +223.3s  gameState  turn=b wtime=595810 btime=501520 status=started
+  +233.1s  gameState  turn=w wtime=595810 btime=496750 status=started
+  +234.9s  gameState  turn=b wtime=599120 btime=496750 status=started
+  +256.7s  gameState  turn=w wtime=599120 btime=479920 status=started
+  +260.5s  gameState  turn=b wtime=600410 btime=479920 status=started
+  +267.9s  gameState  turn=w wtime=600410 btime=477550 status=started
+  +302.3s  gameState  turn=b wtime=571110 btime=477550 status=started
+  +325.9s  gameState  turn=w wtime=571110 btime=458950 status=started
+  +329.6s  gameState  turn=b wtime=572540 btime=458950 status=started
+  +339.3s  gameState  turn=w wtime=572540 btime=454200 status=started
+  +345.8s  gameState  turn=b wtime=571210 btime=454200 status=started
+  +372.9s  gameState  turn=w wtime=571210 btime=432090 status=started
+  +388.3s  gameState  turn=b wtime=560960 btime=432090 status=started
+  +412.1s  gameState  turn=w wtime=560960 btime=413310 status=started
+  +415.9s  gameState  turn=b wtime=562180 btime=413310 status=started
+  +425.4s  gameState  turn=w wtime=562180 btime=408830 status=started
+  +427.4s  gameState  turn=b wtime=565320 btime=408830 status=started
+  +448.0s  gameState  turn=w wtime=565320 btime=393170 status=started
+  +449.7s  gameState  turn=b wtime=568870 btime=393170 status=started
+  +503.3s  gameState  turn=w wtime=568870 btime=344560 status=started
+  +511.2s  gameState  turn=b wtime=566070 btime=344560 status=started
+  +526.4s  gameState  turn=w wtime=566070 btime=334360 status=started
+  +530.7s  gameState  turn=b wtime=566950 btime=334360 status=started
+  +556.4s  gameState  turn=w wtime=566950 btime=313670 status=started
+  +579.9s  gameState  turn=b wtime=548670 btime=313670 status=started
+  +597.7s  gameState  turn=w wtime=548670 btime=300810 status=started
+  +600.4s  gameState  turn=b wtime=551140 btime=300810 status=started
+  +617.1s  gameState  turn=w wtime=551140 btime=289070 status=started
+  +634.9s  gameState  turn=b wtime=538600 btime=289070 status=started
+  +646.9s  gameState  turn=w wtime=538600 btime=282040 status=started
+  +678.3s  gameState  turn=b wtime=512280 btime=282040 status=started
+  +701.8s  gameState  turn=w wtime=512280 btime=263550 status=started
+  +712.6s  gameState  turn=b wtime=506560 btime=263550 status=started
+  +738.5s  gameState  turn=w wtime=506560 btime=242710 status=started
+  +747.5s  gameState  turn=b wtime=502620 btime=242710 status=started
+  +762.3s  gameState  turn=w wtime=502620 btime=232940 status=started
+  +765.3s  gameState  turn=b wtime=504760 btime=232940 status=started
+  +787.9s  gameState  turn=w wtime=504760 btime=215280 status=started
+  +832.7s  gameState  turn=b wtime=465060 btime=215280 status=started
+  +839.8s  gameState  turn=w wtime=465060 btime=213150 status=started
+  +849.0s  gameState  turn=b wtime=461110 btime=213150 status=started
+  +862.7s  gameState  turn=w wtime=461110 btime=204450 status=started
+  +882.1s  gameState  turn=b wtime=446860 btime=204450 status=started
+  +893.5s  gameState  turn=w wtime=446860 btime=198080 status=started
+  +899.1s  gameState  turn=b wtime=446320 btime=198080 status=started
+  +921.3s  gameState  turn=w wtime=446320 btime=180900 status=started
+  +924.3s  gameState  turn=b wtime=448460 btime=180900 status=started
+  +945.9s  gameState  turn=w wtime=448460 btime=164280 status=started
+  +957.0s  gameState  turn=b wtime=442490 btime=164280 status=started
+  +976.8s  gameState  turn=w wtime=442490 btime=149460 status=started
+  +996.2s  gameState  turn=b wtime=428280 btime=149460 status=started
+  +1004.4s  gameState  turn=w wtime=428280 btime=146220 status=started
+  +1005.6s  gameState  turn=b wtime=432300 btime=146220 status=started
+  +1015.6s  gameState  turn=b wtime=432300 btime=136270 status=resign
+
+--- describe what went wrong (please type here) ---
