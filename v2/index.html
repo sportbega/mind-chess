@@ -307,6 +307,17 @@
         <option value="local">On-device — 247 MB once</option>
       </select>
     </div>
+    <div class="field" id="voiceProfileField">
+      <label>Voice calibration</label>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="online-status" id="voiceProfileStatus" style="margin:0">Off</span>
+        <button class="btn" id="calibrateBtn" type="button" title="Teach the matcher how you say the files, digits and piece names.">Calibrate my voice</button>
+        <button class="btn" id="resetVoiceProfileBtn" type="button" style="display:none">Reset</button>
+      </div>
+      <label class="toggle" id="voiceProfileConfirmRow" style="display:none;margin-top:6px">
+        <input type="checkbox" id="voiceProfileConfirmToggle" /> This is still me — use my calibration
+      </label>
+    </div>
     <div class="field">
       <label for="voiceSelect">Voice</label>
       <select id="voiceSelect"><option value="">Default</option></select>
@@ -387,6 +398,17 @@
     <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
     <button class="btn" id="reportBtn" type="button" title="Copy a diagnostic report you can paste into a bug report.">Report a problem</button>
     <button class="btn" id="newGameBtn" type="button">New game</button>
+  </div>
+
+  <div class="report-panel" id="calibPanel">
+    <div class="report-head">
+      <p class="online-status" style="margin:0" id="calibStatus"><b>Voice calibration</b></p>
+      <button class="btn" id="calibSkipBtn" type="button">Skip word</button>
+      <button class="btn" id="calibCancelBtn" type="button">Cancel</button>
+    </div>
+    <p class="report-foot">Say each word back after you hear it, then confirm whether the app heard it
+      correctly. This teaches the matcher your own pronunciation of the files, digits and piece names —
+      it never replaces the app's normal listening, only helps it recognise you specifically.</p>
   </div>
 
   <div class="report-panel" id="reportPanel">
@@ -512,6 +534,24 @@
   let lastNarration = '';
   let speechGeneration = 0;
   let pendingAction = null;
+  // Per-speaker voice calibration — a stored map of canonical token (file
+  // letter, digit, or piece word) to the raw phrases THIS speaker was
+  // actually heard saying for it, consulted alongside (never instead of)
+  // phon() in tokenDistance(). Deliberately separate from pendingAction's
+  // in-game disambiguation flow: mixing calibration into the same state
+  // machine that resolves "knight or bishop?" mid-move risks exactly the
+  // kind of cross-talk this feature has to avoid.
+  const VOICE_PROFILE_KEY='mind-chess-v2-voice-profile';
+  let voiceProfile=null;                  // {version,createdAt,samples:{token:[heard,...]}}
+  // Whether the loaded profile is actually allowed to bias matching THIS
+  // session. Never true in two-player mode until the player using the mic
+  // explicitly says "this is still me" — a shared device swapping hands
+  // mid-session must not silently inherit the previous speaker's profile,
+  // the same class of bug phon-collisions.js already caught once (the
+  // "what"/"white" ownership collision).
+  let voiceProfileActiveThisSession=false;
+  let calibrationState=null;              // {queue,index,samples,awaitingConfirm:{token,heard},retries}
+  let wantLoopBeforeCalibration=true;
   let gameOver = false;
   let generation = 0;          // invalidates in-flight computer-move timers
   let onlineState = null;      // {id,color,spectating,waiting,starting,channel,pollTimer,lastUpdated}
@@ -579,6 +619,11 @@
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'),
+        voiceProfileStatus=$('voiceProfileStatus'), calibrateBtn=$('calibrateBtn'),
+        resetVoiceProfileBtn=$('resetVoiceProfileBtn'), voiceProfileConfirmRow=$('voiceProfileConfirmRow'),
+        voiceProfileConfirmToggle=$('voiceProfileConfirmToggle'),
+        calibPanel=$('calibPanel'), calibStatus=$('calibStatus'), calibSkipBtn=$('calibSkipBtn'),
+        calibCancelBtn=$('calibCancelBtn'),
         testVoiceBtn=$('testVoiceBtn'), reportBtn=$('reportBtn'), reportPanel=$('reportPanel'),
         reportOut=$('reportOut'), reportCopyBtn=$('reportCopyBtn'), reportCloseBtn=$('reportCloseBtn'),
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
@@ -2366,6 +2411,18 @@
     return null;
   }
 
+  // Per-speaker calibration, consulted alongside phon() — never instead of
+  // it. voiceProfile.samples[canonicalWord] holds the raw phrases THIS
+  // speaker was heard saying for that file letter/digit/piece word during
+  // calibration; a match here costs the same .1 "sounds" charge phon()
+  // already gives a same-sounding word. Gated on voiceProfileActiveThisSession
+  // so an unconfirmed or shared-device profile never silently biases scoring.
+  function voiceProfileSounds(heardTok,candTok){
+    if(!voiceProfileActiveThisSession||!voiceProfile||!voiceProfile.samples) return false;
+    const variants=voiceProfile.samples[candTok];
+    if(!variants||!variants.length) return false;
+    return variants.some(v=>speechKey(v).trim()===heardTok);
+  }
   function tokenDistance(a,b){
     const A=speechKey(a).split(' ').filter(Boolean), B=speechKey(b).split(' ').filter(Boolean);
     const d=Array.from({length:A.length+1},(_,i)=>Array(B.length+1).fill(0));
@@ -2373,7 +2430,7 @@
     for(let j=0;j<=B.length;j++) d[0][j]=j;
     for(let i=1;i<=A.length;i++) for(let j=1;j<=B.length;j++){
       const same=A[i-1]===B[j-1];
-      const sounds=!same && phon(A[i-1])===phon(B[j-1]);
+      const sounds=!same && (phon(A[i-1])===phon(B[j-1]) || voiceProfileSounds(A[i-1],B[j-1]));
       const near=!same && !sounds && (A[i-1][0]===B[j-1][0] || A[i-1].slice(0,2)===B[j-1].slice(0,2));
       d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(same?0:sounds?.1:near?.35:1));
     }
@@ -2397,7 +2454,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r59 (a timeline someone can grab without describing anything)';
+  const BUILD='v2-r60 (a keyed lookup, not a shared hash)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4557,6 +4614,14 @@
             lastAltMeta.push({t:res[a].transcript,c:res[a].confidence});
           }
           note('');
+          // Calibration diverts here rather than into route() — a calibration
+          // reply is a sample or a yes/no, never a move attempt, and it must
+          // never accidentally play one.
+          if(calibrationState){
+            try{ recognition.stop(); }catch(e){}
+            handleCalibrationResult(alts);
+            continue;
+          }
           // With "Keep listening" off the mic is a push-to-talk button, and a
           // continuous session would otherwise stay open indefinitely — the
           // per-utterance session used to end it for us.
@@ -4734,6 +4799,170 @@
     wantLoop=handsFree;
     await startListening();
   });
+
+  // ===============================================================
+  // Voice calibration — teaches the matcher THIS speaker's own
+  // pronunciation of the files, digits, and piece names (see
+  // voiceProfileSounds() in tokenDistance() for how it's used, and the
+  // pendingAction comment above for why this is a separate state machine
+  // rather than folded into that one). Reuses startListening()/onresult —
+  // diverted there into handleCalibrationResult() instead of route(), so a
+  // calibration reply can never be misread as a move.
+  // ===============================================================
+  function voiceProfileWordList(){
+    return ['a','b','c','d','e','f','g','h','1','2','3','4','5','6','7','8',
+            'pawn','knight','bishop','rook','queen','king'];
+  }
+  function calibPromptFor(token){
+    if(/^[a-h]$/.test(token)) return 'the letter '+token.toUpperCase();
+    if(/^[1-8]$/.test(token)) return 'the number '+token;
+    return 'the word '+token;
+  }
+  function loadVoiceProfile(){
+    try{ const raw=localStorage.getItem(VOICE_PROFILE_KEY); voiceProfile=raw?JSON.parse(raw):null; }
+    catch(e){ voiceProfile=null; }
+  }
+  function saveVoiceProfileToStorage(){
+    try{ localStorage.setItem(VOICE_PROFILE_KEY,JSON.stringify(voiceProfile)); }catch(e){}
+  }
+  function renderVoiceProfileUI(){
+    const n=voiceProfile&&voiceProfile.samples?Object.keys(voiceProfile.samples).length:0;
+    resetVoiceProfileBtn.style.display=n?'':'none';
+    if(!n){
+      voiceProfileStatus.textContent='Off';
+      voiceProfileConfirmRow.style.display='none';
+      return;
+    }
+    if(mode==='two-player'&&!voiceProfileActiveThisSession){
+      voiceProfileStatus.textContent='Saved ('+n+' words) — not active this session';
+      voiceProfileConfirmRow.style.display='';
+      voiceProfileConfirmToggle.checked=false;
+    }else{
+      voiceProfileStatus.textContent=voiceProfileActiveThisSession?('On ('+n+' words)'):'Off';
+      voiceProfileConfirmRow.style.display='none';
+    }
+  }
+  function resetVoiceProfile(){
+    voiceProfile=null; voiceProfileActiveThisSession=false;
+    try{ localStorage.removeItem(VOICE_PROFILE_KEY); }catch(e){}
+    renderVoiceProfileUI();
+  }
+
+  function startCalibration(){
+    if(calibrationState||speaking) return;
+    if(!recognition){ warn('Voice recognition is not available in this browser.'); return; }
+    wantLoopBeforeCalibration=wantLoop;
+    wantLoop=false;
+    if(listening){ try{ recognition.stop(); }catch(e){} }
+    calibrationState={queue:voiceProfileWordList(),index:0,samples:{},awaitingConfirm:null,retries:0};
+    calibPanel.classList.add('show');
+    calibPanel.scrollIntoView({block:'nearest'});
+    calibrationNextWord();
+  }
+  function calibrationNextWord(){
+    const cs=calibrationState;
+    if(!cs) return;
+    if(cs.index>=cs.queue.length){ finishCalibration(); return; }
+    cs.retries=0;
+    calibrationPromptCurrent();
+  }
+  function calibrationPromptCurrent(){
+    const cs=calibrationState;
+    if(!cs) return;
+    const token=cs.queue[cs.index];
+    calibStatus.innerHTML='<b>Voice calibration</b> — word '+(cs.index+1)+' of '+cs.queue.length
+      +': say '+calibPromptFor(token)+'.';
+    say('Say '+calibPromptFor(token)+'.');
+    whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000);
+  }
+  async function calibrationListen(){
+    if(!calibrationState) return;
+    await startListening();
+  }
+  function handleCalibrationResult(alts){
+    const cs=calibrationState;
+    if(!cs) return;
+    const heard=(alts[0]||'').trim();
+    if(cs.awaitingConfirm){
+      const t=normalize(heard);
+      const yes=/\b(yes|yeah|yep|yup|correct|right|affirmative|sure)\b/.test(t);
+      const pending=cs.awaitingConfirm;
+      cs.awaitingConfirm=null;
+      if(yes){
+        (cs.samples[pending.token]=cs.samples[pending.token]||[]).push(pending.heard);
+        cs.index++;
+        calibrationNextWord();
+      }else{
+        // "No", an unrecognized reply, or silence — never guess. Retry the
+        // same word rather than record a sample nobody confirmed.
+        calibStatus.innerHTML='<b>Voice calibration</b> — let’s try that again.';
+        calibrationRetryOrSkip();
+      }
+      return;
+    }
+    const token=cs.queue[cs.index];
+    if(!heard){ calibrationRetryOrSkip(); return; }
+    cs.awaitingConfirm={token,heard};
+    calibStatus.innerHTML='<b>Voice calibration</b> — heard “'+heard+'” for '+calibPromptFor(token)+'. Yes or no?';
+    say('I heard '+heard+'. Is that right?');
+    whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000);
+  }
+  function calibrationRetryOrSkip(){
+    const cs=calibrationState;
+    if(!cs) return;
+    cs.retries=(cs.retries||0)+1;
+    if(cs.retries>=2){ calibrationSkipWord(); return; }
+    calibrationPromptCurrent();
+  }
+  function calibrationSkipWord(){
+    const cs=calibrationState;
+    if(!cs) return;
+    cs.awaitingConfirm=null;
+    cs.index++;
+    calibrationNextWord();
+  }
+  function cancelCalibration(){
+    if(!calibrationState) return;
+    try{ recognition.stop(); }catch(e){}
+    calibrationState=null;
+    calibPanel.classList.remove('show');
+    wantLoop=wantLoopBeforeCalibration;
+    log('System','Voice calibration cancelled.');
+    if(wantLoop&&handsFree) startListening();
+  }
+  function finishCalibration(){
+    const cs=calibrationState;
+    calibrationState=null;
+    calibPanel.classList.remove('show');
+    const merged=(voiceProfile&&voiceProfile.samples)?Object.assign({},voiceProfile.samples):{};
+    Object.keys(cs.samples).forEach(k=>{
+      merged[k]=[...new Set([...(merged[k]||[]),...cs.samples[k]])];
+    });
+    voiceProfile={version:1,createdAt:new Date().toISOString(),samples:merged};
+    saveVoiceProfileToStorage();
+    voiceProfileActiveThisSession=(mode!=='two-player');
+    renderVoiceProfileUI();
+    log('System','Voice calibration saved ('+Object.keys(merged).length+' words).');
+    wantLoop=wantLoopBeforeCalibration;
+    if(wantLoop&&handsFree) startListening();
+  }
+
+  calibrateBtn.addEventListener('click',startCalibration);
+  calibSkipBtn.addEventListener('click',()=>{
+    if(!calibrationState) return;
+    try{ recognition.stop(); }catch(e){}
+    calibrationState.awaitingConfirm=null;
+    calibrationSkipWord();
+  });
+  calibCancelBtn.addEventListener('click',cancelCalibration);
+  resetVoiceProfileBtn.addEventListener('click',resetVoiceProfile);
+  voiceProfileConfirmToggle.addEventListener('change',()=>{
+    voiceProfileActiveThisSession=voiceProfileConfirmToggle.checked;
+    renderVoiceProfileUI();
+  });
+  loadVoiceProfile();
+  voiceProfileActiveThisSession=!!(voiceProfile&&voiceProfile.samples)&&mode!=='two-player';
+  renderVoiceProfileUI();
 
   handsFreeToggle.addEventListener('change',()=>{
     handsFree=handsFreeToggle.checked;
@@ -5597,6 +5826,13 @@
   modeSelect.addEventListener('change',()=>{
     const prevMode=mode;
     mode=modeSelect.value;
+    // A shared device swapping hands into pass & play must not silently
+    // inherit whoever calibrated last — require the explicit "this is still
+    // me" toggle again every time two-player mode is (re)entered. Leaving it
+    // restores the normal default (active whenever a profile exists).
+    if(mode==='two-player') voiceProfileActiveThisSession=false;
+    else if(prevMode==='two-player') voiceProfileActiveThisSession=!!(voiceProfile&&voiceProfile.samples);
+    renderVoiceProfileUI();
     if(prevMode==='online'&&mode!=='online') leaveOnline();
     if(prevMode==='lichess'&&mode!=='lichess') leaveLichess();
     if(mode==='online'){ hideLichessPanel(); showOnlinePanel(); return; }
