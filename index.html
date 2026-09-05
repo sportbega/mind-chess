@@ -394,6 +394,7 @@
       <p class="online-status" style="margin:0"><b>Diagnostic report</b> — paste this to whoever gave you the link.</p>
       <button class="btn" id="reportSendBtn" type="button">Send</button>
       <button class="btn" id="reportCopyBtn" type="button">Copy</button>
+      <button class="btn" id="copyDiagBtn" type="button" style="display:none" title="?debug=1 only — copies just the session timeline (heard/matched/played/timing), separate from the full report.">Copy diagnostics</button>
       <button class="btn" id="reportCloseBtn" type="button">Close</button>
     </div>
     <textarea id="reportOut" spellcheck="false" aria-label="Diagnostic report — add a description of what went wrong"></textarea>
@@ -580,7 +581,7 @@
         voiceToggle=$('voiceToggle'),
         testVoiceBtn=$('testVoiceBtn'), reportBtn=$('reportBtn'), reportPanel=$('reportPanel'),
         reportOut=$('reportOut'), reportCopyBtn=$('reportCopyBtn'), reportCloseBtn=$('reportCloseBtn'),
-        reportSendBtn=$('reportSendBtn'),
+        reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
@@ -2396,7 +2397,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r58 (a phantom capture is not a real difference)';
+  const BUILD='v2-r59 (a timeline someone can grab without describing anything)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -5949,6 +5950,7 @@
 
   function setupDebug(){
     if(!DEBUG) return;
+    copyDiagBtn.style.display='';
     // body is a flex ROW, and this panel is appended as a direct child of it,
     // so it becomes a flex *sibling* of the app column. On a wide screen that
     // is the nice side-by-side layout it was built for. On a phone the two
@@ -6117,6 +6119,19 @@
             '--- describe what went wrong (please type here) ---',
             ''].join('\n');
   }
+  // Just the session timeline — heard/matched/played/timing — without the
+  // rest of buildReport()'s scaffolding (settings, position, "describe what
+  // went wrong" prompt). Same underlying data (debugLog/micTimeline/
+  // lichessTimeline) the full report already carries; this is for a tester
+  // who wants to grab the raw timeline on its own, gated behind ?debug=1
+  // like the rest of this panel.
+  function diagnosticsBlock(){
+    return ['=== Mind Chess diagnostics ===',
+            'build: '+BUILD,
+            'when:  '+new Date().toISOString(),
+            '',
+            debugLog.join('\n')+micTimeline()+(mode==='lichess'?lichessTimeline():'')].join('\n');
+  }
   function openReport(){
     reportSendBtn.disabled=false; reportSendBtn.textContent='Send';
     reportOut.value=buildReport();
@@ -6182,6 +6197,22 @@
     if(!ok&&navigator.clipboard) navigator.clipboard.writeText(reportOut.value).catch(()=>{});
     reportCopyBtn.textContent='Copied';
     setTimeout(()=>reportCopyBtn.textContent='Copy',1400);
+  });
+  copyDiagBtn.addEventListener('click',async()=>{
+    const text=diagnosticsBlock();
+    // If the report is already open, attach it into the same box Send
+    // uploads verbatim — inserted at the caret so it doesn't clobber
+    // anything already typed — rather than making the tester paste it in
+    // by hand after copying.
+    if(reportPanel.classList.contains('show')){
+      const start=reportOut.selectionStart!=null?reportOut.selectionStart:reportOut.value.length;
+      const end=reportOut.selectionEnd!=null?reportOut.selectionEnd:reportOut.value.length;
+      reportOut.setRangeText(text,start,end,'end');
+    }
+    try{ await navigator.clipboard.writeText(text); }
+    catch(e){ prompt('Copy these diagnostics:',text); }
+    copyDiagBtn.textContent='Copied!';
+    setTimeout(()=>copyDiagBtn.textContent='Copy diagnostics',1400);
   });
 
   if(location.protocol==='file:') originBanner.classList.add('show');

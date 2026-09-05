@@ -4770,3 +4770,40 @@ wrong. Zero `reconcile-reconnect` events in the entire lichess timeline —
 the en-passant fix held with no false positives across a real, long game
 with plenty of gameState events. No new failure shapes per
 `tools/signatures.js`.
+
+## 2026-09-05 (r59): a timeline someone can grab without describing anything
+
+Requested: a "Copy diagnostics" button next to the report UI (OUR-74),
+?debug=1-gated, that copies just the session timeline (heard/matched/played/
+timing) to the clipboard with a confirmation, and attaches into the report
+form if it's already open rather than requiring a manual paste.
+
+Most of the underlying machinery already existed — `buildReport()` already
+assembles `debugLog`/`micTimeline()`/`lichessTimeline()` into every report,
+and the floating `?debug=1` panel already has its own "Copy all" button for
+the raw timeline. What was missing was a way to grab *just* the timeline —
+without the settings/position/prompt scaffolding — from inside the report
+flow itself, and to attach it there instead of only the clipboard.
+
+Added `diagnosticsBlock()` (same three data sources, no new structure) and a
+`copyDiagBtn` next to Send/Copy/Close in the report panel, shown only via
+the existing `setupDebug()` gate (`if(!DEBUG) return`) — same pattern every
+other diagnostics surface in this file already uses. Clicking it: if the
+report panel is open, inserts the block at the caret in `reportOut` (so it
+attaches into the exact box Send uploads verbatim, not a separate copy the
+tester has to paste in by hand); either way, copies to the clipboard via
+`navigator.clipboard.writeText()` with a `prompt()` fallback (same pattern
+`copyInviteBtn` already uses) and swaps the button label to "Copied!" for
+1.4s.
+
+Verified live: button stays hidden without `?debug=1`, becomes visible and
+correctly wired once the report panel opens with it. The clipboard call
+itself couldn't be exercised through CDP-driven automation (Chrome's
+permission prompt for `navigator.clipboard.writeText()` blocks a
+script-triggered click that isn't a fully-trusted user gesture) — not a
+code issue, and the exact same API+fallback pattern already ships and works
+for `copyInviteBtn` in this file.
+
+Build `BUILD='v2-r59 (a timeline someone can grab without describing anything)'`.
+Published to `/v2/` — inert for anyone not passing `?debug=1`, safe to
+promote to release whenever.
