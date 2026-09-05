@@ -4703,3 +4703,21 @@ for the built-in computer — so "Connected to a live Lichess game" now says
 who you're playing, not just what color you are.
 
 Build `BUILD='v2-r57 (a rematch first has to leave the last game)'`.
+
+## 2026-09-05 — id19: reconciliation fired for real, unprompted, and it worked
+
+Report id19 (r57, live release) is the first report to carry a
+`--- lichess timeline ---` section (r55 instrumentation), and it happened to
+catch something worth having: at +333.5s, `reconcileLichess()`'s FEN check
+found a real mismatch mid-game and forced a reconnect — `reconcile-reconnect
+fen mismatch, carrying wtime=426200 btime=599270` followed immediately by
+`gameFull reconnect color=w wtime=415710 btime=599270`. The locally-carried
+clock guess (426200ms) was corrected to the true server value (415710ms) the
+moment the fresh event arrived — exactly the self-healing behavior r51/r55
+were built for, firing on its own during ordinary play, not a staged test.
+No complaint in the report (empty describe field) — it likely wasn't even
+noticed, which is the right outcome.
+
+Game ended in a real checkmate loss (`Re4#`), no new failure shapes per
+`tools/signatures.js` (same familiar STT quirks — `mic-lost` at 50/73,
+`pawn-default` ×2, nothing novel).
