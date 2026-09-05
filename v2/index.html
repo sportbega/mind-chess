@@ -149,7 +149,10 @@
   .mic-note.err{color:var(--danger)}
   .mic-note.ok{color:var(--ok)}
 
-  .transcript{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;height:190px;overflow-y:auto;font-family:'Newsreader',serif;font-size:15px}
+  /* No background/border/padding of its own now — nested inside
+     #transcriptDetails (details.help already supplies that chrome), so
+     giving .transcript the same panel styling would double it up. */
+  .transcript{margin-top:10px;height:190px;overflow-y:auto;font-family:'Newsreader',serif;font-size:15px}
   .transcript .line{margin:0 0 10px;line-height:1.45}
   .transcript .line:last-child{margin-bottom:0}
   .transcript .who{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-right:8px}
@@ -358,8 +361,6 @@
     </div>
   </div>
 
-  <div class="transcript" id="transcript" aria-live="polite"></div>
-
   <form class="textrow" id="textForm">
     <input type="text" id="textInput" placeholder="Or type a move — &quot;knight f3&quot;, &quot;e4&quot;, &quot;show board&quot;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
     <button class="btn primary" type="submit">Send</button>
@@ -443,6 +444,11 @@
       </div>
       <button class="btn" id="appearanceResetBtn" type="button" title="Resets the five sliders only — board and piece theme are a separate kind of choice and are left as they are.">Reset appearance</button>
     </div>
+  </details>
+
+  <details class="help" id="transcriptDetails" open>
+    <summary>Transcript</summary>
+    <div class="transcript" id="transcript" aria-live="polite"></div>
   </details>
 
   <div class="settings">
@@ -2788,7 +2794,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r73 (mic control shrunk into the header)';
+  const BUILD='v2-r74 (transcript moved below Appearance, made collapsible)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
