@@ -5761,3 +5761,14 @@ unaffected.
 
 Build `BUILD='v2-r75 (settings split into Game and Voice groups)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r76): Voice settings open by default too
+
+Adni's call, overriding r75's "set-once-and-forget, so default closed"
+reasoning: Voice settings should start open like Game settings, Appearance
+stays the only one closed by default. One-attribute change (`open` on
+`#voiceSettingsDetails`); verified fresh load shows Game, Voice, and
+Transcript all open with only Appearance collapsed.
+
+Build `BUILD='v2-r76 (Voice settings open by default too)'`. Published to
+`/v2/`.

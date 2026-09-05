@@ -453,7 +453,7 @@
     </div>
   </details>
 
-  <details class="help" id="voiceSettingsDetails">
+  <details class="help" id="voiceSettingsDetails" open>
     <summary>Voice settings</summary>
     <div class="field-grid">
       <div class="field">
@@ -2809,7 +2809,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r75 (settings split into Game and Voice groups)';
+  const BUILD='v2-r76 (Voice settings open by default too)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
