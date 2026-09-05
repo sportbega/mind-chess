@@ -136,10 +136,7 @@
      absorbs whatever's left; the grid inside it sizes off that leftover
      HEIGHT (not a width guess) via aspect-ratio, so both scaling and
      "fits the screen" fall out of the layout itself rather than a constant
-     tuned against one browser window. Mic button, transcript, move strip
-     stay exactly where they are and fully wired — only the settings grid
-     and secondary panels are hidden, which is what frees the room up in
-     the first place. */
+     tuned against one browser window. */
   /* body's own clamp(16px,4vw,40px) padding is invisible in the normal
      page (room to breathe around a 720px-capped column) but ate directly
      into the "100vh" budget the moment .app tried to actually fill the
@@ -152,24 +149,19 @@
   .app.fullscreen-active .board-outer{flex:1;min-height:0}
   .app.fullscreen-active .board-col{display:flex;flex-direction:column;min-height:0}
   .app.fullscreen-active .board-grid{flex:1 1 auto;min-height:0;width:auto;max-width:92vw;margin:auto}
-  /* "Fill available space cleanly" turned out to mean more than raising the
-     board's own ceiling — everything ABOVE the board (title, hint text, the
-     narration log) was still taking its normal vertical share, so the page
-     needed scrolling even in "fullscreen", which is the opposite of a frame
-     that fits the screen. Narration is spoken aloud regardless of whether
-     the visual log is on screen, so hiding it here costs nothing
-     functional; the status line, move strip, mic button and its live note
-     — the things that actually change turn to turn — all stay. */
-  .app.fullscreen-active header h1,
-  .app.fullscreen-active header .eyebrow,
-  .app.fullscreen-active .hero .hint,
-  .app.fullscreen-active .transcript{display:none}
-  .app.fullscreen-active header{padding:2px 0}
-  .app.fullscreen-active .hero{padding:10px 20px;gap:6px}
-  .app.fullscreen-active .settings,
-  .app.fullscreen-active .banner,
-  .app.fullscreen-active #calibPanel,
-  .app.fullscreen-active #reportPanel{display:none}
+  /* Fullscreen shows ONLY the board frame — grid, rank/file labels, pieces,
+     and the clock/turn status that lives in the same header bar as the
+     board. Everything else that used to stay visible (mic button, "Reveal
+     board" toggle, flip control, move strip, hint text) is UI chrome, not
+     the board itself, so it's hidden here. This is a CSS-only visibility
+     change: none of it touches the mic session, recognizer, or narration —
+     those keep running exactly as they do outside fullscreen, whether or
+     not their button is on screen. */
+  .app.fullscreen-active>*{display:none}
+  .app.fullscreen-active .board-head h2,
+  .app.fullscreen-active .board-head #flipBoardBtn,
+  .app.fullscreen-active .board-head #fullscreenBtn{display:none}
+  .app.fullscreen-active .board-head{justify-content:center;gap:14px}
   .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
   .app.fullscreen-active .exit-fullscreen-btn{display:block}
   .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,70px)!important;line-height:1;user-select:none}
@@ -2606,7 +2598,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r63 (fullscreen fixed: a frame, not an overflow)';
+  const BUILD='v2-r64 (fullscreen shows the board, not the buttons)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

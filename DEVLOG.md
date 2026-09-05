@@ -5092,3 +5092,47 @@ Fullscreen API.
 
 Build `BUILD='v2-r63 (fullscreen fixed: a frame, not an overflow)'`.
 Published to `/v2/`.
+
+## 2026-09-05 (r64): fullscreen shows the board, not the buttons
+
+r63 fixed the layout but not the scope: Adni tested it and reported the
+mic button and "hide board" toggle were still visible/reachable inside
+fullscreen, and asked for fullscreen to show only the board frame itself
+(grid, rank/file labels, pieces, and the clock/turn status in the same
+header bar as the board) — with one hard constraint: hiding those controls
+must not touch the mic session, recognizer, or narration in any way. A
+listening session started before entering fullscreen has to keep listening
+exactly as it did, with no button on screen to prove it.
+
+The fix stayed entirely in CSS. `.app.fullscreen-active>*{display:none}`
+now hides every direct child of `.app` — header (title, status line, the
+"Reveal/Hide board" toggle), the mic hero, transcript, move strip, text
+input row, online/lobby/lichess panels, settings, calibration/report
+panels, and the voice-commands `<details>` — except the board panel and the
+floating exit-fullscreen button, which are carved back in by more specific
+selectors already in place from r63. Inside the board panel, the "Board"
+heading, the flip-board button, and the in-panel fullscreen toggle button
+are hidden by id; the clock and turn-status pills that share that same
+header bar are left alone, since they're the "White to move" status the
+board frame is supposed to keep. No JS changed — `syncFullscreenUI()` still
+does nothing but toggle one class — so there was nothing for a fullscreen
+transition to disturb in the mic state machine by construction, not by
+added care.
+
+Verified end to end using the same `Object.defineProperty(document,
+'fullscreenElement',...)` + `fullscreenchange`-dispatch technique r63 used
+(real `requestFullscreen()` still can't be triggered under CDP automation):
+screenshotted the simulated-fullscreen state and confirmed only the board,
+rank/file labels, pieces, status pill, and exit button were visible;
+confirmed via `getComputedStyle` that the hidden mic button was
+`display:none` but *not* `disabled`; routed a move ("pawn to d4") through
+the exact same `route()` function the recognizer's `onresult` handler
+calls, by dispatching a submit on the hidden text form, and watched the
+board update live while still in the simulated-fullscreen state; then
+reversed the fullscreenchange and confirmed the mic button came back
+visible, enabled, and with its label state (`fullscreenBtn`/
+`boardToggleBtn` text) correctly reflecting current app state — no
+corruption from the round trip.
+
+Build `BUILD='v2-r64 (fullscreen shows the board, not the buttons)'`.
+Published to `/v2/`.
