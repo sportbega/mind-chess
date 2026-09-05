@@ -5358,3 +5358,62 @@ separate localStorage keys, with no cross-talk between them.
 
 Build `BUILD='v2-r68 (one appearance panel, under the board)'`. Published
 to `/v2/`.
+
+## 2026-09-05 (r69): four boards, two piece sets, all original
+
+Last item deferred from the appearance backlog: more board and piece
+theme variations. Checked Giga Chess (`~/Documents/ChatGPT/chess project/
+chess.html`) a third time before designing anything, per instruction —
+still the identical 5 boards / 4 pieces already ported at OUR-41, nothing
+new sitting there unported. Everything below is designed from scratch.
+
+Also checked how pieces actually render before assuming anything was
+feasible: plain text glyphs, colored entirely through `--piece-light`/
+`--piece-dark` fill plus `-webkit-text-stroke` in `--piece-light-stroke`/
+`--piece-dark-stroke` and a `--piece-shadow`, no SVG or image asset
+involved. A new piece theme is exactly those 5 custom properties under a
+new `data-pieces` value — same mechanism as the 4 existing ones, no new
+capability needed.
+
+**Boards** (`data-board`, each sets `--wood`/`--wood-2`/`--sq-light`/
+`--sq-dark`/`--accent` same as the existing 4):
+- **Ocean Teal** (`ocean`) — cooler and more teal than the existing "Ocean
+  Blue" (`blue`), which already owned that name in the dropdown, so this
+  one is labeled distinctly to avoid the two reading as the same theme.
+- **Dusk** (`dusk`) — warm twilight mauve/plum, the deliberate opposite of
+  Midnight's cool blue-gray so the two don't collapse into "the other dark
+  one."
+- **Tournament Wood** (`tournament-wood`) — lighter, warmer maple/oak
+  contrast than the existing default "Walnut" wood, closer to a real
+  wooden tournament set.
+- **Blackout** (`darker`) — near-black wood with light squares near white
+  and dark squares near-black: a genuine high-contrast low-light mode,
+  checked directly against Midnight's actual values first so it reads as
+  a different design (stark black/white) rather than a duplicate of
+  Midnight's softer blue-gray moderate contrast.
+
+**Pieces** (`data-pieces`):
+- **Slate** (`slate`) — cool gray-blue, picked to read well against Ocean
+  Teal but usable with any board like every other piece set.
+- **Ember** (`ember`) — warm rust/copper, picked to read well against
+  Dusk and Tournament Wood.
+
+Both selects live in the same r68 Appearance panel and dropdown-population
+already "just worked" by extension — `applyTheme()` only ever reads
+`.value` and writes it to `dataset.board`/`dataset.pieces`, so nothing in
+the JS changed, only new `<option>`s and their matching CSS rules.
+
+Verified live for all 6 new combinations at once is unnecessary — spot-
+checked each new value individually (Ocean Teal+Slate, Dusk+Ember,
+Tournament Wood+Classic, Blackout+Classic), screenshotted each, and
+confirmed: legible piece-vs-square contrast in every case via the existing
+stroke-separation mechanism, `mind-chess-v2-board-theme`/
+`-piece-theme` update correctly in localStorage on selection, and a real
+page reload restores both. No JS touched beyond the two `<option>` lists
+already existing — this was CSS + markup only, so no `node --check`
+surprises expected and none found.
+
+Build `BUILD='v2-r69 (four boards, two piece sets, all original)'`.
+Published to `/v2/`. Appearance backlog from r62 is now fully closed: board
+size, fullscreen scope, appearance sliders, panel placement, and theme
+variations all shipped.

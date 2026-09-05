@@ -33,9 +33,18 @@
   :root[data-board="blue"]{--wood:#1f354d;--wood-2:#476d8d;--sq-light:#dce9ef;--sq-dark:#7198b6;--accent:#d27d46}
   :root[data-board="midnight"]{--wood:#181a28;--wood-2:#383d5b;--sq-light:#c8cdd7;--sq-dark:#667085;--accent:#e0ad57}
   :root[data-board="rose"]{--wood:#4b2931;--wood-2:#81515d;--sq-light:#f3dfd5;--sq-dark:#bb7f83;--accent:#7d3b4a}
+  /* Four originals, checked against Giga Chess first (no unported themes
+     there — same 5 boards/4 pieces on both sides) so these had to be
+     designed from scratch rather than ported. */
+  :root[data-board="ocean"]{--wood:#0d2438;--wood-2:#1f4863;--sq-light:#d7e6ec;--sq-dark:#4f7f96;--accent:#3fa7c9}
+  :root[data-board="dusk"]{--wood:#2b1f33;--wood-2:#5c3a52;--sq-light:#e8c9b0;--sq-dark:#8a5468;--accent:#e08a4f}
+  :root[data-board="tournament-wood"]{--wood:#5c3a1e;--wood-2:#8a5a2e;--sq-light:#f0dcb8;--sq-dark:#b9793f;--accent:#c9a25d}
+  :root[data-board="darker"]{--wood:#0a0a0c;--wood-2:#1c1c20;--sq-light:#d8d8d8;--sq-dark:#2a2a2e;--accent:#e0e0e0}
   :root[data-pieces="ivory"]{--piece-light:#fff9e8;--piece-dark:#4a3927;--piece-light-stroke:#725b3e;--piece-dark-stroke:#efe2c4;--piece-shadow:0 2px 2px #0006}
   :root[data-pieces="midnight"]{--piece-light:#e8f1fa;--piece-dark:#111827;--piece-light-stroke:#1f2937;--piece-dark-stroke:#aebfd1;--piece-shadow:0 2px 3px #0009}
   :root[data-pieces="gold"]{--piece-light:#f6d37a;--piece-dark:#4c2d0a;--piece-light-stroke:#765112;--piece-dark-stroke:#dcae46;--piece-shadow:0 2px 3px #0009}
+  :root[data-pieces="slate"]{--piece-light:#eef2f5;--piece-dark:#2e3540;--piece-light-stroke:#55606b;--piece-dark-stroke:#aab4bf;--piece-shadow:0 2px 3px #0008}
+  :root[data-pieces="ember"]{--piece-light:#fbe4c8;--piece-dark:#5a2a1a;--piece-light-stroke:#8a4423;--piece-dark-stroke:#d99a6c;--piece-shadow:0 2px 3px #0009}
   @media (prefers-reduced-motion: reduce){ *{animation-duration:.001ms !important;transition-duration:.001ms !important} }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -349,6 +358,10 @@
           <option value="blue">Ocean Blue</option>
           <option value="midnight">Midnight</option>
           <option value="rose">Rosewood</option>
+          <option value="ocean">Ocean Teal</option>
+          <option value="dusk">Dusk</option>
+          <option value="tournament-wood">Tournament Wood</option>
+          <option value="darker">Blackout</option>
         </select>
       </div>
       <div class="field">
@@ -358,6 +371,8 @@
           <option value="ivory">Ivory &amp; Onyx</option>
           <option value="midnight">Midnight</option>
           <option value="gold">Gold</option>
+          <option value="slate">Slate</option>
+          <option value="ember">Ember</option>
         </select>
       </div>
       <div class="field">
@@ -2715,7 +2730,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r68 (one appearance panel, under the board)';
+  const BUILD='v2-r69 (four boards, two piece sets, all original)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
