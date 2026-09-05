@@ -5254,3 +5254,68 @@ path.
 
 Build `BUILD='v2-r66 (a wedged voice stops guarding the mic)'`. Published
 to `/v2/`.
+
+## 2026-09-05 (r67): appearance sliders, layered on top of the theme
+
+Second half of the appearance backlog parked at r62: board size shipped
+then, new theme variations and the contrast/saturation/brightness/hue/
+transparency sliders were deferred. Before writing anything, checked what
+the instruction asked to check: OUR-41's `applyTheme()`/`data-board`/
+`data-pieces`/localStorage pattern is still exactly what it was, so these
+sliders extend it (compose on top of whichever theme is picked) rather
+than reimplementing anything; the r63-r65 fullscreen CSS never touches
+`filter`, which settled how the two features should interact (below).
+Re-verified Giga Chess still has the identical 5 board / 4 piece themes
+already ported — nothing new to pull from there, so new theme variations
+(deferred again) will need designing from scratch when they're picked up.
+
+Scoped with Adni: board size (already fully shipped at r62) needed no new
+work; of the two remaining pieces, sliders now and themes later, over
+themes now and sliders later.
+
+Contrast/saturation/brightness compose naturally as one `filter` string
+(`contrast() saturate() brightness() hue-rotate()`) applied to
+`.board-outer` — the wood frame, ranks/files, squares and pieces together,
+i.e. "the board" as a visual unit — recomputed on every slider's `input`
+event. Transparency is `.board-outer`'s own `opacity`, kept as a separate
+property since `filter` and `opacity` don't share one CSS value; its
+intent was already settled at r62 ("a plain aesthetic opacity control, not
+'see behind the board'"), so its range floor is 40% — low enough to look
+faded, not so low the position stops being legible, which a literal
+see-through feature would have no reason to stop at. All five persist as
+one JSON object under `mind-chess-v2-appearance` (grouped, unlike the two
+separate board/piece theme keys, since they're one coherent "look" a
+player dials in together) and restore in the same boot sequence as
+`BOARD_THEME_KEY`/`BOARD_SIZE_KEY`. A "Reset appearance" button restores
+all five to neutral (100/100/100/0/100) in one press — sliders with no way
+back to normal are a support question waiting to be asked.
+
+Deliberately NOT overridden by fullscreen the way board size is: size is
+a layout concern fullscreen already has an opinion about (r63's flexbox
+sizing), but a look already dialed in is exactly as much the player's in
+fullscreen as out of it, so nothing fullscreen-specific was added — the
+filter/opacity styles sit directly on `.board-outer` and fullscreen's CSS
+never mentions `filter`, so there was nothing to reconcile.
+
+Placement (the fourth ask): a collapsible `<details class="help">` block,
+the same element already used for "Voice commands" at the foot of the
+page, titled "Appearance" and placed just above it — keeps the settings
+grid (`voiceSelect`/`rateSelect`/`sttSelect` etc.) uncluttered while
+staying discoverable, and reuses the app's one existing collapsible
+pattern instead of inventing a second one.
+
+Verified live: defaults compute to a neutral `filter` and `opacity:1`;
+each slider's live value is reflected immediately (screenshotted a
+hue-rotated, oversaturated, 60%-opacity board with none of the rest of the
+UI affected); the JSON blob round-trips through `localStorage` — a real
+page reload restored both the applied look and the slider positions
+without a `--board-max`-style CSS variable needed, since nothing else
+reads these values; Reset restores all five and persists the reset; and
+simulated fullscreen (same `Object.defineProperty`/`fullscreenchange`
+technique used for r63-r65, since real `requestFullscreen()` can't be
+triggered under this automation) carried a non-default look straight
+through unchanged, confirming the "not overridden" design actually holds.
+
+Build `BUILD='v2-r67 (appearance sliders, layered on top of the theme)'`.
+Published to `/v2/`. Still open: new board/piece theme variations —
+deferred a second time, by explicit choice, not by default.
