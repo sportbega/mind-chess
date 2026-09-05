@@ -5015,3 +5015,80 @@ Build `BUILD='v2-r62 (fullscreen the room, not just the board)'`. Published
 to `/v2/`. Still open: more board/piece theme variations, and the
 contrast/saturation/brightness/hue/transparency sliders — a separate batch,
 by design.
+
+## 2026-09-05 (r63): fullscreen fixed: a frame, not an overflow
+
+r62's fullscreen shipped broken. Adni tested it for real and reported,
+verbatim: "full screen should be a frame with the board and should fit
+inside screen. it is totally off. also figgures are not scalled properly
+then." r62 had only been verified by CSS-class toggling and a manual
+`--board-max` slider check, never by actually measuring the fullscreen
+layout end to end against a real viewport — that gap is exactly what broke.
+
+Six separate causes, found by measuring `getBoundingClientRect()` /
+`getComputedStyle()` against the live layout rather than guessing from the
+CSS source:
+
+1. **`.app` itself was never widened.** r62's fullscreen CSS only raised
+   `.board-grid`'s own max-width ceiling; `.app{max-width:720px}` still
+   capped the whole container, so the board rendered at its ordinary small
+   size inside a mostly-empty screen. Fixed with
+   `.app.fullscreen-active{max-width:100vw;width:100vw;height:100vh}`.
+2. **Centering an overflowing column clips the top.** An intermediate fix
+   attempt used `justify-content:center`, which — once content is taller
+   than the viewport — clips both top and bottom instead of anchoring to
+   the top. Switched to `justify-content:flex-start`.
+3. **Hand-tuned `calc(100vh - Npx)` guesses don't generalize.** Tried
+   reserving 260px, then 420px, then 650px for the non-board chrome, each
+   measured empirically and each still wrong by 80–227px once padding and
+   the file-label row were accounted for. Replaced the whole approach with
+   real flexbox: `.app` is a fixed-height column, every row except
+   `.boardpanel` is `flex-shrink:0`, and the board chain
+   (`.boardpanel`→`.board-outer`→`.board-col`→`.board-grid`) is
+   `flex:1 1 auto;min-height:0` end to end so it absorbs exactly the
+   leftover space instead of a guessed number.
+4. **`body`'s own padding wasn't zeroed.** `body{padding:clamp(16px,4vw,
+   40px)}` (~40px top+bottom = 80px total) was invisible to `.app`'s
+   `height:100vh`, which is exactly the residual overflow that was left
+   after fix 3. Fixed with `body:has(.app.fullscreen-active){padding:0}`.
+5. **`.board-col` defaulted to row direction once it became a flex
+   container**, which put the file-letter row beside the board grid instead
+   of below it. Added `flex-direction:column`.
+6. **`.files` stretched to the wrong width.** `.files{margin:4px auto 0}` —
+   an auto left/right margin on a flex item opts it OUT of
+   `align-items:stretch` — so instead of matching `.board-grid`'s width it
+   shrank to its own tiny content size (~53px) regardless of how wide the
+   grid actually rendered, which is what "figures... scalled" symptom
+   actually traced back to for the letters row. A `max-width` cap on that
+   unstretched element did nothing (content already narrower than the
+   cap); the actual fix is a JS-computed explicit `width` —
+   `syncFilesWidth()` sets `filesEl.style.width` to
+   `boardGrid.getBoundingClientRect().width+'px'` — called from both
+   `syncFullscreenUI()` and `applyBoardSize()` (the two places the grid's
+   own size can change), plus a `ResizeObserver` kept as a passive general
+   fallback.
+
+Verification hit two more environment-specific dead ends worth recording
+so they aren't rediscovered: real `requestFullscreen()` cannot be triggered
+by any automation method available here (even a synthetic trusted-seeming
+click is rejected — "not granted"), and — more surprising — neither
+`ResizeObserver` nor `requestAnimationFrame` ever fire inside this
+CDP-driven browser at all, confirmed with an isolated bare-bones
+`ResizeObserver` test that never fired within 300ms on a normally-sized
+real element. Worked around both: exercised the real, closure-private
+`syncFullscreenUI()` end to end by overriding the read-only
+`document.fullscreenElement` getter with `Object.defineProperty` and
+dispatching a real `fullscreenchange` event, and replaced every
+`requestAnimationFrame(syncFilesWidth)` call with `setTimeout(fn,0)`, which
+does not depend on the compositor/paint pipeline and was confirmed to fire.
+
+Verified fixed: `document.documentElement.scrollHeight` exactly equals
+`window.innerHeight` (no overflow at all), `.board-grid` and `.files` report
+identical `x`/`width` (letters aligned under their columns), and screenshots
+of both the veiled and revealed board confirm properly-scaled pieces filling
+the frame. Real device/gesture-triggered fullscreen still needs Adni's own
+confirmation, since no automation path here can trigger the genuine
+Fullscreen API.
+
+Build `BUILD='v2-r63 (fullscreen fixed: a frame, not an overflow)'`.
+Published to `/v2/`.
