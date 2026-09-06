@@ -183,21 +183,12 @@
      up with the mic/speaker circles (OUR-95 keeps those two bigger than
      the rest of the row on purpose — see below), not with Send/Hide
      board, which fall back to plain .btn sizing as of OUR-95. */
-  /* OUR-106: min-width dropped from 90px back toward the 64px floor r87
-     widened it away from — the narration dropdown adds a 7th control to
-     fit, and this is still the one with a genuine floor to give (Send,
-     the icons, and the .btn controls don't shrink below their own
-     content). Basis stays 150px when there's room; only a tight row
-     pushes it down toward 70px, where "Type a move" does clip — an
-     accepted trade at the width this only kicks in at, not a default. */
-  .mic-compact input[type=text]{flex:0 1 150px;min-width:70px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
+  /* OUR-107: min-width back to 90px (r87's widened floor) — r95/OUR-106
+     had dropped this to 70px to fit a 7th control (the narration select)
+     on the row; that control moved to board-head in OUR-107, so the row
+     is back to the 6 controls this floor was originally sized for. */
+  .mic-compact input[type=text]{flex:0 1 150px;min-width:90px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
   .mic-compact input[type=text]::placeholder{color:var(--text-dim)}
-  /* OUR-106: matches the row's smaller .btn controls (33.5px, r87) rather
-     than the page-wide select{} rule's own padding-driven height, and
-     rather than the mic/speaker's 48px — this sits with New game/Hide
-     board, not the mic. flex-shrink:0 so a tight row shrinks the text
-     input first (it already has a floor via min-width), not this. */
-  .mic-compact select{height:33.5px;padding:0 8px;flex-shrink:0}
   /* OUR-95: Send and Hide board used to be forced to 48px to match the
      mic/speaker circles, but that made every button in the header row
      taller than Flip board/Fullscreen/Reset in .board-head (33.5px,
@@ -274,6 +265,10 @@
      simple rather than left implying a two-item layout that no longer
      exists. */
   .board-head{display:flex;align-items:center;margin-bottom:10px}
+  /* OUR-107: matches the row's .btn controls (33.5px, r87) rather than the
+     page-wide select{} rule's own padding-driven height — same reasoning
+     r95/OUR-106 had for this select when it briefly lived in the header. */
+  .board-head select{height:33.5px;padding:0 8px}
   .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
   /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
      enough that a drag felt "chunky" independent of anything r72/r77 fixed,
@@ -343,6 +338,11 @@
   .app.fullscreen-active>*{display:none}
   .app.fullscreen-active .board-head #flipBoardBtn,
   .app.fullscreen-active .board-head #fullscreenBtn,
+  /* OUR-107: narration joined this row, next to Fullscreen — hidden here
+     too so fullscreen stays the same decluttered clock/turn(/New puzzle)
+     view it was before, rather than gaining a stray control the other
+     two rung-mates lost. */
+  .app.fullscreen-active .board-head #verbositySelect,
   /* .board-size-field as a class (not an inline style on the wrapper div)
      so this rule can actually win the cascade — an inline style always
      beats a stylesheet rule regardless of specificity, which is exactly
@@ -489,17 +489,6 @@
           <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
         </svg>
       </button>
-      <!-- OUR-106: moved here from Voice settings, between speaker mute and
-           New game as asked. Same id, same change handler, same
-           persistence — only the position moved, so no duplicate control
-           is left behind in Voice settings. Height matched to the row's
-           .btn-height controls (33.5px, r87) via .mic-compact select
-           rather than the page-wide select{} rule's own sizing. -->
-      <select id="verbositySelect">
-        <option value="terse" selected>Terse</option>
-        <option value="standard">Standard</option>
-        <option value="verbose">Verbose</option>
-      </select>
       <!-- OUR-100: moved here from Game settings, between speaker mute and
            Hide board as asked. Plain .btn with no override, same as Hide
            board — both fall back to .btn's own 33.5px height (r87), so
@@ -587,6 +576,18 @@
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
         </div>
         <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
+        <!-- OUR-107: moved here from the header row (r95/OUR-106) so the
+             header can drop back to 6 controls and share one line with the
+             title again. Same id, same change handler, same persistence —
+             only the position moved a second time; no duplicate left in
+             the header or Voice settings (see the CSS below for the
+             33.5px height match, same reasoning as .mic-compact select
+             had in r95). -->
+        <select id="verbositySelect">
+          <option value="terse" selected>Terse</option>
+          <option value="standard">Standard</option>
+          <option value="verbose">Verbose</option>
+        </select>
         <!-- OUR-104: only ever shown while mode==='puzzle' AND a puzzle is
              actually loaded (see updateNewPuzzleBtn()) — reuses the exact
              same startPuzzle(nextPuzzle()) call the "next puzzle" voice/
@@ -3237,7 +3238,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r95 (narration dropdown into header; Fullscreen/Reset swapped)';
+  const BUILD='v2-r96 (narration dropdown to board-head; title shares one line with header)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

@@ -6877,3 +6877,51 @@ changed).
 
 Build `BUILD='v2-r95 (narration dropdown into header; Fullscreen/Reset swapped)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r96): narration dropdown to board-head; title shares one line with header
+
+Moved the narration verbosity dropdown a second time — out of the
+header row (r95/OUR-106) and into board-head, next to Fullscreen (Flip
+board → [Reset, slider] → Fullscreen → narration → New puzzle). Same
+id, same `change` handler, same persistence; no duplicate left behind
+in the header or Voice settings (checked: exactly one `#verbositySelect`
+in the document). Height matched to board-head's own `.btn` controls
+(33.5px) via a `.board-head select` rule, same reasoning r95 used for
+the header. Also added it to the existing fullscreen-declutter hide
+list (`.app.fullscreen-active .board-head #verbositySelect`), joining
+Flip board/Fullscreen/the size field — it's part of that same control
+cluster now, and fullscreen's whole point is stripping down to
+clock/turn.
+
+Goal: the header row is back to 6 controls (type-a-move → Send → mic →
+speaker → New game → Hide board), so the text input's `min-width`
+reverted from r95's 70px squeeze back to 90px — that squeeze existed
+specifically to fit the narration select as a 7th control, which no
+longer lives here.
+
+Re-measured rather than assumed, per the ask: at desktop widths the
+title and header row already shared one line before this — that part
+just needed the 7th control gone. Binary-searched the actual threshold
+with a same-origin iframe: title + 6-control row shares one true line
+down to **~888px** viewport width; at 885px it drops to two lines
+(title, then the control row below it — a normal single gap, not a
+doubled one). ~888px sits below most tablet-landscape widths (1024px+)
+and above narrow-tablet-portrait (~768-820px), so the common desktop/
+tablet-landscape range gets the one-line result; narrower views get a
+clean two-line stack instead of the old three/four-line pile r95 had.
+
+Board-head's own wrap risk (its history: OUR-86, OUR-90) checked with
+narration now added: at both 390px and 320px it degrades to three
+lines (clock+turn+Flip board / Reset+slider / Fullscreen+narration),
+nothing overlapping or off-screen at either width — confirmed via the
+same iframe technique, not assumed from the header's own math.
+
+Verified live: `#verbositySelect` confirmed inside `.board-head`, not
+`header`; height measures exactly 33.5px; changing it still writes
+`verbosity` to the save; title+header share one line at typical desktop
+width with no extra vertical gap above the board (screenshot-confirmed,
+`Standard` dropdown visibly sitting next to Fullscreen); board-head
+wraps cleanly at 390px/320px with the new control included.
+
+Build `BUILD='v2-r96 (narration dropdown to board-head; title shares one line with header)'`.
+Published to `/v2/`.
