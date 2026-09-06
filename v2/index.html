@@ -555,6 +555,13 @@
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
         </div>
+        <!-- OUR-104: only ever shown while mode==='puzzle' AND a puzzle is
+             actually loaded (see updateNewPuzzleBtn()) — reuses the exact
+             same startPuzzle(nextPuzzle()) call the "next puzzle" voice/
+             typed command already runs, so there's one puzzle-loading path,
+             not two. Does not touch board visibility at all (OUR-103) —
+             it inherits whatever startPuzzle() itself now leaves alone. -->
+        <button class="btn" id="newPuzzleBtn" type="button" style="display:none">New puzzle</button>
       </div>
     </div>
     <div class="board-outer">
@@ -1026,7 +1033,7 @@
         promotionPicker=$('promotionPicker'), promoChoices=[...document.querySelectorAll('.promo-choice')],
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
-        boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'),
+        boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'), newPuzzleBtn=$('newPuzzleBtn'),
         apContrastRange=$('apContrastRange'), apSaturateRange=$('apSaturateRange'),
         apBrightnessRange=$('apBrightnessRange'), apHueRange=$('apHueRange'),
         apOpacityRange=$('apOpacityRange'), appearanceResetBtn=$('appearanceResetBtn'),
@@ -3280,7 +3287,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r92 (board visible by default for new players; always-visible puzzle instructions)';
+  const BUILD='v2-r93 (New game/puzzle stop forcing the board hidden; New puzzle button)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3690,6 +3697,16 @@
     if(!puzzles||!puzzles.length) return null;
     return puzzles.find(p=>!puzzleDone[p.id])||puzzles[0];
   }
+  // OUR-104: the exact logic the "next puzzle" voice/typed command already
+  // runs (see route()'s mode==='puzzle' branch below), pulled out so the
+  // New puzzle button calls the same one path rather than a second copy of
+  // it — an in-progress puzzle abandoned mid-solve via the button still
+  // counts as seen, same as abandoning it by voice already did.
+  function puzzleNext(){
+    if(puzzle&&gameOver) puzzleDone[puzzle.id]=true;
+    savePuzzleProgress();
+    startPuzzle(nextPuzzle());
+  }
 
   function puzzleMoveUci(spec){
     return spec.from+spec.to+(spec.promotion||'');
@@ -3713,9 +3730,14 @@
   // voiceOn. A no-op outside puzzle mode, so leftover puzzle text can't
   // outlive the mode it belongs to.
   function updatePuzzleInfo(text){
-    if(mode!=='puzzle'){ puzzleInfo.hidden=true; return; }
+    if(mode!=='puzzle'){ puzzleInfo.hidden=true; newPuzzleBtn.style.display='none'; return; }
     puzzleInfo.hidden=false;
     puzzleInfo.textContent=text;
+    // OUR-104: `puzzle` (the loaded puzzle object) is only set once
+    // startPuzzle() has actually run — every call to updatePuzzleInfo()
+    // already happens at moments puzzle content is current, so this rides
+    // the same choke point rather than needing its own separate calls.
+    newPuzzleBtn.style.display=puzzle?'':'none';
   }
 
   function startPuzzle(p){
@@ -3727,7 +3749,18 @@
     humanColor=game.turn();
     lastMove=null; pendingAction=null; gameOver=false; lastComputerMove=null;
     stopClock();
-    setBoardHidden(true);
+    // OUR-103: used to force setBoardHidden(true) here on every single
+    // puzzle start, not just the player's first ever one — meaning even a
+    // player who had explicitly revealed the board got it yanked back to
+    // hidden on every "New puzzle". Puzzle mode's own design genuinely
+    // wants blindfold-first (see the roster-is-the-puzzle note below), but
+    // forcing it on every subsequent puzzle regardless of the player's own
+    // choice mid-session goes further than that design ever needed to —
+    // and directly contradicts OUR-100's boot-time preference. Leaving
+    // boardHidden alone here means a fresh puzzle carries forward whatever
+    // the player currently has (their saved preference, or their last
+    // toggle this session), the same as starting a new non-puzzle game
+    // now does (see startNewGame()).
     transcript.innerHTML='';
     renderAll();
     saveState();
@@ -4480,7 +4513,7 @@
       // someone has just solved one, almost anything they say means the same
       // thing, and being pedantic about which word reads as being stuck.
       if(/^(next|another|skip|new|nother)\b|next puzzle|another puzzle|next one|new puzzle|another go|one more/.test(t))
-        return ()=>{ if(puzzle&&gameOver) puzzleDone[puzzle.id]=true; savePuzzleProgress(); startPuzzle(nextPuzzle()); };
+        return puzzleNext;
       if(/solution|give up|show me|what.{0,3}s the move|tell me/.test(t)) return puzzleSolution;
       if(/repeat the position|say the position|the position again|read it again|again please/.test(t))
         return ()=>{ const intro=describePuzzle()+' '+puzzleRoster(); speak(intro); updatePuzzleInfo(intro); };
@@ -6226,7 +6259,11 @@
       clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
       transcript.innerHTML='';
       log('Board','Online game created. You’re White.'+(preset?(' Clock: '+preset+' min per side.'):'')+' Copy the invite link and send it to your opponent.');
-      setBoardHidden(true);
+      // OUR-103: same bug as startNewGame()/startPuzzle() — used to force
+      // the board hidden on every new online game regardless of the
+      // player's own preference. joinOnline() right below never did this
+      // (it just inherits whatever boardHidden already is), so this now
+      // matches that rather than the other way around.
       renderAll();
       onlineNote(describeOnlineStatus());
     }catch(err){
@@ -6950,6 +6987,11 @@
       mode='computer'; modeSelect.value='computer'; startNewGame();
     });
   }
+  // OUR-104: board-head, right of Reset — only ever visible while a puzzle
+  // is actually loaded (see updatePuzzleInfo()'s newPuzzleBtn.style.display
+  // line), so this can't be clicked from any state where puzzleNext()
+  // wouldn't make sense.
+  newPuzzleBtn.addEventListener('click',puzzleNext);
   levelSelect.addEventListener('change',()=>{
     levelKey = levelSelect.value;
     searchDepth = levelKey==='master'?3:(+levelKey||2);   // the fallback engine's depth
@@ -7148,14 +7190,19 @@
     // Nothing then moved at all (see ensureComputerToMove below).
     if(mode!=='online') humanColor='w';
     resetClock();
-    setBoardHidden(true);
+    // OUR-103: used to force setBoardHidden(true) unconditionally here,
+    // meaning every single "New game" — not just a fresh player's very
+    // first one — yanked the board back to hidden regardless of what the
+    // player had it set to, contradicting OUR-100's boot-time preference
+    // the moment a second game started. Leaving boardHidden untouched
+    // means a new game just carries forward whatever's already showing.
     // OUR-102: startNewGame() is never called while staying in puzzle mode
     // (every call site has already switched `mode` away from 'puzzle' by
     // the time this runs) — so leaving puzzles is exactly when the puzzle
     // panel's text stops being current and should disappear.
     updatePuzzleInfo('');
     transcript.innerHTML='';
-    log('Board','New game. White to move.'+(mode==='computer'?' You\u2019re White against the computer.':' Board hidden — say "show board" any time.'));
+    log('Board','New game. White to move.'+(mode==='computer'?' You\u2019re White against the computer.':(boardHidden?' Board hidden — say "show board" any time.':'')));
     renderAll();
     ensureComputerToMove();
   }
