@@ -482,33 +482,22 @@
     <div class="lobby-list" id="lobbyList"><p class="lobby-empty">Loading…</p></div>
   </div>
 
-  <div class="online-panel" id="lichessPanel">
-    <p class="online-status" id="lichessStatus">Paste a Lichess personal access token with the <code>board:play</code> scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.</p>
-    <div class="online-actions">
-      <input type="password" id="lichessTokenInput" placeholder="Lichess API token" autocomplete="off" style="flex:1;min-width:160px" />
-      <button class="btn" id="lichessSaveTokenBtn" type="button">Save token</button>
-    </div>
-    <div class="online-actions">
-      <select id="lichessTimeSelect" title="Blitz and bullet are excluded — a voice move takes longer than a click.">
-        <option value="corr">Correspondence (3 days/move)</option>
-        <option value="rapid" selected>Rapid (10+5)</option>
-        <option value="classical">Classical (30+20)</option>
-      </select>
-      <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
-      <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
-      <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
-        <option value="1">AI level 1</option><option value="2">AI level 2</option>
-        <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
-        <option value="5">AI level 5</option><option value="6">AI level 6</option>
-        <option value="7">AI level 7</option><option value="8">AI level 8</option>
-      </select>
-      <button class="btn" id="lichessAiBtn" type="button">Play the Lichess computer</button>
-      <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
-      <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
-      <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
-      <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
-    </div>
-  </div>
+  <!-- OUR-98: moved here from down near the transcript so it sits above
+       the board and its control row (Flip board/Fullscreen/Reset), per
+       Adni's ask — same element, id, and behavior (send/receive,
+       visibility gated to online/lichess modes via updateChatVisibility()),
+       only its position moved. A separate channel from the transcript
+       below (see OUR-97): that's game narration, this is the other human
+       talking — still visually distinct (sans-serif vs. the transcript's
+       serif) even though it no longer sits next to it. -->
+  <details class="help chat-panel" id="chatDetails" hidden open>
+    <summary>Opponent chat</summary>
+    <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
+    <form class="chat-form" id="chatForm">
+      <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
+      <button class="btn primary" type="submit">Send</button>
+    </form>
+  </details>
 
   <div class="boardpanel">
     <div class="board-head">
@@ -648,6 +637,39 @@
     </div>
   </details>
 
+  <!-- OUR-98: moved here from just under the header (was grouped with
+       onlinePanel/lobbyPanel there) so it sits directly under Game
+       settings — reachable without scrolling, next to the other
+       game-setup controls, per Adni's ask. Same element, same id, same
+       everything else; only its position in the page moved. -->
+  <div class="online-panel" id="lichessPanel">
+    <p class="online-status" id="lichessStatus">Paste a Lichess personal access token with the <code>board:play</code> scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.</p>
+    <div class="online-actions">
+      <input type="password" id="lichessTokenInput" placeholder="Lichess API token" autocomplete="off" style="flex:1;min-width:160px" />
+      <button class="btn" id="lichessSaveTokenBtn" type="button">Save token</button>
+    </div>
+    <div class="online-actions">
+      <select id="lichessTimeSelect" title="Blitz and bullet are excluded — a voice move takes longer than a click.">
+        <option value="corr">Correspondence (3 days/move)</option>
+        <option value="rapid" selected>Rapid (10+5)</option>
+        <option value="classical">Classical (30+20)</option>
+      </select>
+      <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
+      <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
+      <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
+        <option value="1">AI level 1</option><option value="2">AI level 2</option>
+        <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
+        <option value="5">AI level 5</option><option value="6">AI level 6</option>
+        <option value="7">AI level 7</option><option value="8">AI level 8</option>
+      </select>
+      <button class="btn" id="lichessAiBtn" type="button">Play the Lichess computer</button>
+      <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
+      <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
+      <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
+      <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
+    </div>
+  </div>
+
   <details class="help" id="voiceSettingsDetails" open>
     <summary>Voice settings</summary>
     <div class="field-grid">
@@ -708,24 +730,6 @@
   <details class="help" id="transcriptDetails" open>
     <summary>Transcript</summary>
     <div class="transcript" id="transcript" aria-live="polite"></div>
-  </details>
-
-  <!-- OUR-97: opponent chat, Lichess and online modes only. A separate
-       channel from the transcript above — that's game narration (what the
-       board did), this is the other human talking — so it gets its own
-       collapsible box rather than sharing the transcript's log, and a
-       different font (sans vs the transcript's serif) so the two read as
-       visually distinct even glanced at quickly. Hidden outright (not just
-       collapsed) in computer/two-player/puzzle modes via chatDetails.hidden,
-       set from updateChatVisibility(). Text-only for now — voice-dictated
-       chat is a later session's work, not this one. -->
-  <details class="help chat-panel" id="chatDetails" hidden open>
-    <summary>Opponent chat</summary>
-    <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
-    <form class="chat-form" id="chatForm">
-      <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
-      <button class="btn primary" type="submit">Send</button>
-    </form>
   </details>
 
   <!-- Doesn't cleanly belong to either Game or Voice settings — a
@@ -3211,7 +3215,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r89 (in-game text chat for online and Lichess modes)';
+  const BUILD='v2-r90 (chat above the board, Lichess panel under Game settings)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
