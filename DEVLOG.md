@@ -5898,3 +5898,87 @@ no cut-off text or overlapping controls in either case.
 
 Build `BUILD='v2-r78 (a longer track for the size slider)'`. Published to
 `/v2/`.
+
+## 2026-09-06 (r79): drag now moves in keyboard-style discrete steps
+
+r78's longer track didn't fix the drag feel, per Adni. Fourth pass at this
+slider, and a deliberate change of strategy rather than another tuning
+pass on the same continuous-tracking design: stop chasing the cursor's
+raw position entirely, and make mouse behave exactly like keyboard —
+discrete, one-step-at-a-time jumps, nothing continuous to feel jittery in
+the first place.
+
+r72/r77 already batch the *work* a drag triggers into one animation frame,
+but a drag still fires 'input' continuously and each of those events was
+still a distinct, live-tracked value — the shape of the problem, not just
+its cost, was never actually addressed. Snap the raw value to the step
+grid in our own code (`snapToStep()`), and only call `applyBoardSize()`
+when that snapped value differs from the last one actually applied —
+every 'input' event landing inside the same step as the last is now a
+pure no-op, regardless of how many of them a drag fires. This doesn't
+trust that the browser already does this internally (it may or may not,
+across browsers) — it enforces it directly, so the guarantee holds
+everywhere.
+
+Raised `step` from 20 to 30 alongside this — partly to make each discrete
+jump more perceptible (matching Adni's "e.g. every 20-40px" suggestion),
+but mainly because a coarser step is what actually needs the JS-level
+snapping to matter; at the old fine step nearly every pixel of drag would
+have landed on a new value anyway. 30 wasn't the first number tried —
+worth recording why. 420-960 (540 wide) with default 680: no step other
+than 20 evenly divides both 540 (max−min) *and* 260 (default−min)
+simultaneously (their GCD is 20), so any coarser choice trades away exact
+alignment somewhere. 40 was tried first and rejected after actually
+testing it, not assumed safe: assigning `.value = 960` snapped down to
+940, confirmed via the real DOM setter — 540 isn't a whole multiple of 40
+(13.5), so `max` itself became unreachable through ordinary value
+assignment, and there was no way to confirm live pointer-drag-to-the-edge
+would behave differently without real mouse input this environment can't
+provide (see r77). 30 removes that ambiguity outright: 540/30=18 exactly,
+so max is natively, unambiguously reachable — no special-casing, no
+betting on unverified browser edge-case behavior. The remaining
+imperfection lands on the *default* instead, deliberately, since it's the
+far less costly place for it: 680 isn't itself a valid step from 420
+(260/30=8.67), so any script-driven `.value` assignment (Reset, and
+boot-restoring an old saved size) silently snaps to the nearest real step
+— 690, 10px off, rather than 960 being unreachable at all. Fixed the
+consequence directly rather than avoiding it entirely: both the reset
+handler and the boot-restore path now read `.value` back *after*
+assigning it and apply/save that, instead of trusting the literal
+constant or the raw saved string — so the visible thumb and the actually-
+applied board size can never disagree, even though the landed value is
+occasionally not bit-for-bit what was asked for.
+
+Verified what's actually verifiable here, using the corrected
+after-the-fact reading of `.value` throughout: a 41-raw-event fine-grained
+sweep (2px increments, real inter-event delays) produced exactly 3
+`--board-max` writes, landing precisely on the 3 step boundaries crossed
+— not 41, not 1, exactly the boundary count, confirmed again with a
+second, independent sweep after the step-30 change (31 events → 3 writes
+at 420/450/480). Assigning 960 now reads back as 960 and renders a
+958-960px grid (border-box rounding); Reset now lands at a fully
+self-consistent 690 across the slider, the rendered grid, and
+`localStorage`, where 40's version of this same test showed the same
+consistency but at 700. Also nearly re-triggered the exact test-harness
+trap already documented in r77's own devlog — a leftover saved size from
+an earlier test call let boot schedule a real, never-firing native
+`requestAnimationFrame` before `requestAnimationFrame` got patched for
+this test run, silently stalling every later call — caught it by
+recognizing the symptom (a click on `boardSizeResetBtn`, which bypasses
+`snapToStep` entirely, produced no effect at all) rather than by
+avoiding it in advance a second time; cleared the saved-size key *before*
+each fresh navigation from then on, as r77 already prescribed. What is
+still not verifiable in this environment, stated as plainly as last
+time: an actual mouse drag's *feel*. No real pointer event of any kind
+reaches this tab (confirmed again this round — a dispatched synthetic
+'input' event still updates the DOM, since that bypasses the browser's
+own input pipeline entirely, but real `left_click`/`left_click_drag`
+calls produce zero `pointerdown`/`mousedown`/`click` events on a
+document-level listener, the same finding as r77), and
+`requestAnimationFrame` still never fires natively either. The dedup
+logic is verified correct at the DOM-event level with total certainty;
+whether dragging the mouse now genuinely feels like pressing an arrow key
+needs a real hand on a real trackpad.
+
+Build `BUILD='v2-r79 (drag now moves in keyboard-style discrete steps)'`.
+Published to `/v2/`.
