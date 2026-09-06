@@ -5982,3 +5982,15 @@ needs a real hand on a real trackpad.
 
 Build `BUILD='v2-r79 (drag now moves in keyboard-style discrete steps)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r80): Appearance moved above Game settings
+
+Adni's call. Reordered the four collapsible panels below the board from
+Game settings → Voice settings → Appearance → Transcript to Appearance →
+Game settings → Voice settings → Transcript — pure markup relocation, no
+id, content, or default open/closed state touched. Confirmed the new
+`.app` child order directly and that no control's id appears more than
+once after the move.
+
+Build `BUILD='v2-r80 (Appearance moved above Game settings)'`. Published
+to `/v2/`.
