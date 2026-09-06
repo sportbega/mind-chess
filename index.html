@@ -336,6 +336,14 @@
      those keep running exactly as they do outside fullscreen, whether or
      not their button is on screen. */
   .app.fullscreen-active>*{display:none}
+  /* OUR-111: found by testing, not assumed — #checkAlert is a direct
+     child of .app (same level as .boardpanel), so the blanket rule above
+     was hiding it with no exception, the same way .boardpanel needed one
+     right below. A check/checkmate mid-fullscreen-game is exactly the
+     "too important to disappear" case OUR-96 built this banner for in
+     the first place; fullscreen swallowing it defeated that same intent
+     a different way than blindfold mode almost did. */
+  .app.fullscreen-active #checkAlert{display:block}
   .app.fullscreen-active .board-head #flipBoardBtn,
   .app.fullscreen-active .board-head #fullscreenBtn,
   /* OUR-107: narration joined this row, next to Fullscreen — hidden here
@@ -2893,6 +2901,53 @@
     }catch(e){ woodFallback(capture); }
   }
 
+  // OUR-111: Check/Checkmate/Castling sample cues, muted-only — mirrors
+  // OUR-96's own scoping exactly (voiceOn true already gets these spoken,
+  // via endSuffix()/describeMove(); playing a sample on top would double
+  // up). Checked first, per the ask: neither Giga Chess's own sound()
+  // (ported almost verbatim into playMoveSound() above — its only two
+  // sounds ever were move/capture) nor this app's own assets have
+  // anything for check/checkmate/castle to reuse. Real, pre-recorded
+  // samples do exist, though, from the exact same host/pack
+  // MOVE_SOUND_URL/CAPTURE_SOUND_URL above already draw from — found by
+  // checking, not assumed: `move-check.mp3` and `castle.mp3` are both
+  // named exactly what they are; there's no dedicated `checkmate.mp3` in
+  // that pack (confirmed 403), but `game-end.mp3` is a real sample for
+  // "the game just ended", which checkmate always is, so it stands in
+  // rather than reaching for a synthesized/TTS clip when a genuine
+  // sample — just not one with this exact name — already exists.
+  const CHECK_SOUND_URL='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3';
+  const CHECKMATE_SOUND_URL='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/game-end.mp3';
+  const CASTLE_SOUND_URL='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/castle.mp3';
+  // No synthesized fallback like woodFallback() above — these are
+  // supplementary polish on top of the visual banner (OUR-96) and the
+  // move/capture tap that already played moments earlier, not the only
+  // signal something happened, so a rare network failure here just stays
+  // quiet rather than needing a bespoke tone.
+  function playEventSound(kind){
+    if(voiceOn) return;
+    const url=kind==='checkmate'?CHECKMATE_SOUND_URL:kind==='castle'?CASTLE_SOUND_URL:CHECK_SOUND_URL;
+    try{
+      const audio=new Audio(url);
+      audio.preload='auto'; audio.volume=.92;
+      audio.play().catch(()=>{});
+    }catch(e){}
+  }
+  // Called from the same three places playMoveSound() already is — the
+  // real-move-applied sites (applyMove()/loadOnlinePgn()/
+  // applyLichessMoves()), never from predictNarration()'s speculative
+  // move+undo probe the way endSuffix()/describeMove() are. Reuses the
+  // exact same chess.js calls endSuffix() already trusts
+  // (in_checkmate()/in_check()) and the exact same castling flag check
+  // describeMove() already uses (m.flags 'k'/'q') — the detection itself
+  // isn't reimplemented, only invoked from a call site that can't
+  // double-fire on a move that hasn't actually happened yet.
+  function playMoveEventSounds(applied){
+    if(game.in_checkmate()) playEventSound('checkmate');
+    else if(game.in_check()) playEventSound('check');
+    if(applied.flags.indexOf('k')!==-1||applied.flags.indexOf('q')!==-1) playEventSound('castle');
+  }
+
   // ===============================================================
   // Applying moves
   // ===============================================================
@@ -2905,6 +2960,7 @@
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
     playMoveSound(!!applied.captured);
+    playMoveEventSounds(applied);
     // OUR-108: increment is added to the mover's own clock right after
     // their move — standard clock behavior, and the same moment
     // saveOnline() adds it for online games (see there). Online/lichess
@@ -3387,7 +3443,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r100 (Abort hides once past the Lichess abort-eligible window)';
+  const BUILD='v2-r101 (fixed check/mate banner in fullscreen; muted-only Check/Checkmate/Castle sounds)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6250,6 +6306,7 @@
     pendingAction=null;
     if(game.history().length>prevLen && lastMove){
       playMoveSound(!!lastMove.captured);
+      playMoveEventSounds(lastMove);
       speak(describeMove(lastMove,verbosity)+endSuffix());
     }
     renderAll();
@@ -6547,6 +6604,7 @@
       if(!applied){ warnSilent('Lichess sent a move this board could not apply: '+mv); break; }
       lastMove=applied;
       playMoveSound(!!applied.captured);
+      playMoveEventSounds(applied);
       speak(describeMove(applied,verbosity)+endSuffix());
     }
     lichessState.moveCount=uci.length;

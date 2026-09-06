@@ -7292,3 +7292,76 @@ all) once/if a later event happened to re-touch it.
 
 Build `BUILD='v2-r100 (Abort hides once past the Lichess abort-eligible window)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r101): fixed check/mate banner in fullscreen; muted-only Check/Checkmate/Castle sounds
+
+Two things.
+
+**Bug found and fixed: the OUR-96 check/checkmate banner was invisible
+in fullscreen.** Traced both directions the ask asked for — opponent's
+move arriving via `applyLichessMoves()` (the stream) and the player's
+own move via `applyMove()` (mouse) — with a live simulated Lichess
+game (a controllable fake NDJSON stream, no real token available this
+session) and real chess.js positions engineered to end in mate. Both
+directions fired `flashCheckAlert()` and showed the banner correctly
+*outside* fullscreen — `endSuffix()` genuinely is called from every
+real-move site OUR-96 claimed, no gap there. The actual gap: `#checkAlert`
+is a direct child of `.app`, and `.app.fullscreen-active>*{display:none}`
+was hiding it with no exception carved out — the same blanket rule
+`.boardpanel` already needed (and got) one for. Confirmed by toggling
+`fullscreen-active` directly and reading `getComputedStyle().display`
+before and after the fix. A check/checkmate mid-fullscreen-game is
+exactly the "too important to disappear" case OUR-96 built this banner
+for in the first place; fullscreen was quietly defeating that same
+intent a different way than board-hidden mode almost did. One CSS rule
+(`.app.fullscreen-active #checkAlert{display:block}`, same pattern as
+the `.boardpanel` exception) fixes it.
+
+**New: sample-based, muted-only audio for Check/Checkmate/Castling.**
+Checked existing assets first, per the ask: Giga Chess's own
+`sound()` — the function `playMoveSound()` (OUR-42) already ported
+almost verbatim — only ever had two sounds, move and capture; nothing
+to reuse there for these three. Real pre-recorded samples do exist
+though, from the exact same host/pack `MOVE_SOUND_URL`/`CAPTURE_SOUND_URL`
+already draw from — checked by requesting them, not assumed:
+`move-check.mp3` and `castle.mp3` are both real (200, `audio/mp3`,
+same CDN). No dedicated `checkmate.mp3` exists in that pack (confirmed
+403, along with a dozen other guessed names), but `game-end.mp3` does
+— a genuine sample for "the game just ended," which checkmate always
+is — so that stands in rather than reaching for a synthesized/Kokoro
+clip when an actual sample, just not name-matched, was available.
+
+Triggering reuses the exact same detection this project already
+trusts — `game.in_checkmate()`/`game.in_check()` (the same calls
+`endSuffix()` makes) and the same castling flag check
+(`m.flags` 'k'/'q', the same one `describeMove()` makes) — nothing
+reimplemented. Deliberately **not** hooked into `endSuffix()`/
+`describeMove()` themselves, though: those are also called from
+`predictNarration()`'s speculative move+undo probe (used to pre-render
+audio ahead of a computer/Lichess reply), which would have fired these
+new sounds early, before the move actually lands, then a second time
+for real — a real double-fire risk `flashCheckAlert()` already quietly
+accepts today but that a brand-new feature shouldn't inherit by
+default. Instead, a new `playMoveEventSounds(applied)` is called from
+the exact three sites `playMoveSound()` already is —
+`applyMove()`/`loadOnlinePgn()`/`applyLichessMoves()`, the real-move-
+applied sites, never the speculative one — which covers every mode
+that shares `applyMove()` (computer, two-player, online, puzzle) plus
+Lichess's own two paths, per the ask's "all modes" scope, without a
+single per-mode branch.
+
+Verified live, muted: castling in two-player mode played `castle.mp3`
+with zero `speechSynthesis.speak()` calls; Fool's Mate played
+`game-end.mp3` for the checkmate (not the check sample) alongside the
+correct visual banner; a non-mating check played `move-check.mp3`
+specifically, confirmed distinct from the checkmate sample. Verified
+unmuted: the same castling and checkmate sequences produced zero
+sample-audio calls while `speechSynthesis.speaking` was true — no
+double announcement. Verified in Lichess mode specifically, the
+scenario from the bug report: opponent delivers checkmate via the
+stream, muted — `game-end.mp3` played and the visual banner showed,
+together, confirming both fixes hold at once in the mode that
+originally surfaced the bug.
+
+Build `BUILD='v2-r101 (fixed check/mate banner in fullscreen; muted-only Check/Checkmate/Castle sounds)'`.
+Published to `/v2/`.
