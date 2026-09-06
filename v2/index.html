@@ -3387,7 +3387,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r99 (Abort/Resign moved into the board-head row)';
+  const BUILD='v2-r100 (Abort hides once past the Lichess abort-eligible window)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6550,6 +6550,7 @@
       speak(describeMove(applied,verbosity)+endSuffix());
     }
     lichessState.moveCount=uci.length;
+    updateLichessAbortVisibility();
     renderAll();
   }
 
@@ -6561,6 +6562,7 @@
   async function sendLichessMove(applied){
     const priorCount=lichessState.moveCount;
     lichessState.moveCount=priorCount+1;
+    updateLichessAbortVisibility();
     const uci=applied.from+applied.to+(applied.promotion||'');
     try{
       await lichessFetch('/api/board/game/'+lichessState.gameId+'/move/'+uci,{method:'POST'});
@@ -6570,6 +6572,7 @@
       // so undo exactly what applyMove() just did and put the count back.
       game.undo();
       lichessState.moveCount=priorCount;
+      updateLichessAbortVisibility();
       lastMove=game.history({verbose:true}).slice(-1)[0]||null;
       warn('Lichess rejected that move: '+(err.message||'try again.'));
       renderAll();
@@ -6825,7 +6828,11 @@
       const current=(playing.nowPlaying||[])[0];
       if(!current){ lichessNote('No game in progress on lichess.org right now — seek one below, or start one there and press Resume again.'); return; }
       lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
-      lichessAbortBtn.style.display=''; lichessResignBtn.style.display='';
+      // Abort's own visibility is set once the real game state arrives (see
+      // updateLichessAbortVisibility(), called from applyLichessMoves()
+      // below) — not unconditionally here, since a resumed game may already
+      // be past Lichess's abort-eligible window (playedPlies < 2).
+      lichessResignBtn.style.display='';
       openLichessStream(current.gameId);
     }catch(err){
       lichessNote('Could not connect: '+(err.message||'check your token.'));
@@ -6933,7 +6940,11 @@
         if(current){
           cancelLichessSeek(false);
           lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
-          lichessAbortBtn.style.display=''; lichessResignBtn.style.display='';
+          // Abort's own visibility is set once the real game state
+          // arrives (see updateLichessAbortVisibility(), called from
+          // applyLichessMoves() below) — not unconditionally here, since a
+          // resumed game may already be past Lichess's abort-eligible window.
+          lichessResignBtn.style.display='';
           openLichessStream(current.gameId);
         }
       }catch(e){}
@@ -6964,7 +6975,10 @@
         headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
       const g=await res.json();
       lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
-      lichessAbortBtn.style.display=''; lichessResignBtn.style.display='';
+      // Same reasoning — a freshly-created AI game is always at moveCount
+      // 0, but let the stream's own gameFull event set it rather than
+      // assuming here too, for one consistent source of truth.
+      lichessResignBtn.style.display='';
       openLichessStream(g.id);
     }catch(err){
       lichessNote('Could not start a game: '+(err.message||'try again.'));
@@ -6992,14 +7006,39 @@
     lichessTokenInput.value='';
     lichessNote('Token saved. Seek a game, or press Resume if one is already running.');
   });
+  // OUR-110: Lichess only allows aborting while playedPlies < 2 — checked
+  // against lila's own source (modules/core/src/main/game/Game.scala):
+  // `def abortable = status == Status.Started && playedPlies < 2`. Before
+  // Black's first reply, in other words; resignable is defined as
+  // `playable && !abortable`, i.e. exactly the complement — once abort
+  // stops being legal, resign always already is. lichessState.moveCount is
+  // the same ply count Lichess itself uses (populated straight from the
+  // game stream's own move list, see applyLichessMoves()), not a guessed
+  // move number.
+  //
+  // This is the PRIMARY mechanism (hide it before it can be clicked
+  // wrong) — called from every place moveCount changes: applyLichessMoves()
+  // and sendLichessMove()'s optimistic bump/rollback. Resign has no such
+  // check anywhere; it stays valid (and visible) for the whole game, by
+  // design, per the same lila source above.
+  function updateLichessAbortVisibility(){
+    const eligible=!!lichessState && lichessState.moveCount<2 && !gameOver;
+    lichessAbortBtn.style.display=eligible?'':'none';
+  }
   // Deliberate closes, distinct from "Disconnect" (which only detaches this
   // tab — the real Lichess game keeps running server-side). The stream's own
   // gameState event narrates the outcome and hides these buttons once
   // Lichess confirms the status change; nothing to do here but ask.
+  //
+  // The catch below is the SAFETY NET, not the primary mechanism — the
+  // button should already be hidden by updateLichessAbortVisibility()
+  // before this can even be clicked past the eligible window, but state can
+  // race (a reply arriving between render and click) or be miscalculated,
+  // so a real rejection still surfaces clearly rather than failing silent.
   async function abortLichessGame(){
     if(!lichessState||!lichessState.gameId) return;
     try{ await lichessFetch('/api/board/game/'+lichessState.gameId+'/abort',{method:'POST'}); }
-    catch(err){ warn('Could not abort: '+(err.message||'try again.')); }
+    catch(err){ warn('Could not abort — '+(err.message||'the game may be past the point Lichess allows aborting.')); }
   }
   async function resignLichessGame(){
     if(!lichessState||!lichessState.gameId) return;
