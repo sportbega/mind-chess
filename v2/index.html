@@ -245,6 +245,16 @@
   .chat-form{display:flex;gap:8px;margin-top:10px}
   .chat-form input[type=text]{flex:1;min-width:0;height:36px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px}
 
+  /* OUR-102: puzzle instructions, always visible while mode==='puzzle'
+     (see updatePuzzleInfo()) — never gated on voiceOn. Newsreader serif,
+     matching the transcript this text also lands in via speak()/warn(),
+     since it's the same category of content (what's happening in the
+     game) rather than the chat panel's separate sans-serif treatment. */
+  .puzzle-info{
+    background:var(--panel); border:1px solid var(--accent-2); border-radius:var(--radius);
+    padding:12px 16px; font-family:'Newsreader',serif; font-size:15px; line-height:1.5; color:var(--text);
+  }
+
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
   /* Only child now that the "BOARD" label is gone (removed to reclaim the
      row's leftmost space) — justify-content is moot with one item, kept
@@ -523,6 +533,16 @@
       <button class="btn primary" type="submit">Send</button>
     </form>
   </details>
+
+  <!-- OUR-102: puzzle mode's spoken instructions (intro/roster, wrong-answer
+       nudges, solved/stuck messages, the revealed solution) already reach
+       log()/the transcript via warn()/warnSilent()/speak() regardless of
+       voiceOn — narration was never actually gated per se, this is about a
+       pinned, always-current reference above the board rather than the
+       LATEST puzzle text being one more scrolled-past line in a growing
+       transcript. Always shown while mode==='puzzle', muted or not — see
+       updatePuzzleInfo(). Hidden entirely outside puzzle mode. -->
+  <div class="puzzle-info" id="puzzleInfo" aria-live="polite" hidden></div>
 
   <div class="boardpanel">
     <div class="board-head">
@@ -1038,7 +1058,8 @@
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
         lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiBtn=$('lichessAiBtn'),
-        chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput');
+        chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
+        puzzleInfo=$('puzzleInfo');
 
   // ===============================================================
   // Output
@@ -3259,7 +3280,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r91 (New game moved to header; a real mouse/keyboard promotion picker)';
+  const BUILD='v2-r92 (board visible by default for new players; always-visible puzzle instructions)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3684,6 +3705,18 @@
     return 'Puzzle '+puzzle.id+'. '+side+' to play and mate in '
       +(puzzle.mateIn===1?'one':'two')+'.';
   }
+  // OUR-102: pins the current puzzle instruction/status text above the
+  // board, in addition to (never instead of) whatever warn()/warnSilent()/
+  // speak() already sent to the transcript and, if unmuted, out loud —
+  // this doesn't replace those calls anywhere, it's called alongside them
+  // with the same text. Always on while mode==='puzzle', never checks
+  // voiceOn. A no-op outside puzzle mode, so leftover puzzle text can't
+  // outlive the mode it belongs to.
+  function updatePuzzleInfo(text){
+    if(mode!=='puzzle'){ puzzleInfo.hidden=true; return; }
+    puzzleInfo.hidden=false;
+    puzzleInfo.textContent=text;
+  }
 
   function startPuzzle(p){
     if(!p){ warn('No puzzles available.'); return; }
@@ -3703,7 +3736,9 @@
     // puzzle. speak() rather than say(), so it lands in the transcript too —
     // with say() the roster was spoken and then gone, leaving anyone playing
     // by text, or re-reading, with a puzzle they could not see at all.
-    speak(describePuzzle()+' '+puzzleRoster());
+    const intro=describePuzzle()+' '+puzzleRoster();
+    speak(intro);
+    updatePuzzleInfo(intro);
   }
 
   function puzzleRoster(){
@@ -3731,8 +3766,15 @@
     // or the mic hears the app's own suggestion and OUR-58 comes round again.
     // The way out is written, not spoken — warnSilent() exists for exactly
     // this split and it applies to a nudge as much as to a prompt.
-    warn(pick(['Not that one.','No — try another move.','That’s not the one.']));
-    if(puzzleWrong>=3) warnSilent('Stuck? Say “solution” to be shown it, or “next puzzle” to move on.');
+    const nudge=pick(['Not that one.','No — try another move.','That’s not the one.']);
+    warn(nudge);
+    let info=nudge;
+    if(puzzleWrong>=3){
+      const hint='Stuck? Say “solution” to be shown it, or “next puzzle” to move on.';
+      warnSilent(hint);
+      info+=' '+hint;
+    }
+    updatePuzzleInfo(info);
     return false;
   }
 
@@ -3744,8 +3786,11 @@
       puzzleDone[puzzle.id]=true; savePuzzleProgress();
       gameOver=true;
       const solved=Object.keys(puzzleDone).length;
-      warnSilent('Solved '+solved+' of '+puzzles.length+'. Say “next puzzle” for another.');
-      say(pick(['That’s mate. Solved.','Mate. That’s the one.','That’s it — mate.']));
+      const solvedMsg='Solved '+solved+' of '+puzzles.length+'. Say “next puzzle” for another.';
+      warnSilent(solvedMsg);
+      const mateMsg=pick(['That’s mate. Solved.','Mate. That’s the one.','That’s it — mate.']);
+      say(mateMsg);
+      updatePuzzleInfo(mateMsg+' '+solvedMsg);
       return;
     }
     if(puzzleStage!==0) return;                 // shouldn't happen: stage 1 must mate
@@ -3756,8 +3801,11 @@
       // The file promised a mate for every defence and one is missing. Say so
       // rather than leaving the player pushing at a puzzle that cannot be
       // solved — and it is a build error, not a player error.
-      warn('This puzzle looks wrong — I have no answer stored for that defence.');
-      warnSilent('Say “next puzzle” to move on. This is a fault in the puzzle file, not in your move.');
+      const errMsg='This puzzle looks wrong — I have no answer stored for that defence.';
+      warn(errMsg);
+      const followUp='Say “next puzzle” to move on. This is a fault in the puzzle file, not in your move.';
+      warnSilent(followUp);
+      updatePuzzleInfo(errMsg+' '+followUp);
       return;
     }
     puzzle.pendingAnswer=replies[choice];
@@ -3778,7 +3826,9 @@
     const probe=new Chess();
     probe.load(game.fen());
     const m=probe.move({from:want.slice(0,2),to:want.slice(2,4),promotion:want[4]});
-    speak(m?('The move is '+describeMove(m,'terse')):('The move is '+want+'.'));
+    const text=m?('The move is '+describeMove(m,'terse')):('The move is '+want+'.');
+    speak(text);
+    updatePuzzleInfo(text);
   }
 
   // ===============================================================
@@ -4433,7 +4483,7 @@
         return ()=>{ if(puzzle&&gameOver) puzzleDone[puzzle.id]=true; savePuzzleProgress(); startPuzzle(nextPuzzle()); };
       if(/solution|give up|show me|what.{0,3}s the move|tell me/.test(t)) return puzzleSolution;
       if(/repeat the position|say the position|the position again|read it again|again please/.test(t))
-        return ()=>speak(describePuzzle()+' '+puzzleRoster());
+        return ()=>{ const intro=describePuzzle()+' '+puzzleRoster(); speak(intro); updatePuzzleInfo(intro); };
       // In puzzles there is no game to restart, so "new game" means the same
       // as "next puzzle" — it used to drop the player into a fresh chess game
       // while the Opponent select still said Puzzles.
@@ -7099,6 +7149,11 @@
     if(mode!=='online') humanColor='w';
     resetClock();
     setBoardHidden(true);
+    // OUR-102: startNewGame() is never called while staying in puzzle mode
+    // (every call site has already switched `mode` away from 'puzzle' by
+    // the time this runs) — so leaving puzzles is exactly when the puzzle
+    // panel's text stops being current and should disappear.
+    updatePuzzleInfo('');
     transcript.innerHTML='';
     log('Board','New game. White to move.'+(mode==='computer'?' You\u2019re White against the computer.':' Board hidden — say "show board" any time.'));
     renderAll();
@@ -7555,6 +7610,15 @@
     spectateOnline(spectateMatch[1]);
   }else if(!loadState()){
     startNewGame();
+    // OUR-101: factory default flipped to visible — but ONLY reachable here,
+    // the one branch that means "no saved state exists at all" (loadState()
+    // returned false). startNewGame()'s own setBoardHidden(true) is left
+    // alone everywhere else it's called (New game, mode switches, puzzle
+    // exit) — that's the existing "starting a game hides the board" design,
+    // unrelated to this. A returning player's saved boardHidden (true OR
+    // false) is read and respected entirely inside loadState() above and
+    // never reaches this line at all.
+    setBoardHidden(false);
   }
   // After loadState, not before: which recogniser to build is a saved setting,
   // and building the wrong one first would open the microphone twice.
