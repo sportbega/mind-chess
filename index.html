@@ -135,12 +135,24 @@
      tooltip instead of disappearing outright — the "Voice commands"
      details block elsewhere still documents the same phrases at length. */
   .mic-compact{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  /* Quick-access speaker mute (OUR-91) — same visual weight as the mic
-     button's own circular chrome, sized down since it's a secondary
-     control, not the primary one. */
+  /* Type-a-move (OUR-93): a short move like "Nf3" or "e4" never needed the
+     width a full sentence-length placeholder implied. Bounded rather than
+     flex:1 — flex:1 is what let it dominate this row and crowd the four
+     buttons beside it in the first place — but flex-shrink stays enabled
+     with a floor, so a genuinely tight row (see the 320px check below)
+     shrinks this before anything else has to. */
+  .mic-compact input[type=text]{flex:0 1 120px;min-width:64px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px}
+  .mic-compact input[type=text]::placeholder{color:var(--text-dim)}
+  /* Quick-access speaker mute (OUR-91). Base size for anywhere this class
+     is reused standalone; .mic-size (OUR-93) overrides it to match #micBtn
+     exactly (48px / 20px icon) rather than the smaller general size, since
+     this one sits directly beside the mic and reads oddly smaller next to
+     it. */
   .icon-btn{width:36px;height:36px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border:1px solid var(--line);color:var(--accent);padding:0}
   .icon-btn:hover:not(:disabled){border-color:var(--accent)}
   .icon-btn svg{width:18px;height:18px}
+  .icon-btn.mic-size{width:48px;height:48px}
+  .icon-btn.mic-size svg{width:20px;height:20px}
   .icon-btn.muted{color:var(--text-dim)}
   .mic-wrap{position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--accent-2);opacity:0;transform:scale(.6)}
@@ -152,7 +164,7 @@
   #micBtn:hover:not(:disabled){border-color:var(--accent)}
   .mic-wrap.listening #micBtn{background:var(--accent-2);border-color:var(--accent-2);color:#0e2320}
   #micBtn svg{width:20px;height:20px}
-  .mic-note{font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0;max-width:22ch}
+  .mic-note{flex-basis:100%;font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0;max-width:22ch}
   .mic-note.err{color:var(--danger)}
   .mic-note.ok{color:var(--ok)}
 
@@ -167,10 +179,6 @@
   .transcript .who.board{color:var(--accent-2)}
   .transcript .who.system{color:var(--danger)}
   .transcript .heard{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-style:italic}
-
-  .textrow{display:flex;gap:8px}
-  .textrow input[type=text]{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 16px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px}
-  .textrow input[type=text]::placeholder{color:var(--text-dim)}
 
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
   /* Only child now that the "BOARD" label is gone (removed to reclaim the
@@ -353,7 +361,15 @@
       <h1>Mind Chess</h1>
       <p class="status" id="statusLine">White to move — board hidden</p>
     </div>
-    <div class="mic-compact">
+    <!-- One row, five controls, in this order (OUR-93): type-a-move,
+         mic, speaker mute, hide/reveal board, Send. Was two separate
+         pieces — a .mic-compact div here, and a standalone form lower on
+         the page — merged into one <form> so Enter-to-submit on the text
+         input keeps working exactly as it did in the old textrow. Mic,
+         speaker and hide-board are all type="button", so they can't
+         accidentally trigger a submit themselves. -->
+    <form class="mic-compact" id="textForm">
+      <input type="text" id="textInput" placeholder="Type a move" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
       <div class="mic-wrap" id="micWrap">
         <span class="ring"></span><span class="ring"></span><span class="ring"></span>
         <button id="micBtn" type="button" aria-label="Speak your move" title="Tap and speak — try &quot;e4&quot;, &quot;knight to f3&quot;, &quot;queen takes e5&quot;, &quot;castle kingside&quot;.">
@@ -363,19 +379,13 @@
           </svg>
         </button>
       </div>
-      <p class="mic-note" id="micNote"></p>
-      <!-- Moved here from .board-head (OUR-90): the button that reveals a
-           hidden board used to live inside the row that's part of what's
-           hidden, reachable only by scrolling to (and half-seeing) the
-           very thing it's meant to unhide. The header is visible
-           regardless of board state, same reasoning as the mic living
-           here since r73. -->
-      <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
       <!-- Same underlying flag as Voice settings' "Speak aloud" toggle —
            see setVoiceOn() — not a second setting. Sound effects
            (OUR-42) are a separate Audio() call inside applyMove() with no
-           dependency on voiceOn at all, so this never touches them. -->
-      <button class="icon-btn" id="speakerToggleBtn" type="button" aria-label="Mute narration" title="Mute narration — move/capture sounds stay on.">
+           dependency on voiceOn at all, so this never touches them.
+           Sized to exactly match #micBtn (OUR-93), not the smaller
+           general .icon-btn size. -->
+      <button class="icon-btn mic-size" id="speakerToggleBtn" type="button" aria-label="Mute narration" title="Mute narration — move/capture sounds stay on.">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 9v6h4l5 4V5L8 9H4Z"/>
           <path class="speaker-wave-1" d="M16.5 8.5a5 5 0 0 1 0 7"/>
@@ -383,7 +393,20 @@
           <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
         </svg>
       </button>
-    </div>
+      <!-- Moved here from .board-head (OUR-90): the button that reveals a
+           hidden board used to live inside the row that's part of what's
+           hidden, reachable only by scrolling to (and half-seeing) the
+           very thing it's meant to unhide. The header is visible
+           regardless of board state, same reasoning as the mic living
+           here since r73. -->
+      <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
+      <button class="btn primary" type="submit">Send</button>
+      <!-- flex-basis:100% (see .mic-compact .mic-note) drops this onto its
+           own line below the button row rather than fighting the five
+           controls above for horizontal space — it's status text, not a
+           sixth control, and wasn't part of the ordering this asked for. -->
+      <p class="mic-note" id="micNote"></p>
+    </form>
   </header>
 
   <div class="online-panel" id="onlinePanel">
@@ -432,11 +455,6 @@
       <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
     </div>
   </div>
-
-  <form class="textrow" id="textForm">
-    <input type="text" id="textInput" placeholder="Or type a move — &quot;knight f3&quot;, &quot;e4&quot;, &quot;show board&quot;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-    <button class="btn primary" type="submit">Send</button>
-  </form>
 
   <div class="boardpanel">
     <div class="board-head">
@@ -3098,7 +3116,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r84 (Hide board and a quick mute button join the mic)';
+  const BUILD='v2-r85 (one header row: type, mic, mute, hide, send)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

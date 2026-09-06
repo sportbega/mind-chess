@@ -6221,3 +6221,50 @@ wrap Adni asked to check for doesn't recur here.
 
 Build `BUILD='v2-r84 (Hide board and a quick mute button join the mic)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r85): one header row: type, mic, mute, hide, send
+
+Merged two previously-separate pieces — the `.mic-compact` div in the
+header and a standalone `#textForm` lower on the page — into a single
+`<form>`, in the exact order asked for: type-a-move, mic, speaker mute,
+Hide board, Send. Every id (`textForm`, `textInput`, `micWrap`, `micBtn`,
+`speakerToggleBtn`, `boardToggleBtn`) is unchanged, so no JS wiring moved —
+only the markup did. Mic/speaker/Hide board are all `type="button"`, so
+folding them into the same `<form>` as Send couldn't make any of them
+accidentally submit it.
+
+The text input's `flex:1` was the actual cause of it dominating the row —
+not just a large placeholder, though the placeholder ("Or type a move —
+&quot;knight f3&quot;, &quot;e4&quot;, &quot;show board&quot;") got
+shortened to "Type a move" too, since a field that no longer has room to
+grow doesn't need a sentence-length prompt either. Replaced with
+`flex:0 1 120px;min-width:64px` — bounded rather than growing to fill
+whatever's left, but still able to shrink below 120px on a genuinely tight
+row rather than forcing overflow.
+
+Speaker mute now matches `#micBtn` exactly (48px, 20px icon) via a new
+`.icon-btn.mic-size` modifier, rather than the smaller 36px `.icon-btn`
+default from r84 — sitting directly beside the mic at a visibly different
+size was the actual complaint, not the icon-button pattern itself, which
+stays the default for anywhere else `.icon-btn` might get reused.
+
+`#micNote` (the "Listening…"/"Hearing you…" status text) isn't one of the
+five ordered controls, so it moved to `flex-basis:100%` — drops to its own
+line below the button row when there's text to show, without competing
+for horizontal space with the five things that actually needed a specific
+order.
+
+Verified live: all five controls in the exact specified order (confirmed
+via DOM order, not just visual inspection); `#micBtn`/`#speakerToggleBtn`
+measured to identical 48×48px; typing a move and submitting via a
+dispatched `submit` event applies it through the same handler as before;
+clicking the Send button directly does too; mic/speaker/Hide board toggle
+their respective states exactly as they did pre-move (speaker mute still
+syncs Voice settings' checkbox both ways); and the row wraps gracefully
+at both 390px and 320px — text input plus mic and speaker stay on one
+line, Hide board and Send move to a second line, nothing overlapping or
+cut off at either width, so the wrapping risk flagged from OUR-86/90/92
+doesn't recur here either.
+
+Build `BUILD='v2-r85 (one header row: type, mic, mute, hide, send)'`.
+Published to `/v2/`.
