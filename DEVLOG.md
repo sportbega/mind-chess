@@ -7504,3 +7504,54 @@ between.
 
 Build `BUILD='v2-r103 (sample-audio GC hardening; local Resign for computer mode)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r104): Castling gets the same visual banner as Check/Checkmate
+
+Adni reported castling as totally silent — no banner, no sound —
+despite OUR-111's `castle.mp3` supposedly being wired.
+
+**Visual: genuinely missing, now fixed.** `#checkAlert`
+(`flashCheckAlert()`, OUR-96/OUR-110) only ever had two cases, `check`
+and `checkmate`, both fired from inside `endSuffix()`. Nothing in this
+codebase ever called it for castling — not a bug, just never built.
+Added a third case: `.check-alert.castle` (teal `--accent-2`, the one
+banner color left unused — `check` and `checkmate` already claimed
+`--accent`/`--danger`), text "Castling", same `show`/2200ms fade
+`flashCheckAlert()` already drives for the other two, no new banner
+mechanism. Fired from `playMoveEventSounds(applied)` — the one and only
+site that ever sees a real, applied castling move — rather than routing
+through `endSuffix()` the way check/checkmate do: those two are also
+reachable from `predictNarration()`'s speculative move+undo probe (an
+accepted double-fire risk, OUR-111), and castling doesn't need to
+inherit a problem it was never exposed to just to reuse the same call
+site.
+
+**Audio: investigated, not actually broken.** Re-ran the exact live
+tests OUR-112 already ran for this — player-side kingside castle,
+player-side queenside castle, and a computer-triggered castle forced
+through the real `triggerComputerMove()`→`applyMove()` path (not the
+speculative probe) — all three correctly requested `castle.mp3`, same
+as OUR-112 found before this session's own GC-hardening change (OUR-113)
+and after it. `playMoveEventSounds()`'s castle branch
+(`applied.flags.indexOf('k')!==-1||applied.flags.indexOf('q')!==-1`) is
+untouched by this build and was never the problem — it's the exact same
+flag check `describeMove()` already trusts, on the one `applied` object
+every input method (click, drag, typed, voice) already funnels through
+`applyMove()` to reach. Did not find a code-level gap to fix, and said
+so rather than inventing one. Best guess, not claimed as confirmed: with
+no visual reinforcement, a short, easy-to-miss tap sample right after
+the (also short) move-self.mp3 tap may simply have gone unnoticed —
+exactly the gap the new banner now closes regardless of whether that
+guess is right. Asked Adni to confirm on a real build now that both
+land together.
+
+Verified live, muted, in computer mode: kingside castle (`O-O`) —
+banner reads "Castling", teal, fades after ~2.2s, `castle.mp3`
+requested; queenside castle (`O-O-O`) — same, confirmed independently;
+computer-triggered castle (forced via the real engine-reply path) — same,
+confirmed independently. All three via the identical `applyMove()` call
+site check/checkmate already use, no per-mode or per-side branching
+anywhere in the chain.
+
+Build `BUILD='v2-r104 (Castling gets the same visual banner as Check/Checkmate)'`.
+Published to `/v2/`.
