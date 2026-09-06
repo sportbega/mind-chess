@@ -6592,3 +6592,69 @@ confirming the existing voice/typed path is untouched.
 
 Build `BUILD='v2-r91 (New game moved to header; a real mouse/keyboard promotion picker)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r92): board visible by default for new players; always-visible puzzle instructions
+
+Two changes.
+
+**Factory default board visibility flipped to visible, for genuinely
+new players only.** A deliberate philosophy shift away from OUR-41's
+original blindfold-by-default design — a fresh player with no saved
+`boardHidden` value now sees the board on their very first game.
+Scoped as narrowly as the ask required: the only line touched is the
+one boot branch that means "no save exists at all"
+(`}else if(!loadState()){ startNewGame(); setBoardHidden(false); }`,
+right after boot's own `!loadState()` check). `loadState()`'s own
+handling of an existing save's `boardHidden` (`saved.boardHidden!==false`)
+is untouched — a returning player's saved `true` or `false` is read and
+respected exactly as before, never reaching the new line at all.
+`startNewGame()`'s own unconditional `setBoardHidden(true)` — the
+existing "starting a game hides the board" behavior for New game
+clicks, mode switches, and puzzle exits — is also untouched; that's a
+separate, pre-existing design choice this wasn't asked to change.
+
+Verified live, carefully, given how easy this is to get wrong: a
+genuinely clean test needed two tabs rather than one, because of a
+known quirk (`window.addEventListener('beforeunload', saveState)`,
+documented back in r86's devlog) — clearing storage and reloading the
+*same* tab lets that tab's own unload handler re-save its still-live
+in-memory state over the clear, right before the new page reads it. A
+second, never-yet-loaded tab reading storage that a first (still-open,
+never-unloaded) tab had genuinely cleared sidesteps that entirely: a
+fresh boot showed "New game" (not "Game restored"), the board veil at
+`display:none` (visible), and the resulting save recording
+`boardHidden:false`. Separately confirmed a save with `boardHidden:true`
+still boots hidden, and one with `boardHidden:false` still boots
+visible — both unchanged from before this change, set via the real
+`#boardToggleBtn` (whose click handler calls `saveState()` itself, the
+same care taken to avoid the beforeunload race corrupting the setup).
+
+**Puzzle instructions now shown visually, always — not narration-gated
+at all.** Confirmed what puzzle-specific narration exists before
+touching anything: the intro (`describePuzzle()+puzzleRoster()`, e.g.
+"Puzzle 1. White to play and mate in one. White: king e6 and rook a5.
+Black: king e8."), wrong-answer nudges, the "stuck?" hint after three
+misses, solved/mate messages, the puzzle-file error message, and the
+revealed solution move from `puzzleSolution()` — all of it already
+reached the transcript via `log()` inside `warn()`/`warnSilent()`/`speak()`
+regardless of `voiceOn` (narration was never actually gated here
+either), just as one more line in a scrolling log. Added `#puzzleInfo`,
+a banner above the board (`updatePuzzleInfo()`), that pins the *current*
+one of those alongside — not instead of — every existing call, so
+there's no regression to the transcript or spoken narration at any of
+those six sites. Shown only while `mode==='puzzle'`; hidden from
+`startNewGame()`, which by construction is never called while staying
+in puzzle mode (every call site already reassigns `mode` away from
+`'puzzle'` first), so leaving puzzles is exactly when the panel
+disappears.
+
+Verified live: muted, entering puzzle mode showed the intro banner
+above the (puzzle-mode-hidden, by unrelated existing design) board;
+unmuted, "say the position again" both spoke the same text
+(`speechSynthesis.speaking` true) and kept the banner showing it — both
+together, not narration-gated; a wrong move updated the banner to "Not
+that one." exactly as the transcript did; switching to computer mode
+hid the banner.
+
+Build `BUILD='v2-r92 (board visible by default for new players; always-visible puzzle instructions)'`.
+Published to `/v2/`.
