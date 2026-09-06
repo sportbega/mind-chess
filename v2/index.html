@@ -3443,7 +3443,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r101 (fixed check/mate banner in fullscreen; muted-only Check/Checkmate/Castle sounds)';
+  const BUILD='v2-r102 (fix: restoring a finished game no longer claims a move is pending)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7261,8 +7261,15 @@
   // it is on-demand by nature — it already says "Let me look" — and warming
   // for a question nobody has asked yet would quietly undo the point of
   // waiting for mode==='computer' below.
+  // OUR-112: gameOver added to the guard — this used to fire unconditionally
+  // at boot (see the warmEngine() call at the very end of the IIFE) whenever
+  // mode==='computer', including a restored save whose position was already
+  // checkmate. There is no move left for the engine to ever make there, so
+  // starting a 7.3 MB download for it was pure waste, and — compounding
+  // loadState()'s own "Game restored. Black to move." bug just above it —
+  // made a finished game look like it was still waiting on something.
   function warmEngine(){
-    if(mode!=='computer'||sfInitPromise) return;
+    if(mode!=='computer'||sfInitPromise||gameOver) return;
     log('System','Loading the chess engine for this level (7.3 MB, once — then it’s cached and works offline).');
     stockfishInit().catch(()=>{});
   }
@@ -7576,9 +7583,21 @@
       gameOver=game.game_over();
       pendingAction=null;
       transcript.innerHTML='';
-      log('Board',game.history().length
-        ? 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.'
-        : 'Restored settings. New game.');
+      // OUR-112: a save can genuinely be at/past checkmate — the player made
+      // the mating move, then closed the tab before a fresh save overwrote
+      // it (or reloaded mid-checkmate-narration), or the game simply ended
+      // and nothing since has triggered another save. This used to say
+      // "Black to move" regardless, which is actively false once gameOver
+      // is true — nothing was ever waiting on a move, but nothing said so
+      // either. endSuffix() is the exact same terminal-state text (and,
+      // muted, the same OUR-96 banner/OUR-101 sample) every in-game
+      // checkmate/stalemate/draw already uses — reused here rather than a
+      // second copy of the same game.in_checkmate()/in_stalemate()/etc checks.
+      log('Board',!game.history().length
+        ? 'Restored settings. New game.'
+        : gameOver
+          ? 'Game restored.'+endSuffix()
+          : 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.');
       setBoardHidden(saved.boardHidden!==false);
       boardFlippedOverride=typeof saved.boardFlippedOverride==='boolean'?saved.boardFlippedOverride:null;
       startClock();
