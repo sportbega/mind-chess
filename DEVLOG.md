@@ -7555,3 +7555,51 @@ anywhere in the chain.
 
 Build `BUILD='v2-r104 (Castling gets the same visual banner as Check/Checkmate)'`.
 Published to `/v2/`.
+
+## 2026-09-06 — follow-up investigation: r104's castle banner/sound confirmed live across all four modes, no code change needed
+
+r104 fixed the banner and re-confirmed the audio, but only tested
+computer mode — the same scope gap OUR-96's original "for free across
+every mode" claim turned out to have (fixed later, for fullscreen, as
+OUR-110). Asked to check directly rather than assume "for free" holds
+here too, since `playMoveEventSounds()` — the one function both the new
+banner call and the existing `castle.mp3` call live in — has exactly
+three call sites: `applyMove()` (computer, two-player, puzzle),
+`loadOnlinePgn()` (online mode, called from `receiveOnline()`'s
+`postgres_changes` handler), and `applyLichessMoves()` (the Lichess
+board-stream). Traced all three and live-tested each directly rather
+than trusting the source read alone.
+
+Two-player: real kingside and queenside castles through the actual UI
+input path (typed moves, same as any other mode) — both correctly
+requested `castle.mp3` and showed the "Castling" banner.
+
+Online and Lichess: neither has a practical way to drive a second real
+client/opponent from this harness, so each was exercised through the
+exact function its real sync path calls — `loadOnlinePgn(pgn)` (what
+`receiveOnline()` hands a freshly-arrived opponent PGN) and
+`applyLichessMoves(uci)` (what the board-stream's `gameFull`/`gameState`
+events hand the whole move list) — with a temporary `window.__mcDebug*`
+exposure added, used, and removed in the same session, never shipped.
+Both fired `castle.mp3` and the banner correctly for kingside and
+queenside.
+
+One false alarm along the way, worth recording since it looked like a
+real gap at first: the very first `loadOnlinePgn()` call produced
+neither sound nor banner despite the board updating correctly. Root
+cause was the test, not the app — the browser tab had a `localStorage`
+save left over from earlier testing in this session, `loadState()`
+restores it at boot before the test script's own `localStorage.clear()`
+ever runs, and the in-memory `game`/`lastMove` state that boot-time
+restore leaves behind isn't touched by clearing storage after the fact.
+Explicitly resetting the game (`startNewGame()`, i.e. clicking New
+game) before the next attempt reproduced the correct fire every time
+after that. No code implicated; a reminder that this harness's
+"navigate then clear localStorage" pattern clears storage, not memory,
+and a stale in-memory game from a prior test can look exactly like a
+missing trigger.
+
+No code changed — r104's fix already covers every path because the
+banner and the sound both live inside the one function all three
+real-move-applied sites already share, not duplicated per site. Nothing
+to ship.
