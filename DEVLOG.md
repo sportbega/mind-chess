@@ -7844,3 +7844,66 @@ data confirmed persisting across a full reload. Test rows removed from
 
 Build `BUILD='v2-r106 (Game Review: Stockfish move classification, accuracy %, and the accuracy trend)'`.
 Published to `/v2/`.
+
+## 2026-09-07 — investigation and fix: a Lichess draw reportedly recorded as a loss
+
+Adni reported one real Lichess game, a draw, recorded and displayed as
+a loss. Investigated `onGameEnd()`'s Lichess path directly against the
+real stored data before touching any code.
+
+**The stored data was already correct.** Querying `mind_chess_results`
+for Adni's own rows found two: one with a full 31-move Philidor Defense
+PGN ending in a real threefold-repetition-shaped sequence
+(`result:'draw'` — already right), and a second, older row with an
+**empty PGN** and `result:'loss'`. Re-checking the live app in the same
+browser (same anonymous Supabase session Adni's own games use) shows
+the Statistics panel currently reads "0W / 1L / 1D" — the draw already
+counts. Whatever produced the "0W/1L/0D" in the original report was a
+snapshot taken before that second (empty-PGN) row existed, not a
+present-tense bug in reading the draw.
+
+**Could not reproduce a genuine draw-classified-as-loss.** Live-tested,
+via `handleLichessEvent()` directly with realistic events (not
+synthesized results): a real move-history draw (`status:'draw'`, no
+`winner`) logs `'draw'` correctly; the same as White or Black; a
+computer-mode stalemate reached via a real move also logs `'draw'`
+correctly, both in the local log and in the Statistics table (ruling
+out mode-specificity, since the ask asked to check). No color/
+perspective bug either — tested a Black-seated win explicitly. Tried to
+reproduce the empty-PGN row's exact shape and found it: a genuine
+0-move resignation (`status:'resign'`, `winner` set to the color that
+didn't resign) reproduces byte-for-byte the same shape Adni's second
+row has — which is the *correct* result for that situation, not a bug.
+So the empty-PGN row appears to be a real, if perhaps unintended (a
+mis-click, an aborted first attempt?) result from a separate connection
+attempt, not a misclassified draw. Flagged to Adni directly rather than
+silently deleting or "correcting" it to a draw it wasn't — I have no way
+to know from here whether that row represents something Adni meant to
+happen.
+
+**Found and fixed a real, related gap while tracing every path that can
+carry a terminal status.** `handleLichessEvent()`'s `gameState` branch
+correctly checked for a terminal status and called `onGameEnd()`; the
+`gameFull` branch — reached on every connect *and* every reconnect —
+never checked at all. A reconnect (or opening the app fresh) landing
+after a game had already finished while this client wasn't listening
+would see the final status sitting right there in `evt.state.status`
+and just never log anything — not a misclassification, a silent no-op.
+Live-reproduced with a simulated `gameFull` carrying an already-`draw`
+state: no `onGameEnd()` call, nothing recorded, before the fix; correct
+after. Factored the shared logic into `handleLichessTerminalStatus()`
+so both branches call the same code rather than duplicating it (and
+diverging again later) — checked a normal `gameFull` with
+`status:'started'` still does nothing, no regression.
+
+Verified live: real-move Lichess draw (both colors), Lichess resign
+(both directions of the color check), Lichess reconnect-after-the-fact
+draw (the newly-fixed path, previously silently dropped), and a
+computer-mode stalemate — all six logged correctly. Test rows (a
+different anonymous session than Adni's — this app's localhost origin
+gets its own, confirmed by comparing `user_id`s before deleting)
+removed from `mind_chess_results` after verification. Adni's own two
+rows were left untouched — nothing found here justifies changing either of them without Adni's own say-so on what that second one actually was.
+
+Build `BUILD='v2-r107 (Lichess reconnect can carry an already-final game status)'`.
+Published to `/v2/`.
