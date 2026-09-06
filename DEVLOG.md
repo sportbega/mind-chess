@@ -7603,3 +7603,111 @@ No code changed — r104's fix already covers every path because the
 banner and the sound both live inside the one function all three
 real-move-applied sites already share, not duplicated per site. Nothing
 to ship.
+
+## 2026-09-06 (r105): Statistics — win/loss/streaks/openings across every mode
+
+Phase 1 of two (player stats + post-game review). Scoped and phased
+before writing anything, per the ask — Phase 3 (Stockfish-driven game
+review, accuracy %, move classification) is deliberately deferred to its
+own session; this ships stats end to end.
+
+**Grounded in Lichess's real methodology, not invented cutoffs** (this
+becomes relevant again in Phase 3, but the research happened now): the
+win% formula (`50 + 50×(2/(1+exp(-0.00368208×cp))−1)`), the per-move
+accuracy formula (`103.1668×exp(-0.04354×winPercentDrop)−3.1669`), and
+the classification thresholds (Blunder ≥30% win% drop, Mistake ≥20%,
+Inaccuracy ≥10%) all come straight from lila's own source
+(`modules/tree/src/main/Advice.scala`,
+`modules/analyse/src/main/AccuracyPercent.scala`, fetched directly).
+Worth recording now: lila's server only computes those three judgment
+tiers from win%-delta — there is no server-side Brilliant/Best/
+Excellent/Good; those come from a separate client-side heuristic
+(sacrifice-detection for Brilliant especially) that isn't a clean
+published formula. Flagged to Adni before starting; Brilliant explicitly
+deferred rather than approximated.
+
+**Foundation: one real completion, one funnel.** `gameOver=true` used to
+be a bare assignment at 5 separate sites (resign, local clock timeout,
+`applyMove()`'s own `game.game_over()` check, online clock timeout,
+Lichess status stream) plus a 6th non-completion site (restoring an
+already-finished save) and puzzle's own separate mate handler. Every one
+of the 5 real-completion sites now also calls `onGameEnd(winnerColor)` —
+`'w'`/`'b'` when the caller already knows who won (resign, clock
+timeout, Lichess's own authoritative `evt.winner`), or omitted entirely
+so it derives from `game.in_checkmate()` (the one caller — `applyMove()`
+— where that's reliable). `loadOnlinePgn()` (the opponent's move
+arriving via Supabase) also calls it for the same reason applyMove()
+does — the opponent delivering the final blow only ever reaches this app
+through that path, not through applyMove().
+
+Double-fire guard was the one real bug this session's live testing
+caught (not assumed): the first version keyed the "already logged this
+game" guard on `generation`, reasoning every real new-game site already
+bumps it for its own stale-callback protection. True for
+`startNewGame()`/`playOnline()`/`joinOnline()`/`watchOnline()`/Lichess's
+`gameFull`, false for just flipping `modeSelect` to online/lichess
+without going through any of those — which is exactly the shape a
+mode switch takes before a real online/Lichess game is actually joined.
+Reproduced live: a two-player game ending, then switching to online mode
+and finishing a second (synthetic, debug-hook-driven) game produced
+zero rows in `mind_chess_results` — `generation` genuinely hadn't moved
+between the two, so the guard silently ate the second completion.
+Fixed by keying on the finished game's own identity (`mode+'|'+pgn())`
+instead of an unrelated counter — a real new completion always has a
+different pgn from the last one logged, regardless of what did or
+didn't touch `generation` in between. Re-verified the exact failing
+sequence afterward; it logs correctly now.
+
+**Storage — split, deliberately** (flagged to Adni, chosen over a
+simpler unified-local store): computer/two-player log entirely to a new
+`mind-chess-v2-games` localStorage array (capped at 500 entries),
+matching every other per-browser setting this app already has. Online
+and Lichess mirror to a new Supabase table, `mind_chess_results`
+(migration in this commit) — RLS-scoped to `user_id = auth.uid()`,
+unlike `mind_chess_games`/`chat`'s "anyone with the id can read": this is
+a player's own history, private by default. The identity is the same
+anonymous session `onlineUser()` already creates for online play; Lichess
+mode reuses it too since it's just a Supabase session, unrelated to the
+Lichess account itself. The Statistics panel fetches both sources and
+merges them — local synchronously, Supabase only when the panel is
+actually opened, so a player who never opens it never pays for the round
+trip on every single game.
+
+**Openings**: no dataset existed anywhere in this codebase or Giga Chess
+to reuse (checked, not assumed — Giga Chess is only a bookmarked URL on
+this machine, no local code). Sourced `lichess-org/chess-openings`
+(CC0-1.0, public domain) — its `a.tsv`..`e.tsv`, ~3700 entries, converted
+at build time into `openings.json` (`[eco, name, "san moves"]` triples,
+~350KB, shipped as its own static asset the same way `puzzles.json`
+already is — added to `publish.sh`'s explicit file list, which exists
+specifically to fail loudly rather than silently ship a build missing a
+file it needs). Matched by longest-prefix scan against the finished
+game's own SAN history — ~3700 short entries, once per finished game, not
+worth a trie for. Two-player and computer-mode entries get tagged from
+the local game object directly; online/Lichess entries are tagged before
+the Supabase insert.
+
+**UI**: `#statsDetails`, a `<details class="help">` panel matching the
+Appearance/Game settings convention Adni chose over a dedicated screen —
+summary line (games played, personalized W/L/D, current/best streak),
+a per-mode table (two-player gets its own White/Black-wins columns
+instead of Won/Lost, since there's no single "you" in pass-and-play), a
+by-level breakdown for computer mode, and a top-5 openings list.
+
+Verified live: computer-mode win (forced mate-in-1 via a temporary,
+never-shipped debug hook) and loss (via the new Resign button, real
+click) both logged correctly with the right result or `endedAt`; a
+two-player mate logged as `result:'white'` rather than a personalized
+win/loss; online and Lichess mode both mirrored real rows into
+`mind_chess_results` (confirmed by querying the table directly, not just
+trusting no console error) — including reproducing and then fixing the
+generation-guard bug above; opening detection confirmed against Italian
+Game, Sicilian Defense, Queen's Gambit Declined, and Ruy Lopez move
+sequences, plus organically against a real Alekhine Defense reached
+through actual play; stats correctly persisted across a full page
+reload; streak math verified across a loss→win→win→win sequence spanning
+computer and online modes. Test rows removed from `mind_chess_results`
+before shipping.
+
+Build `BUILD='v2-r105 (Statistics: win/loss/streaks/openings across every mode)'`.
+Published to `/v2/`. Phase 3 (game review) picks up next session.
