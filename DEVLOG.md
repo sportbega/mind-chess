@@ -5856,3 +5856,45 @@ drag now actually *feels* smooth needs a real device.
 
 Build `BUILD='v2-r77 (the veil was eating board-head clicks)'`. Published
 to `/v2/`.
+
+## 2026-09-06 (r78): a longer track for the size slider
+
+A third angle on the board-size slider, orthogonal to r72/r77's
+performance work: at its old 110px track, the 420-960 range (27 steps of
+20) worked out to ~4px of mouse movement per step — coarse enough to feel
+"chunky" on a fully responsive slider, independent of any layout-thrashing
+or click-blocking bug. Widened the track to 240px (~9px/step, a bit over
+double) without touching `min`/`max`/`step`/`value` at all — purely a
+track-width change, and deliberately not another pass at the r72/r77 code.
+
+Moved the width off the element's own inline `style` and into a
+`.board-size-field input[type=range]` rule instead, matching how sizing
+for other repeated controls already lives in CSS rather than scattered
+inline styles.
+
+A flat 240px alone broke on a narrow phone width, confirmed by actually
+rendering at 390px (via a same-origin iframe, this environment's window-
+resize not affecting the real viewport) before assuming it was fine: a
+fixed-width flex item doesn't shrink just because its container has
+`flex-wrap` — wrap only redistributes *multiple* items across lines, it
+can't make one item narrower than itself, so the row overflowed
+horizontally. `width:min(240px,50vw)` fixed it — capped at 240px on
+anything roomier than ~480px wide, shrinking below that. Used a viewport
+unit rather than a percentage deliberately: `.board-size-field` has no
+width of its own (it's sized by its content), so a percentage on the
+range input would resolve against an size that circularly depends on the
+range input itself.
+
+Verified: track measures 240px at normal desktop widths and correctly
+shrinks (193px measured) at a real 390px viewport with no page-level
+horizontal overflow either way; full range still works end-to-end (420,
+960, and Reset-to-680 all produced the correct grid width); `min`/`max`/
+`step` attributes are untouched, so keyboard stepping is unaffected by
+construction, not just by assumption. The board-head row already wraps
+the size field to its own line when boardpanel is narrow (e.g. at the
+680px default), which is the deliberate flex-wrap fallback already in
+place from r72 — confirmed clean at both a wrapped and single-line width,
+no cut-off text or overlapping controls in either case.
+
+Build `BUILD='v2-r78 (a longer track for the size slider)'`. Published to
+`/v2/`.

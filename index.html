@@ -167,7 +167,26 @@
 
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
   .board-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-  .board-size-field{display:flex;align-items:center;gap:6px}
+  .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
+  /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
+     enough that a drag felt "chunky" independent of anything r72/r77 fixed,
+     since that's a pixels-to-value ratio issue, not a performance one.
+     240px more than doubles it to ~9px/step. The row it lives in already
+     has flex-wrap on the parent (.board-head's inner div), so if a
+     narrower boardpanel makes the row too tight, this field wraps to its
+     own line — but a flat 240px is still a fixed width, and flex-wrap only
+     redistributes multiple items across lines, it can't shrink a single
+     item that's wider than the line itself. On a narrow phone (~390px),
+     240px alone caused real horizontal overflow even alone on its own
+     line — confirmed visually, not assumed. min(240px,100%) lets it
+     shrink to whatever the row actually has once genuinely tight, capping
+     at 240px everywhere roomier. A percentage here would resolve against
+     .board-size-field's own auto (content-based) width — circular, since
+     that width is itself driven by this same input — so this uses a
+     viewport-relative bound instead, which has no such dependency: 50vw
+     hits the 240px cap at any viewport ≳480px, and actually shrinks on
+     something as narrow as a phone. */
+  .board-size-field input[type=range]{width:min(240px,50vw)}
   .board-head h2{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0;font-weight:500}
   .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
   .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
@@ -384,7 +403,7 @@
         <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
         <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
         <div class="board-size-field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
-          <input type="range" id="boardSizeRange" min="420" max="960" step="20" value="680" style="width:110px" />
+          <input type="range" id="boardSizeRange" min="420" max="960" step="20" value="680" />
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
         </div>
         <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
@@ -2833,7 +2852,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r77 (the veil was eating board-head clicks)';
+  const BUILD='v2-r78 (a longer track for the size slider)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
