@@ -6658,3 +6658,70 @@ hid the banner.
 
 Build `BUILD='v2-r92 (board visible by default for new players; always-visible puzzle instructions)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r93): New game/puzzle stop forcing the board hidden; New puzzle button
+
+Real bug, confirmed by Adni in a genuinely fresh incognito session: r92's
+boot-time default worked (first load showed the board), but every
+subsequent "New game" or new-puzzle action re-hid it regardless. Traced
+it, as asked, across every mode rather than assuming it was puzzle-only:
+`startNewGame()`, `startPuzzle()`, and `createOnline()` each had their own
+unconditional `setBoardHidden(true)` — separate from and in addition to
+r92's boot-time default-value fix, firing on literally every new game/
+puzzle/online-game-created, not just a fresh player's first one. Traced
+the other online/lichess entry points too — `joinOnline()`,
+`reconnectOnline()`, `seekLichessGame()`, `playLichessAI()` — none of
+them force it either way, so they were never part of this bug.
+`spectateOnline()`'s unconditional `setBoardHidden(false)` was left
+alone: spectating is a different case (watching, not playing blind)
+where always-visible is the sane default regardless of the spectator's
+own game-preference, not the same bug pattern.
+
+Fix was to delete the three forced calls rather than replace them with
+anything — `boardHidden` is already an in-memory variable that survives
+a "New game"/"New puzzle"/"Create online game" click within the same
+session, so leaving it alone means each of those three now just
+carries forward whatever's already showing (the boot-time default, or
+the player's own toggle), the same as reloading mid-session already
+did via `loadState()`. `startNewGame()`'s log line ("Board hidden — say
+'show board' any time.") was conditioned on the actual `boardHidden`
+value instead of assuming it, so it doesn't claim the board is hidden
+when it isn't.
+
+Puzzle mode's own "roster is the puzzle, blindfold is the point" design
+(the comment in `startPuzzle()`) is worth flagging as a real design
+question, per the ask: puzzles no longer force-hide on every subsequent
+one either, which may or may not be what a puzzle-specific blindfold
+philosophy actually wants — left as Adni's call rather than deciding it
+here, since the verify list was explicit that "New puzzle" must respect
+the current preference like everything else.
+
+**New puzzle button**, board-head, right of Reset (OUR-86's row) —
+visible only while `mode==='puzzle'` AND a puzzle is actually loaded
+(`updatePuzzleInfo()` already runs at every moment that's true or
+becomes false, so its existing choke point also drives
+`newPuzzleBtn.style.display` rather than needing separate calls).
+Clicking it calls a new `puzzleNext()` — the exact logic the "next
+puzzle" voice/typed command already ran, pulled out so there's one
+puzzle-advance path instead of two copies of the same three lines.
+Doesn't touch board visibility at all, so it inherits this same fix.
+
+Verified live: a genuinely clean fresh-session test again needed the
+two-tab technique (one tab clears storage and stays open/never
+unloads, a second, never-yet-loaded tab reads the result) to sidestep
+the same `beforeunload`-resave quirk r92 hit — fresh boot showed
+visible, then clicking "New game" left it visible (previously would
+have re-hidden it); explicitly toggling the board hidden and then
+clicking "New game" correctly kept it hidden (proving this respects
+current state in both directions, not just forcing visible instead of
+forcing hidden); entering puzzle mode and starting a puzzle left the
+board exactly as it was (visible, in this run) rather than force-hiding
+it, with "New puzzle" appearing to the right of Reset; clicking it
+reloaded the puzzle (confirmed via the wrong-answer nudge clearing back
+to the fresh intro text) without touching board visibility; switching
+out of puzzle mode hid the button again; creating an online game left
+the board visible too, confirming the same bug in `createOnline()` is
+fixed.
+
+Build `BUILD='v2-r93 (New game/puzzle stop forcing the board hidden; New puzzle button)'`.
+Published to `/v2/`.
