@@ -424,6 +424,58 @@
 
   <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
 
+  <details class="help" id="appearanceDetails">
+    <summary>Appearance</summary>
+    <div class="field-grid">
+      <div class="field">
+        <label for="boardThemeSelect">Board</label>
+        <select id="boardThemeSelect">
+          <option value="wood" selected>Walnut</option>
+          <option value="green">Tournament Green</option>
+          <option value="blue">Ocean Blue</option>
+          <option value="midnight">Midnight</option>
+          <option value="rose">Rosewood</option>
+          <option value="ocean">Ocean Teal</option>
+          <option value="dusk">Dusk</option>
+          <option value="tournament-wood">Tournament Wood</option>
+          <option value="darker">Blackout</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pieceThemeSelect">Pieces</label>
+        <select id="pieceThemeSelect">
+          <option value="classic" selected>Classic</option>
+          <option value="ivory">Ivory &amp; Onyx</option>
+          <option value="midnight">Midnight</option>
+          <option value="gold">Gold</option>
+          <option value="slate">Slate</option>
+          <option value="ember">Ember</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="apContrastRange">Contrast</label>
+        <input type="range" id="apContrastRange" min="50" max="150" step="1" value="100" />
+      </div>
+      <div class="field">
+        <label for="apSaturateRange">Saturation</label>
+        <input type="range" id="apSaturateRange" min="0" max="200" step="1" value="100" />
+      </div>
+      <div class="field">
+        <label for="apBrightnessRange">Brightness</label>
+        <input type="range" id="apBrightnessRange" min="50" max="150" step="1" value="100" />
+      </div>
+      <div class="field">
+        <label for="apHueRange">Hue</label>
+        <input type="range" id="apHueRange" min="0" max="360" step="1" value="0" />
+      </div>
+      <div class="field">
+        <label for="apOpacityRange" title="Aesthetic only — a lower floor than this would make the board hard to read, not just muted.">Transparency</label>
+        <input type="range" id="apOpacityRange" min="40" max="100" step="1" value="100" />
+      </div>
+      <button class="btn" id="appearanceResetBtn" type="button" title="Resets the five sliders only — board and piece theme are a separate kind of choice and are left as they are.">Reset appearance</button>
+    </div>
+  </details>
+
   <details class="help" id="gameSettingsDetails" open>
     <summary>Game settings</summary>
     <div class="field-grid">
@@ -536,58 +588,6 @@
       <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
       <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
       <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
-    </div>
-  </details>
-
-  <details class="help" id="appearanceDetails">
-    <summary>Appearance</summary>
-    <div class="field-grid">
-      <div class="field">
-        <label for="boardThemeSelect">Board</label>
-        <select id="boardThemeSelect">
-          <option value="wood" selected>Walnut</option>
-          <option value="green">Tournament Green</option>
-          <option value="blue">Ocean Blue</option>
-          <option value="midnight">Midnight</option>
-          <option value="rose">Rosewood</option>
-          <option value="ocean">Ocean Teal</option>
-          <option value="dusk">Dusk</option>
-          <option value="tournament-wood">Tournament Wood</option>
-          <option value="darker">Blackout</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pieceThemeSelect">Pieces</label>
-        <select id="pieceThemeSelect">
-          <option value="classic" selected>Classic</option>
-          <option value="ivory">Ivory &amp; Onyx</option>
-          <option value="midnight">Midnight</option>
-          <option value="gold">Gold</option>
-          <option value="slate">Slate</option>
-          <option value="ember">Ember</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="apContrastRange">Contrast</label>
-        <input type="range" id="apContrastRange" min="50" max="150" step="1" value="100" />
-      </div>
-      <div class="field">
-        <label for="apSaturateRange">Saturation</label>
-        <input type="range" id="apSaturateRange" min="0" max="200" step="1" value="100" />
-      </div>
-      <div class="field">
-        <label for="apBrightnessRange">Brightness</label>
-        <input type="range" id="apBrightnessRange" min="50" max="150" step="1" value="100" />
-      </div>
-      <div class="field">
-        <label for="apHueRange">Hue</label>
-        <input type="range" id="apHueRange" min="0" max="360" step="1" value="0" />
-      </div>
-      <div class="field">
-        <label for="apOpacityRange" title="Aesthetic only — a lower floor than this would make the board hard to read, not just muted.">Transparency</label>
-        <input type="range" id="apOpacityRange" min="40" max="100" step="1" value="100" />
-      </div>
-      <button class="btn" id="appearanceResetBtn" type="button" title="Resets the five sliders only — board and piece theme are a separate kind of choice and are left as they are.">Reset appearance</button>
     </div>
   </details>
 
@@ -2888,7 +2888,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r79 (drag now moves in keyboard-style discrete steps)';
+  const BUILD='v2-r80 (Appearance moved above Game settings)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
