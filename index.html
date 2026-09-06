@@ -795,14 +795,51 @@
          (minutes and seconds respectively, per Lichess's real
          POST /api/board/seek parameters — checked, not assumed: time is
          minutes, increment is seconds, confirmed against the endpoint's
-         own spec). Bullet/blitz are included because this asked for them,
-         but the title below keeps the original voice-latency warning —
-         it was a real, considered trade-off (a voice move takes longer
-         than a click), not an oversight, so surfacing it rather than
-         silently dropping it felt right even though the option is now
-         offered. -->
+         own spec).
+         OUR-107 (follow-up): Lichess's own API spec documents that Board
+         accounts can only SEEK Rapid, Classical and Correspondence —
+         Bullet/Blitz are permitted for direct challenges and AI games,
+         just never this endpoint. Confirmed by testing (Bullet/Blitz
+         seeks never paired; Rapid/Classical did) and by the spec's own
+         "Board" tag restrictions text. So Bullet/Blitz are gone from
+         THIS select — not because they don't work by voice (that
+         reasoning still applies and is folded into this select's title
+         below), but because Lichess itself won't pair them here. They
+         still work fine for "Play the Lichess computer" just below,
+         which uses its own separate, full-range select — the API's own
+         documented exception for AI games. -->
     <div class="online-actions">
-      <select id="lichessTimeSelect" title="Bullet and blitz move fast — a voice move may not keep up. Rapid or slower plays best by voice.">
+      <select id="lichessTimeSelect" title="Only Rapid, Classical and Correspondence can be sought here — Lichess's Board API doesn't pair Bullet/Blitz seeks. Play the Lichess computer below for those.">
+        <optgroup label="Rapid">
+          <option value="10-0">10+0 Rapid</option>
+          <option value="10-5" selected>10+5 Rapid</option>
+          <option value="15-10">15+10 Rapid</option>
+        </optgroup>
+        <optgroup label="Classical">
+          <option value="30-0">30+0 Classical</option>
+          <option value="30-20">30+20 Classical</option>
+        </optgroup>
+        <option value="corr">Correspondence (3 days/move)</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <!-- Floor of 10 minutes: a Custom value faster than Rapid would hit
+           the exact same wall the presets above were just removed for. -->
+      <span class="stepper" id="lichessCustomRow" style="display:none">
+        <input type="number" id="lichessCustomMinutes" min="10" max="180" value="10" style="width:52px" title="Minutes per side (10 minimum — faster than Rapid isn't seekable via this endpoint)" /> min +
+        <input type="number" id="lichessCustomIncrement" min="0" max="180" value="0" style="width:52px" title="Increment in seconds" /> sec
+      </span>
+      <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
+      <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
+      <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
+        <option value="1">AI level 1</option><option value="2">AI level 2</option>
+        <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
+        <option value="5">AI level 5</option><option value="6">AI level 6</option>
+        <option value="7">AI level 7</option><option value="8">AI level 8</option>
+      </select>
+      <!-- OUR-107 (follow-up): its own select, full range including Bullet/
+           Blitz — /api/challenge/ai is the API's documented exception,
+           unaffected by the seek-only restriction above. -->
+      <select id="lichessAiTimeSelect" title="Bullet and blitz move fast — a voice move may not keep up. Rapid or slower plays best by voice.">
         <optgroup label="Bullet">
           <option value="1-0">1+0 Bullet</option>
           <option value="2-1">2+1 Bullet</option>
@@ -822,20 +859,6 @@
           <option value="30-0">30+0 Classical</option>
           <option value="30-20">30+20 Classical</option>
         </optgroup>
-        <option value="corr">Correspondence (3 days/move)</option>
-        <option value="custom">Custom…</option>
-      </select>
-      <span class="stepper" id="lichessCustomRow" style="display:none">
-        <input type="number" id="lichessCustomMinutes" min="0" max="180" value="10" style="width:52px" title="Minutes per side" /> min +
-        <input type="number" id="lichessCustomIncrement" min="0" max="180" value="0" style="width:52px" title="Increment in seconds" /> sec
-      </span>
-      <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
-      <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
-      <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
-        <option value="1">AI level 1</option><option value="2">AI level 2</option>
-        <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
-        <option value="5">AI level 5</option><option value="6">AI level 6</option>
-        <option value="7">AI level 7</option><option value="8">AI level 8</option>
       </select>
       <button class="btn" id="lichessAiBtn" type="button">Play the Lichess computer</button>
       <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
@@ -1181,7 +1204,7 @@
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
         lichessCustomRow=$('lichessCustomRow'), lichessCustomMinutes=$('lichessCustomMinutes'), lichessCustomIncrement=$('lichessCustomIncrement'),
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
-        lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiBtn=$('lichessAiBtn'),
+        lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiTimeSelect=$('lichessAiTimeSelect'), lichessAiBtn=$('lichessAiBtn'),
         chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
         puzzleInfo=$('puzzleInfo');
 
@@ -3349,7 +3372,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r97 (full time-control list: Lichess seek + internal clock, with increment)';
+  const BUILD='v2-r98 (Bullet/Blitz split out of seek, kept for the Lichess AI game)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6794,43 +6817,57 @@
     }
   }
 
-  // OUR-108: full Lichess "Quick Pairing" list (Bullet through Classical),
-  // plus Correspondence and Custom — bullet/blitz included on request,
-  // even though the original build deliberately left them out (a voice
-  // move takes longer than a click; see the select's own title attribute,
-  // which keeps that warning visible rather than silently dropping it).
-  // `rated:false` stays hardcoded regardless of time control: this is a
-  // new, unproven integration and a bad move sent by a misheard command
-  // should not cost a real rating point while it's still being shaken out.
+  // OUR-108/OUR-107(follow-up): two separate selects now, not one shared
+  // between seek and AI. `#lichessTimeSelect` (seek) only offers Rapid/
+  // Classical/Correspondence/Custom — Lichess's own API spec documents
+  // that Board accounts can only SEEK those, never Bullet/Blitz (verified
+  // by testing: those presets built correct requests but never paired).
+  // `#lichessAiTimeSelect` keeps the full Bullet-through-Classical range,
+  // since /api/challenge/ai is the spec's own documented exception to
+  // that restriction. `rated:false` stays hardcoded regardless of time
+  // control either way: a new, unproven integration and a bad move sent
+  // by a misheard command should not cost a real rating point while it's
+  // still being shaken out.
   //
   // Category names (bullet/blitz/rapid/classical) are purely for the
   // spoken/logged "Looking for a ___ opponent" message — checked against
   // Lichess's real POST /api/board/seek parameters rather than assumed:
   // `time` is minutes, `increment` is seconds, both confirmed against the
   // endpoint's own spec, so parseTimeControlValue()'s "M-S" split maps
-  // straight onto them with no unit conversion needed.
+  // straight onto them with no unit conversion needed. Still keeps the
+  // bullet/blitz entries even though the seek select no longer offers
+  // those values — #lichessAiTimeSelect still does, and shares this table.
   const LICHESS_CATEGORY={
     '1-0':'bullet','2-1':'bullet',
     '3-0':'blitz','3-2':'blitz','5-0':'blitz','5-3':'blitz',
     '10-0':'rapid','10-5':'rapid','15-10':'rapid',
     '30-0':'classical','30-20':'classical'
   };
-  // Resolves the select's current value (a fixed "M-S" preset, 'corr', or
+  // Resolves a select's current value (a fixed "M-S" preset, 'corr', or
   // 'custom') into the {time,increment,label} or {days,label} shape both
-  // seekLichessGame() and playLichessAI() already expected — one place
-  // that understands the select's three value shapes, rather than three
-  // copies of the same corr/custom special-casing.
-  function currentLichessTimeConfig(){
-    const v=lichessTimeSelect.value;
+  // seekLichessGame() and playLichessAI() need — one place that
+  // understands the three value shapes, shared by both selects rather
+  // than duplicated per-select. Only the seek select ever actually has a
+  // 'corr' or 'custom' option to resolve; #lichessAiTimeSelect's fixed
+  // presets always fall through to the parseTimeControlValue() branch.
+  function resolveLichessTimeConfig(selectEl){
+    const v=selectEl.value;
     if(v==='corr') return {days:3,label:'a correspondence'};
     if(v==='custom'){
-      const time=Math.max(0,Math.min(180,+lichessCustomMinutes.value||0));
+      // Floor of 10 (matching Rapid's own floor, not just the input's own
+      // min="10" attribute — a typed value can slip past that) for the
+      // same reason Bullet/Blitz presets aren't offered here at all: a
+      // faster seek isn't seekable via this endpoint regardless of who
+      // sets the number.
+      const time=Math.max(10,Math.min(180,+lichessCustomMinutes.value||0));
       const increment=Math.max(0,Math.min(180,+lichessCustomIncrement.value||0));
       return {time,increment,label:'a custom'};
     }
     const tc=parseTimeControlValue(v);
     return {time:tc.minutes,increment:tc.increment,label:'a '+(LICHESS_CATEGORY[v]||'timed')};
   }
+  function currentLichessTimeConfig(){ return resolveLichessTimeConfig(lichessTimeSelect); }
+  function currentLichessAiTimeConfig(){ return resolveLichessTimeConfig(lichessAiTimeSelect); }
   let lichessSeekController=null, lichessSeekPollTimer=null;
 
   function cancelLichessSeek(announce){
@@ -6897,11 +6934,11 @@
   async function playLichessAI(){
     if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
     if(lichessState) leaveLichess();
-    // The AI replies instantly — there's no "days per move" for it, so a
-    // correspondence time-select falls back to rapid rather than sending a
-    // param the endpoint doesn't support.
-    let cfg=currentLichessTimeConfig();
-    if(cfg.days) cfg={time:10,increment:5,label:'a rapid'};
+    // OUR-107 (follow-up): reads its own #lichessAiTimeSelect now, which
+    // has no 'corr' option at all — the old days-per-move fallback this
+    // needed when the two selects were shared is gone with it, since
+    // there's no longer a way to land here with cfg.days set.
+    const cfg=currentLichessAiTimeConfig();
     try{ await ensureLichessUsername(); }
     catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
     const body=new URLSearchParams({level:lichessAiLevelSelect.value,

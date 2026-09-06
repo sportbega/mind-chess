@@ -7141,3 +7141,49 @@ fully supported for seeking as before, and Blitz still works correctly
 for "Play the Lichess computer" (`/api/challenge/ai`, one of the
 explicitly-permitted Blitz use cases) and for direct challenges. Not
 changed in this entry — flagging the decision, not making it.
+
+## 2026-09-06 (r98): Bullet/Blitz split out of seek, kept for the Lichess AI game
+
+Follow-up to the previous entry's finding — Lichess's own API spec
+documents that Board accounts can only SEEK Rapid/Classical/
+Correspondence, with Blitz permitted for direct challenges and AI
+games but never `/api/board/seek`. Acted on that per Adni's decision.
+
+`#lichessTimeSelect` (the seek panel) lost its Bullet and Blitz
+optgroups entirely — down to Rapid (10+0/10+5/15+10), Classical
+(30+0/30+20), Correspondence, and Custom. Custom's own minutes floor
+moved from 0 to 10 (both the input's `min` attribute and, since a
+typed value can slip past that, a real `Math.max(10,...)` clamp in
+`resolveLichessTimeConfig()`) — a Custom value faster than Rapid would
+hit the exact same documented wall the presets were just removed for.
+
+"Play the Lichess computer" needed its own control to keep the full
+range, since it used to share `#lichessTimeSelect` with the seek panel
+— split into a new `#lichessAiTimeSelect`, sitting next to the AI
+level select, keeping all eleven Bullet-through-Classical presets
+(no Correspondence or Custom — the AI plays instantly, so those never
+applied to it anyway). `currentLichessTimeConfig()` became
+`resolveLichessTimeConfig(selectEl)`, a single resolver both
+`currentLichessTimeConfig()` (seek) and the new
+`currentLichessAiTimeConfig()` (AI) call with their own select — one
+place that understands the "M-S" / 'corr' / 'custom' value shapes,
+rather than two copies. `playLichessAI()`'s old Correspondence→Rapid
+fallback is gone with it: `#lichessAiTimeSelect` has no 'corr' option
+at all, so there's no longer a way to reach that function with
+`cfg.days` set.
+
+Verified live: the seek select lists exactly 7 options (Rapid×3,
+Classical×2, Correspondence, Custom) with zero Bullet/Blitz; the AI
+select lists exactly 11 (Bullet×2, Blitz×4, Rapid×3, Classical×2) with
+zero Correspondence/Custom. Fetch-intercepted both paths: seek still
+produces correct `time`/`increment`/`days` params for 10+5, 30+20, and
+Correspondence; the AI path produces correct `clock.limit`/
+`clock.increment` for 1+0 Bullet (60/0), 5+3 Blitz (300/3), and 30+20
+Classical (1800/20) — confirming Bullet/Blitz still work end-to-end
+for AI games specifically. Typing 2 into the seek panel's Custom
+minutes field and seeking produced `time=10` in the actual request,
+confirming the floor holds against a typed value, not just the input's
+own `min` attribute.
+
+Build `BUILD='v2-r98 (Bullet/Blitz split out of seek, kept for the Lichess AI game)'`.
+Published to `/v2/`.
