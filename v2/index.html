@@ -663,11 +663,24 @@
       </div>
       <div class="field">
         <label for="levelSelect">Level</label>
-        <select id="levelSelect" title="Casual plays instantly and needs no download. Club and above use a real chess engine — 7.3 MB, fetched once and then cached for offline use.">
-          <option value="1" selected>Casual</option>
-          <option value="2">Club</option>
-          <option value="3">Sharp</option>
-          <option value="master">Master</option>
+        <!-- OUR-105: 11 rungs, one engine (Stockfish) — see the LEVELS
+             table in <script> for the actual skill/depth/movetime each one
+             sets. Numbered rather than four hand-picked names, since eleven
+             names would be harder to place on a scale than a number is;
+             short tags keep a numeric-only list from being opaque without
+             turning the list into a paragraph. -->
+        <select id="levelSelect" title="Every level plays real chess (Stockfish) — 7.3 MB, fetched once and then cached for offline use.">
+          <option value="1" selected>1 — Beginner</option>
+          <option value="2">2 — Novice</option>
+          <option value="3">3 — Casual</option>
+          <option value="4">4 — Club</option>
+          <option value="5">5 — Strong Club</option>
+          <option value="6">6 — Advanced</option>
+          <option value="7">7 — Expert</option>
+          <option value="8">8 — Very Strong</option>
+          <option value="9">9 — Master</option>
+          <option value="10">10 — Elite</option>
+          <option value="capablanca">Capablanca Level</option>
         </select>
       </div>
       <div class="field">
@@ -894,16 +907,12 @@
   let boardFlippedOverride = null;
   let mode = 'computer';
   let humanColor = 'w';
-  // Casual is the default, which is a change from 2.0 and does two things at
-  // once. It is the only way "nothing downloads on a first visit" can be true
-  // — a default of Club would fetch 7.3 MB before the first reply, however
-  // local the Casual rung is. And it keeps the default *difficulty* roughly
-  // where 2.0 had it: the ladder rework made Club Stockfish at depth 4, far
-  // stronger than the depth-2 alpha-beta that used to carry that name, so
-  // leaving the default on Club would have quietly made the app harder for
-  // every new player. Anyone with a saved level keeps it.
-  let levelKey = '1';         // key into LEVELS: '1' | '2' | '3' | 'master'
-  let searchDepth = 1;        // the local engine's depth, and the SF fallback's
+  // OUR-105: Level 1 stays the default — every rung is Stockfish now (see
+  // LEVELS below), including this one, but Skill Level 0 + depth 1 is still
+  // the gentlest genuinely-beatable setting, matching what "Casual" meant
+  // before the ladder was unified. Anyone with a saved level keeps it (see
+  // loadState()'s OUR-105 migration).
+  let levelKey = '1';         // key into LEVELS: '1'..'10' | 'capablanca'
   let verbosity = 'terse';
   let coach = 'hints';     // off | hints | full — engine-backed answers (C1)
   let tips = 'on';         // off | on — unprompted, computed, never advice
@@ -945,7 +954,6 @@
   // can look its target up by .to without asking chess.js again.
   let selectedSquare = null;
   let legalTargets = [];
-  let lastComputerMove = null; // {from,to} the engine itself last played — used to discourage immediately undoing it
   let lastNarration = '';
   let speechGeneration = 0;
   let pendingAction = null;
@@ -2748,109 +2756,45 @@
       puzzleAdvance();
     }
   }
-  // The fallback engine — alpha-beta minimax over material + pawn
-  // advancement, ported from Giga Chess's search()/value().
-  //
-  // It used to *be* the ladder: Casual/Club/Sharp were depths 1/2/3 of this,
-  // and only Master was real chess. That made "harder" mean a different
-  // opponent rather than a stronger one — the levels didn't just differ in
-  // strength, they differed in what kind of mistakes they made. Day 4.0 moved
-  // every rung onto Stockfish's own Skill Level (see LEVELS below).
-  //
-  // This stays, and is not dead code: it is what plays when the 7.3 MB WASM
-  // engine cannot load at all. Something has to answer when a browser has no
-  // usable WebAssembly, and "no opponent" is a worse answer than "a weak one".
-  // BENCH-BASELINE-START — tools/level-ladder.js lifts everything between
-  // these markers, so the bench scores the *actual* Casual rung rather than a
-  // copy of it. It ends after localReply() deliberately: the anti-reversal
-  // nudge is part of how this engine plays, and a bench that reimplemented
-  // the search without it would be measuring a slightly different opponent.
-  function evaluate(g){
-    const board=g.board();
-    let score=0;
-    for(let r=0;r<8;r++) for(let f=0;f<8;f++){
-      const cell=board[r][f]; if(!cell) continue;
-      let v=PIECE_VALUE[cell.type];
-      if(cell.type==='p'){ v+=(cell.color==='w'?r:7-r)*0.04; }
-      // Small centrality bonus for knights/bishops. Without this, a knight
-      // move that doesn't change material is a dead tie with every other
-      // knight move at shallow depth, so Casual/Club had nothing to prefer
-      // a developed knight over shuffling it back where it came from.
-      else if(cell.type==='n') v+=(1-Math.max(Math.abs(f-3.5),Math.abs(r-3.5))/3.5)*0.3;
-      else if(cell.type==='b') v+=(1-Math.max(Math.abs(f-3.5),Math.abs(r-3.5))/3.5)*0.15;
-      score+=cell.color==='w'?v:-v;
-    }
-    return score;
-  }
-  function searchScore(g,depth,alpha,beta,maximizing){
-    if(depth===0||g.game_over()) return evaluate(g);
-    const moves=g.moves();
-    let best=maximizing?-Infinity:Infinity;
-    for(const m of moves){
-      g.move(m);
-      const score=searchScore(g,depth-1,alpha,beta,!maximizing);
-      g.undo();
-      if(maximizing){ best=Math.max(best,score); alpha=Math.max(alpha,best); }
-      else{ best=Math.min(best,score); beta=Math.min(beta,best); }
-      if(beta<=alpha) break;
-    }
-    return best;
-  }
-  // Depth is passed rather than read off a global: this is now both the Casual
-  // rung *and* the fallback for the other three, and those want different
-  // depths. A global would silently hand one of them the other's.
-  //
-  // Choosing the move and playing it are also separate now. The Casual rung
-  // needs the choice on its own, so it can predict the narration and reserve
-  // the audio before the move is applied — exactly as the Stockfish path does
-  // between `bestmove` arriving and applyMove().
-  function localReply(depth){
-    const moves=game.moves({verbose:true});
-    if(!moves.length) return null;
-    const d=depth||searchDepth;
-    const white=game.turn()==='w';
-    let best=null,bestScore=white?-Infinity:Infinity;
-    for(const m of moves){
-      game.move(m.san);
-      let score=searchScore(game,d-1,-Infinity,Infinity,!white);
-      game.undo();
-      // Undoing the engine's own last move is legal but usually pointless —
-      // nudge it away from an exact reversal unless that's genuinely the
-      // best-scoring option by a real margin, not just a tie.
-      if(lastComputerMove&&m.from===lastComputerMove.to&&m.to===lastComputerMove.from){
-        score+=white?-0.15:0.15;
-      }
-      if(white?score>bestScore:score<bestScore){ bestScore=score; best=m; }
-    }
-    return best?{from:best.from,to:best.to,promotion:best.promotion}:null;
-  }
-  // BENCH-BASELINE-END
-  function computerMove(depth){
-    const best=localReply(depth);
-    if(!best) return;
-    lastComputerMove={from:best.from,to:best.to};
-    applyMove(best);
-  }
+  // OUR-105: the hand-rolled alpha-beta engine that used to live here
+  // (evaluate()/searchScore()/localReply()/computerMove()) is retired —
+  // every level is Stockfish now, so there is no bottom rung and no WASM-
+  // load fallback left that needs it. If Stockfish's WASM genuinely cannot
+  // load, triggerComputerMove()'s catch below now says so plainly rather
+  // than quietly switching the player to a different, weaker opponent than
+  // the one they picked.
 
   // ===============================================================
   // The opponent — real Stockfish (18 Lite, single-threaded WASM),
   // self-hosted alongside index.html since Worker scripts can't be
   // constructed cross-origin from a CDN in every browser.
   //
-  // It used to load only for "Master". Now it carries Club, Sharp and Master
-  // — three rungs of one engine, which is what makes "harder" mean stronger
-  // — while Casual stays on the local engine so that opening the page and
-  // playing costs nothing. warmEngine() starts the download the moment a
-  // level that needs it is selected, and not one moment before.
+  // OUR-105: every rung is Stockfish now, retiring the old hand-rolled
+  // alpha-beta engine entirely (it used to carry the bottom "Casual" rung,
+  // and stand in if Stockfish's WASM failed to load — see the removed
+  // BENCH-BASELINE block's history in DEVLOG.md if that reasoning is ever
+  // needed again). One engine, eleven settings, no more engine-vs-engine
+  // branching anywhere in this file. warmEngine() starts the 7.3 MB
+  // download the moment a computer game is started — see warmEngine()'s
+  // own comment for why that is a real, accepted trade-off now, not an
+  // oversight.
   // ===============================================================
   // ---------------------------------------------------------------
-  // The ladder — one engine at four settings
+  // The ladder — one engine, eleven settings
   // ---------------------------------------------------------------
-  // Stockfish's own Skill Level (0–20) weakens it by making it *choose*
-  // worse among the moves it has already seen, which is the honest way to be
-  // beatable: the same opponent, playing less well. UCI_Elo would give a
-  // number to print, but its floor here is 1320 and a blindfold beginner
-  // needs a rung well below that — Skill Level goes lower than UCI_Elo can.
+  // Same two levers r39-r53 already established, just carried across more
+  // rungs. Stockfish's own Skill Level (0–20) weakens it by making it
+  // *choose* worse among the moves it has already seen, which is the honest
+  // way to be beatable: the same opponent, playing less well. UCI_Elo would
+  // give a number to print, but its floor in this build is 1320 and a
+  // blindfold beginner needs a rung well below that — Skill Level goes
+  // lower than UCI_Elo can, which is why this ladder is built on Skill
+  // Level + depth rather than UCI_Elo, the same choice Lichess's own
+  // fishnet makes for its 1-8 levels (skill -9..20 paired with depth 5..22,
+  // per lichess-org/fishnet's SkillLevel table) — this build has no
+  // equivalent of fishnet's own sub-zero randomised-pick trick for
+  // skill<0, so this ladder stays inside Stockfish's native 0-20 floor and
+  // leans on depth 1 at the bottom instead.
   //
   // Skill Level alone isn't enough: it still searches deeply and then picks
   // slightly wrong, which is a strange opponent — one that never hangs a
@@ -2858,33 +2802,31 @@
   // like someone new to this, so the rungs cap depth as well.
   //
   // **Depth is the lever; movetime is only a ceiling.** Measured in the
-  // bench, every Stockfish rung below Master reaches its depth in ~10 ms, so
-  // the time limit never binds — which is the point. A time-defined level is
-  // a different opponent on a fast laptop than on a slow phone, and a player
-  // who moves from one to the other has no way to know why the game got
-  // harder. Depth plays the same everywhere. The ceiling exists only so a
-  // pathological position on slow hardware can't stall the game; if it ever
-  // does bind, the level weakens rather than freezing, which is the right way
-  // round. Master is deliberately the exception — "as good as it can be in
-  // 1.2 seconds" is what that rung means, and it has no depth cap.
-  //
-  // **Casual runs the local engine, on purpose.** Putting every rung on
-  // Stockfish made the ladder honest and charged 7.3 MB to everyone who
-  // opened the page — including someone trying the app for the first time on
-  // a phone, who has not asked for a strong opponent and would be paying a
-  // download before their first move. The bottom rung is exactly where that
-  // trade is worst and where it buys least: a first visit gets a game
-  // immediately, and nothing downloads until the player reaches for a real
-  // opponent. The rungs above it are still one engine at three settings, so
-  // "harder" still means stronger everywhere the comparison is being made.
+  // bench, every rung below Capablanca reaches its depth in single-digit ms,
+  // so the time limit never binds — which is the point. A time-defined
+  // level is a different opponent on a fast laptop than on a slow phone,
+  // and a player who moves from one to the other has no way to know why the
+  // game got harder. Depth plays the same everywhere. The ceiling exists
+  // only so a pathological position on slow hardware can't stall the game;
+  // if it ever does bind, the level weakens rather than freezing, which is
+  // the right way round. Level 11 ("Capablanca Level") is deliberately the
+  // exception — "as good as it can be in the time given" is what that rung
+  // means, and it has no depth cap.
   //
   // The numbers came out of tools/level-ladder.js, not out of taste.
   // LEVELS-START — read by tools/level-ladder.js
   const LEVELS = {
-    '1':      { name:'Casual', engine:'local', depth:1 },
-    '2':      { name:'Club',   engine:'sf', skill:3,  depth:4, movetime:2500 },
-    '3':      { name:'Sharp',  engine:'sf', skill:9,  depth:8, movetime:2500 },
-    'master': { name:'Master', engine:'sf', skill:20,          movetime:1200 }
+    '1':  { name:'1 — Beginner',    skill:0,  depth:1,  movetime:800  },
+    '2':  { name:'2 — Novice',      skill:1,  depth:2,  movetime:1000 },
+    '3':  { name:'3 — Casual',      skill:2,  depth:3,  movetime:1200 },
+    '4':  { name:'4 — Club',        skill:4,  depth:4,  movetime:1500 },
+    '5':  { name:'5 — Strong Club', skill:6,  depth:5,  movetime:1800 },
+    '6':  { name:'6 — Advanced',    skill:8,  depth:6,  movetime:2000 },
+    '7':  { name:'7 — Expert',      skill:11, depth:8,  movetime:2200 },
+    '8':  { name:'8 — Very Strong', skill:14, depth:10, movetime:2500 },
+    '9':  { name:'9 — Master',      skill:17, depth:12, movetime:2800 },
+    '10': { name:'10 — Elite',      skill:19, depth:15, movetime:3000 },
+    'capablanca': { name:'Capablanca Level', skill:20, movetime:3500 }
   };
   // LEVELS-END
   const DEFAULT_LEVEL='1';
@@ -2906,14 +2848,14 @@
       worker.postMessage('uci');
     });
     // A rejected promise would otherwise be cached here forever — one
-    // transient load failure (slow network, a hiccup) would permanently
-    // downgrade "Master" to the weak custom engine for the rest of the
-    // session, with no further attempt to load the real engine again.
+    // transient load failure (slow network, a hiccup) would leave every
+    // level unable to move for the rest of the session, with no further
+    // attempt to load the engine again.
     sfInitPromise.catch(()=>{ sfInitPromise=null; });
     return sfInitPromise;
   }
-  // One worker, one `onmessage` slot, and now two callers: the Master level
-  // playing a move and the coach analysing on demand. Overlap them and the
+  // One worker, one `onmessage` slot, and every level plus the coach as
+  // callers. Overlap them and the
   // second handler silently steals the first one's `bestmove`. Everything
   // that talks to the engine queues here.
   let sfChain = Promise.resolve();
@@ -2925,8 +2867,8 @@
   }
 
   // UCI options are worker state, not call arguments: once "Skill Level 0" is
-  // set it stays set for whoever posts next. One worker is now shared by four
-  // playing strengths *and* the coach, so every caller states the whole
+  // set it stays set for whoever posts next. One worker is shared by every
+  // playing strength *and* the coach, so every caller states the whole
   // configuration it needs rather than assuming what it inherited. sfQueue
   // serialises the callers, which is what makes that safe — without it two
   // overlapping jobs would interleave their setoption lines.
@@ -3023,28 +2965,13 @@
 
   function triggerComputerMove(){
     const g=generation, spec=currentLevel();
-    if(spec.engine==='local'){
-      // No worker, no download, no promise — the whole point of this rung.
-      // It still waits for the player's own move to be read out, because that
-      // was never about which engine is thinking.
-      const move=localReply(spec.depth);
-      if(!move) return;
-      const text=predictNarration(move);
-      if(text) requestReserve(splitForSpeech(voiceizeSquares(text))[0]);
-      whenSpeechIdle(()=>{
-        if(g!==generation||gameOver) return;
-        lastComputerMove={from:move.from,to:move.to};
-        applyMove(move);
-      },REPLY_WAIT_MAX_MS);
-      return;
-    }
     stockfishBestMove(game.fen(), spec).then(uci=>{
       if(g!==generation||gameOver) return;
       if(!uci||uci==='(none)'){ warn('The engine returned no move.'); return; }
       const move=uciToMoveSpec(uci);
       // Measured before this existed: the player says "e4", the app starts
       // reading "Pawn to e4." at +122ms, and the computer's reply cancels it
-      // at +670ms — every move, on every level below Master, because say()
+      // at +670ms — every move, on every level, because say()
       // begins by cancelling whatever is speaking. You heard "Pawn to e—".
       //
       // So wait for the sentence to finish. The wait is not a cost: it is
@@ -3058,13 +2985,12 @@
       },REPLY_WAIT_MAX_MS);
     }).catch(err=>{
       if(g!==generation||gameOver) return;
-      // Every rung is Stockfish now, so a load failure is no longer just
-      // "Master is unavailable" — it would be no opponent at all. The old
-      // custom engine is kept for exactly this, and says so out loud rather
-      // than quietly playing a different game than the one you selected.
-      warnSilent('The chess engine couldn’t load ('+((err&&err.message)||'load error')
-        +'), so this game is using the simple built-in opponent instead. Strength won’t match the level you picked.');
-      whenSpeechIdle(()=>{ if(g===generation&&!gameOver) computerMove(); },REPLY_WAIT_MAX_MS);
+      // OUR-105: no local-engine fallback left to quietly switch to — every
+      // level is Stockfish now, so a load failure here means no opponent at
+      // all, not a weaker one. Says so plainly rather than pretending the
+      // game continued at a different strength than the one picked.
+      warn('The chess engine couldn’t load ('+((err&&err.message)||'load error')
+        +'), so the computer can’t move right now. Try reloading the page.');
     });
   }
 
@@ -3273,8 +3199,8 @@
   // Typed input is often standard algebraic notation ("Nf3", "Bxc4", "e8=Q")
   // rather than a spoken phrase. Try chess.js's own SAN parser first — it's
   // an exact, unambiguous match, so it should win over the fuzzy speech
-  // scorer below. move+undo keeps this pure, matching the pattern already
-  // used by computerMove()'s search.
+  // scorer below. move+undo keeps this pure, the same probe-and-revert
+  // pattern used everywhere else this file needs to test a move.
   function matchSan(raw){
     const tok=raw.trim();
     if(!tok||/\s/.test(tok)) return null;
@@ -3287,7 +3213,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r93 (New game/puzzle stop forcing the board hidden; New puzzle button)';
+  const BUILD='v2-r94 (unified 11-level Stockfish difficulty ladder)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -3747,7 +3673,7 @@
     puzzle=p; puzzleStage=0; puzzleWrong=0; puzzle.pendingAnswer=null;
     game.load(p.fen);
     humanColor=game.turn();
-    lastMove=null; pendingAction=null; gameOver=false; lastComputerMove=null;
+    lastMove=null; pendingAction=null; gameOver=false;
     stopClock();
     // OUR-103: used to force setBoardHidden(true) here on every single
     // puzzle start, not just the player's first ever one — meaning even a
@@ -4191,8 +4117,8 @@
   }
 
   // Every coach answer runs through here: it is the only place that has to
-  // know the engine is 7.3MB, lazily loaded, shared with the Master level and
-  // occasionally absent.
+  // know the engine is 7.3MB, lazily loaded, shared with every playing
+  // level, and occasionally absent.
   function askEngine(fen,then){
     // Single funnel for every coach answer — the one check that matters for
     // fair play. A Lichess game is a real opponent on lichess.org's own
@@ -4607,7 +4533,6 @@
     if(mode==='computer' && game.turn()!==humanColor) game.undo();  // undo the pair
     gameOver=false; pendingAction=null;
     lastMove=game.history({verbose:true}).slice(-1)[0]||null;
-    lastComputerMove=null;
     startClock();
     renderAll();
     speak('Taken back. '+(game.turn()==='w'?'White':'Black')+' to move.');
@@ -6994,26 +6919,24 @@
   newPuzzleBtn.addEventListener('click',puzzleNext);
   levelSelect.addEventListener('change',()=>{
     levelKey = levelSelect.value;
-    searchDepth = levelKey==='master'?3:(+levelKey||2);   // the fallback engine's depth
     warmEngine();
     saveState();
   });
-  // Start the 7.3 MB engine as soon as we know it will be needed, so the
-  // download isn't sitting in front of the player's first move — but *only*
-  // when the chosen level actually needs it.
-  //
-  // This is the whole first-visit protection, and it is one condition: a
-  // player who lands on the page, leaves the Level select alone and starts
-  // playing downloads nothing at all, because Casual is the local engine.
-  // Nothing is fetched until they reach for a stronger opponent, at which
-  // point they have asked for it and the wait means something.
+  // OUR-105: used to be conditional on the chosen level actually needing
+  // Stockfish — Casual didn't, so a player who never touched the Level
+  // select downloaded nothing. Every level needs Stockfish now, so that
+  // condition is gone and this always starts the download for a computer
+  // game. This is a real, accepted trade-off of unifying the ladder onto
+  // one engine, not an oversight: a first-time visitor on Vs. computer now
+  // pays the 7.3 MB (once — then it's cached and works offline, same as
+  // always) before their first move, where Level 1 used to cost nothing.
   //
   // The coach is deliberately not warmed here. It needs the same engine, but
   // it is on-demand by nature — it already says "Let me look" — and warming
-  // for a question nobody has asked yet would quietly undo all of this.
+  // for a question nobody has asked yet would quietly undo the point of
+  // waiting for mode==='computer' below.
   function warmEngine(){
     if(mode!=='computer'||sfInitPromise) return;
-    if(currentLevel().engine!=='sf') return;
     log('System','Loading the chess engine for this level (7.3 MB, once — then it’s cached and works offline).');
     stockfishInit().catch(()=>{});
   }
@@ -7182,7 +7105,6 @@
     dropReserve();
     resetTips();
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
-    lastComputerMove=null;
     // Which seat you are in survives from wherever you were last, and a puzzle
     // sets it to whichever side is to play — so a Black-to-play puzzle left
     // humanColor='b', and the next game against the computer opened with you
@@ -7247,7 +7169,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,searchDepth,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,boardFlippedOverride,
+        pgn:game.pgn(),mode,levelKey,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,boardFlippedOverride,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -7264,13 +7186,21 @@
     let saved;
     try{ saved=JSON.parse(raw); }catch(e){ return false; }
     try{
-      // A 2.0 save has no levelKey — it stored searchDepth plus a masterLevel
-      // flag. Read the old shape when the new one isn't there, so nobody's
-      // chosen level silently resets to Club.
-      levelKey=saved.levelKey||(saved.masterLevel?'master':String(saved.searchDepth||2));
+      // A 2.0 save has no levelKey at all — it stored searchDepth plus a
+      // masterLevel flag instead. A 2.x/3.x-through-r104 save has levelKey
+      // but on the old 4-rung scale ('1'/'2'/'3'/'master' = Casual/Club/
+      // Sharp/Master). Neither should silently reset to Level 1 — resolve
+      // to whichever OLD-scheme key the save implies, exactly as before,
+      // then run that through OUR-105's migration onto the new 1-10/
+      // capablanca scale. Flagged mapping (own judgment, not measured):
+      // Casual→2, Club→5, Sharp→7, Master→Capablanca — roughly where each
+      // old rung's actual strength (skill/depth) now falls on the new
+      // curve, not just a same-numbered slot.
+      const oldLevelKey=saved.levelKey||(saved.masterLevel?'master':String(saved.searchDepth||2));
+      const OLD_TO_NEW_LEVEL={'1':'2','2':'5','3':'7','master':'capablanca'};
+      levelKey=OLD_TO_NEW_LEVEL[oldLevelKey]||(LEVELS[oldLevelKey]?oldLevelKey:DEFAULT_LEVEL);
       if(!LEVELS[levelKey]) levelKey=DEFAULT_LEVEL;
       levelSelect.value=levelKey;
-      searchDepth=levelKey==='master'?3:(+levelKey||2);
       verbosity=saved.verbosity||'terse'; verbositySelect.value=verbosity;
       // A save written by 2.0 stores 'off' explicitly, so an existing player
       // keeps the setting they had; only a fresh install gets the new default.
