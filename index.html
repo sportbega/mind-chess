@@ -134,7 +134,14 @@
      row at any reasonable width, so it moved to the button's own title
      tooltip instead of disappearing outright — the "Voice commands"
      details block elsewhere still documents the same phrases at length. */
-  .mic-compact{display:flex;align-items:center;gap:10px}
+  .mic-compact{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* Quick-access speaker mute (OUR-91) — same visual weight as the mic
+     button's own circular chrome, sized down since it's a secondary
+     control, not the primary one. */
+  .icon-btn{width:36px;height:36px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border:1px solid var(--line);color:var(--accent);padding:0}
+  .icon-btn:hover:not(:disabled){border-color:var(--accent)}
+  .icon-btn svg{width:18px;height:18px}
+  .icon-btn.muted{color:var(--text-dim)}
   .mic-wrap{position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--accent-2);opacity:0;transform:scale(.6)}
   .mic-wrap.listening .ring{animation:ripple 1.6s ease-out infinite}
@@ -240,7 +247,6 @@
   .app.fullscreen-active>*{display:none}
   .app.fullscreen-active .board-head #flipBoardBtn,
   .app.fullscreen-active .board-head #fullscreenBtn,
-  .app.fullscreen-active .board-head #boardToggleBtn,
   /* .board-size-field as a class (not an inline style on the wrapper div)
      so this rule can actually win the cascade — an inline style always
      beats a stylesheet rule regardless of specificity, which is exactly
@@ -358,6 +364,25 @@
         </button>
       </div>
       <p class="mic-note" id="micNote"></p>
+      <!-- Moved here from .board-head (OUR-90): the button that reveals a
+           hidden board used to live inside the row that's part of what's
+           hidden, reachable only by scrolling to (and half-seeing) the
+           very thing it's meant to unhide. The header is visible
+           regardless of board state, same reasoning as the mic living
+           here since r73. -->
+      <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
+      <!-- Same underlying flag as Voice settings' "Speak aloud" toggle —
+           see setVoiceOn() — not a second setting. Sound effects
+           (OUR-42) are a separate Audio() call inside applyMove() with no
+           dependency on voiceOn at all, so this never touches them. -->
+      <button class="icon-btn" id="speakerToggleBtn" type="button" aria-label="Mute narration" title="Mute narration — move/capture sounds stay on.">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 9v6h4l5 4V5L8 9H4Z"/>
+          <path class="speaker-wave-1" d="M16.5 8.5a5 5 0 0 1 0 7"/>
+          <path class="speaker-wave-2" d="M19 6a9 9 0 0 1 0 12"/>
+          <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -424,7 +449,6 @@
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
         </div>
-        <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
       </div>
     </div>
     <div class="board-outer">
@@ -853,7 +877,7 @@
         verbositySelect=$('verbositySelect'), coachSelect=$('coachSelect'), tipsSelect=$('tipsSelect'),
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
-        voiceToggle=$('voiceToggle'),
+        voiceToggle=$('voiceToggle'), speakerToggleBtn=$('speakerToggleBtn'),
         voiceProfileStatus=$('voiceProfileStatus'), calibrateBtn=$('calibrateBtn'),
         resetVoiceProfileBtn=$('resetVoiceProfileBtn'), voiceProfileConfirmRow=$('voiceProfileConfirmRow'),
         voiceProfileConfirmToggle=$('voiceProfileConfirmToggle'),
@@ -3074,7 +3098,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r83 (click-to-move and drag-and-drop on the board)';
+  const BUILD='v2-r84 (Hide board and a quick mute button join the mic)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6639,7 +6663,7 @@
       return;
     }
     if(!voiceOn){
-      voiceOn=true; voiceToggle.checked=true; saveState();
+      setVoiceOn(true);
       warnSilent('“Speak aloud” was off — turned it back on for the test.');
     }
     const t0=Date.now();
@@ -6670,13 +6694,34 @@
     },250);
   }
   testVoiceBtn.addEventListener('click',testVoice);
-  voiceToggle.addEventListener('change',()=>{
-    voiceOn=voiceToggle.checked;
+  // One flag (voiceOn), two ways to reach it: the full toggle in Voice
+  // settings and this quick speaker button in the header (OUR-91) — the
+  // use case being a mouse-only (OUR-89) game where digging into Voice
+  // settings just to go quiet is friction. Routed through one function so
+  // neither control can drift from the other's displayed state. Only ever
+  // touches say()/speechSynthesis — playMoveSound() (OUR-42) is a plain
+  // Audio() call inside applyMove() with no dependency on voiceOn, so
+  // move/capture sound effects are unaffected by construction, not by
+  // remembering to leave them alone here.
+  function updateSpeakerBtn(){
+    speakerToggleBtn.classList.toggle('muted',!voiceOn);
+    speakerToggleBtn.setAttribute('aria-label',voiceOn?'Mute narration':'Unmute narration');
+    speakerToggleBtn.title=voiceOn?'Mute narration — move/capture sounds stay on.':'Unmute narration';
+    speakerToggleBtn.querySelector('.speaker-wave-1').style.display=voiceOn?'':'none';
+    speakerToggleBtn.querySelector('.speaker-wave-2').style.display=voiceOn?'':'none';
+    speakerToggleBtn.querySelector('.speaker-mute').style.display=voiceOn?'none':'';
+  }
+  function setVoiceOn(v){
+    voiceOn=v;
+    voiceToggle.checked=v;
     // Cancelling mid-utterance means onend never fires, so release the
     // speaking gate by hand or the mic stays muted for good.
     if(!voiceOn&&'speechSynthesis' in window){ speechSynthesis.cancel(); endSpeaking(); }
+    updateSpeakerBtn();
     saveState();
-  });
+  }
+  voiceToggle.addEventListener('change',()=>setVoiceOn(voiceToggle.checked));
+  speakerToggleBtn.addEventListener('click',()=>setVoiceOn(!voiceOn));
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
     if(mode==='puzzle'){ startPuzzle(nextPuzzle()); return; }
@@ -6787,7 +6832,7 @@
       // Unlike the voice, the recogniser is chosen before setupRecognition()
       // runs, so it only has to be remembered here — not acted on.
       if(saved.sttEngine==='local'){ sttEngine='local'; sttSelect.value='local'; }
-      voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn;
+      voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn; updateSpeakerBtn();
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
       clockPreset=saved.clockPreset||0; syncClockUI();

@@ -6170,3 +6170,54 @@ device was in reach to confirm it firsthand.
 
 Build `BUILD='v2-r83 (click-to-move and drag-and-drop on the board)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r84): Hide board and a quick mute button join the mic
+
+Two header additions, both landing next to the mic per r73's precedent.
+
+**Hide board relocated.** It lived in `.board-head` (Flip/Fullscreen/Size/
+Reset/Hide board, r72), which is impractical for exactly the reason Adni
+gave: the button that reveals a hidden board sits in a row that's part of
+the very thing that's hidden. Moved into `.mic-compact` in the header,
+which — like the mic itself — stays reachable regardless of board
+visibility. Pure relocation: same `id`, same `setBoardHidden()`/
+`boardHidden` state, same click handler, only the markup moved. The
+board-head fullscreen-hide rule that named `#boardToggleBtn` specifically
+is now dead (removed) — the button's hidden in fullscreen anyway, for
+free, via the same blanket `.app.fullscreen-active>*{display:none}` rule
+that already hides the rest of the header.
+
+**New speaker mute button**, for the mouse-play use case (r83/OUR-91): a
+quick way to go fully quiet without opening Voice settings each time.
+Controls the exact same `voiceOn` flag as Voice settings' existing "Speak
+aloud" checkbox — not a second setting. Both the checkbox's `change`
+handler and the new button's `click` handler now route through one
+`setVoiceOn(v)` function, so toggling either updates the other's displayed
+state (checked state, icon, `aria-label`) instead of the two being able to
+drift apart. One `<svg>` with three paths (speaker body + two "wave" arcs
++ a mute "X"), visibility swapped via `updateSpeakerBtn()` rather than
+swapping the whole icon's markup.
+
+Confirmed, not assumed, what actually gets muted: `say()` — the only thing
+`setVoiceOn(false)` touches — is the function that calls
+`speechSynthesis.speak()`; `playMoveSound()` (r/OUR-42) is a plain
+`Audio()` call inside `applyMove()` with no reference to `voiceOn`
+anywhere, and `speak()` itself unconditionally calls `log('Board',text)`
+*before* the voice-gated `say(text)`, so transcript text (including coach/
+tips narration) was already unaffected by this flag before this change —
+nothing new needed there, just confirmed it holds.
+
+Verified live: muting via the new button unchecks Voice settings'
+checkbox and vice versa, with the icon swapping correctly in both
+directions; with a spy on `Audio.prototype.play` and
+`SpeechSynthesis.prototype.speak`, a move made while muted played its
+sound effect but produced zero narration utterances (one early reading
+showed a stray utterance — traced to the page's own one-time silent
+"unlock" utterance fired by the test's first synthetic gesture, unrelated
+to narration, and confirmed absent on a clean re-run); and the header
+holds one line with mic, Hide board, and the speaker button all visible
+and untruncated at 390px and even 320px viewport widths, so the r72-style
+wrap Adni asked to check for doesn't recur here.
+
+Build `BUILD='v2-r84 (Hide board and a quick mute button join the mic)'`.
+Published to `/v2/`.
