@@ -6402,3 +6402,85 @@ class — no doubled-up visual on top of narration. Confirmed
 
 Build `BUILD='v2-r88 (a visual check/checkmate alert when narration is muted)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r89): in-game text chat for online and Lichess modes
+
+New feature: opponent chat, scoped to the two modes with a real remote
+opponent — Lichess mode and online mode. Not shown at all in computer/
+two-player/puzzle modes, where there's no one on the other end to talk
+to. Text-only for now; voice-dictated chat is explicitly deferred.
+
+Checked the existing architecture before building anything, per the
+ask: online mode already syncs game state through a Supabase
+`postgres_changes` subscription on `mind_chess_games` plus a 2s poll
+fallback (`subscribeOnline()`/`pollOnline()`); Lichess mode already
+reads a single NDJSON event stream from `/api/board/game/stream/{id}`
+(`openLichessStream()`/`handleLichessEvent()`) and posts back through
+`lichessFetch()`, the same authenticated Board API session moves
+already use. Chat plugs into both of those exact transports rather
+than adding a third.
+
+**Lichess mode.** Checked Lichess's own API shape rather than assuming
+it: `POST /api/board/game/{gameId}/chat` takes form fields `room`
+(`player`/`spectator`) and `text`, authenticated the same way
+`sendLichessMove()` already is; incoming messages arrive as
+`chatLine` events (`room`, `username`, `text`) on the same stream
+`handleLichessEvent()` already parses for `gameFull`/`gameState`. Added
+a third branch there, plus `sendLichessChat()` next to
+`sendLichessMove()`. `room` is always `player` — this app doesn't
+expose spectating someone else's Lichess game, so there's no
+legitimate reason to post into the spectator room. The `lichess`
+system account's own boilerplate chatLines are filtered out rather
+than shown as if the opponent said them. Sent messages are appended
+optimistically (same shape as the move path's optimistic apply) and
+matched against Lichess's own echo of that same line on the stream, so
+a sent message doesn't get double-printed if Lichess reflects it back.
+No token to test against a live Lichess opponent this session, so this
+side is verified by code path and the documented API shape, not a real
+round trip — flagged rather than claimed as fully proven.
+
+**Online mode.** New table, `mind_chess_chat` (game_id, sender_id,
+color, body, created_at), added via a tracked migration
+(`supabase/migrations/20260906_create_mind_chess_chat.sql`) and added
+to the `supabase_realtime` publication alongside `mind_chess_games`.
+RLS mirrors `mind_chess_games` exactly: SELECT is open to anyone
+holding the (unguessable) game id, same as the game row itself already
+is; INSERT is restricted to whichever two `auth.uid()`s are actually
+seated as `white_id`/`black_id` on that game, so a spectator can read
+chat but not post into it, same split as move-making already has.
+`subscribeOnline()` now also listens for `INSERT` on `mind_chess_chat`
+filtered to the game id, and `pollOnline()`'s existing 2s timer now
+also polls chat as a fallback — one channel, one timer, not a second
+set. Persisted rather than ephemeral, matching the durability moves
+already have (the row IS the game). Verified against the *real* RLS
+policy, not a service-role bypass: a second real anonymous Supabase
+user was signed in, joined the test game through the actual
+`join_mind_chess_game` RPC, and posted a chat message — including a
+`<script>alert(1)</script>` payload — through the real REST API. It
+landed in the DB, and the first client picked it up (realtime or poll)
+and rendered "Black: gg to you too `<script>alert(1)</script>`" as
+plain visible text with no `<script>` element anywhere in the DOM and
+no alert firing. Test game and messages deleted after.
+
+**UI.** A new collapsible `<details>` panel ("Opponent chat"), same
+chrome as Appearance/Game settings/Voice settings/Transcript, open by
+default like Transcript (a live channel, not a settings group).
+`chatDetails.hidden` is driven by `updateChatVisibility()` off the
+`mode` variable directly — called at every place `mode` actually
+changes to 'online'/'lichess' (the modeSelect handler, spectateOnline,
+the invite-link and reload/reconnect boot paths), not inferred from
+panel-show functions, since one of those boot paths sets `onlineState`
+before `mode` catches up. Rendering goes through `appendChatMessage()`,
+built the same way `log()` already builds the transcript — textContent
+and `createTextNode` only, same discipline as OUR-79's report form and
+`log()` itself, never `innerHTML` on anything a message could reach.
+Deliberately a separate box from the transcript (own font — sans-serif
+throughout vs. the transcript's Newsreader serif — own log, own form)
+since one is game narration and the other is a different human talking;
+narration never reads chat text aloud. Chat log is reset whenever the
+game/session it belongs to changes (a rematch, a new online game, a
+fresh — not reconnecting — Lichess game, switching mode), so one game's
+chat can't bleed into the next.
+
+Build `BUILD='v2-r89 (in-game text chat for online and Lichess modes)'`.
+Published to `/v2/`.

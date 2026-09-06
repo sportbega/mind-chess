@@ -213,6 +213,20 @@
   .transcript .who.system{color:var(--danger)}
   .transcript .heard{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-style:italic}
 
+  /* OUR-97: opponent chat. Sans-serif throughout (vs the transcript's
+     Newsreader serif) is the whole visual-distinction strategy — same
+     panel chrome, deliberately different type so the two logs don't blur
+     together at a glance. */
+  .chat-log{margin-top:10px;height:140px;overflow-y:auto;font-family:'Inter',sans-serif;font-size:13px;display:flex;flex-direction:column;gap:6px}
+  .chat-empty{color:var(--text-dim);margin:0}
+  .chat-line{margin:0;line-height:1.4;padding:6px 10px;border-radius:10px;background:var(--panel-2);max-width:85%;word-break:break-word}
+  .chat-line .who{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);display:block;margin-bottom:2px}
+  .chat-line.mine{align-self:flex-end;background:rgba(201,162,93,.16);border:1px solid var(--accent)}
+  .chat-line.mine .who{color:var(--accent)}
+  .chat-line.system{background:transparent;border:1px dashed var(--danger);color:var(--text-dim);max-width:100%}
+  .chat-form{display:flex;gap:8px;margin-top:10px}
+  .chat-form input[type=text]{flex:1;min-width:0;height:36px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px}
+
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
   /* Only child now that the "BOARD" label is gone (removed to reclaim the
      row's leftmost space) — justify-content is moot with one item, kept
@@ -696,6 +710,24 @@
     <div class="transcript" id="transcript" aria-live="polite"></div>
   </details>
 
+  <!-- OUR-97: opponent chat, Lichess and online modes only. A separate
+       channel from the transcript above — that's game narration (what the
+       board did), this is the other human talking — so it gets its own
+       collapsible box rather than sharing the transcript's log, and a
+       different font (sans vs the transcript's serif) so the two read as
+       visually distinct even glanced at quickly. Hidden outright (not just
+       collapsed) in computer/two-player/puzzle modes via chatDetails.hidden,
+       set from updateChatVisibility(). Text-only for now — voice-dictated
+       chat is a later session's work, not this one. -->
+  <details class="help chat-panel" id="chatDetails" hidden open>
+    <summary>Opponent chat</summary>
+    <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
+    <form class="chat-form" id="chatForm">
+      <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
+      <button class="btn primary" type="submit">Send</button>
+    </form>
+  </details>
+
   <!-- Doesn't cleanly belong to either Game or Voice settings — a
        diagnostic/support action, not a game or voice preference — so it
        stays standalone rather than being force-fit into one group. Placed
@@ -958,7 +990,8 @@
         lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
-        lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiBtn=$('lichessAiBtn');
+        lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiBtn=$('lichessAiBtn'),
+        chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput');
 
   // ===============================================================
   // Output
@@ -970,6 +1003,19 @@
     if(sub){ const s=document.createElement('div'); s.className='heard'; s.textContent=sub; p.appendChild(s); }
     transcript.appendChild(p); transcript.scrollTop=transcript.scrollHeight;
   }
+  // OUR-97: opponent chat, kept separate from log()/transcript on purpose
+  // (see the chat-panel CSS comment). textContent/createTextNode only,
+  // same discipline as log() above and the OUR-79 report form — chat text
+  // arrives from a real opponent over the network and is never trusted
+  // enough to touch innerHTML.
+  function appendChatMessage(who,text,cls){
+    const empty=chatLog.querySelector('.chat-empty'); if(empty) empty.remove();
+    const p=document.createElement('p'); p.className='chat-line'+(cls?' '+cls:'');
+    const tag=document.createElement('span'); tag.className='who'; tag.textContent=who;
+    p.appendChild(tag); p.appendChild(document.createTextNode(text));
+    chatLog.appendChild(p); chatLog.scrollTop=chatLog.scrollHeight;
+  }
+  function updateChatVisibility(){ chatDetails.hidden=!(mode==='online'||mode==='lichess'); }
   // ===============================================================
   // Speaking gate — the mic is hard-muted while we talk
   // ===============================================================
@@ -3165,7 +3211,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r88 (a visual check/checkmate alert when narration is muted)';
+  const BUILD='v2-r89 (in-game text chat for online and Lichess modes)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4910,6 +4956,17 @@
     if(v.trim()) route([v]);
   });
 
+  // OUR-97: one form, dispatched by mode — chatDetails is only ever
+  // visible (see updateChatVisibility()) while mode is 'online' or
+  // 'lichess', so this only has those two real branches to worry about.
+  chatForm.addEventListener('submit',e=>{
+    e.preventDefault();
+    const text=chatInput.value.trim(); chatInput.value='';
+    if(!text) return;
+    if(mode==='online') sendOnlineChat(text);
+    else if(mode==='lichess') sendLichessChat(text);
+  });
+
   // ===============================================================
   // D2. Local speech recognition — and the only route to voice on iPhone.
   //
@@ -5822,6 +5879,60 @@
     if(r.error) log('System','Move could not sync: '+r.error.message);
   }
 
+  // ===============================================================
+  // Online chat (OUR-97) — its own table (mind_chess_chat), scoped by
+  // game_id, riding the exact same realtime+poll transport moves already
+  // use (see subscribeOnline()/pollOnline() below): one channel per game,
+  // one 2s poll timer as a belt-and-suspenders fallback for a dropped
+  // realtime connection, same as receiveOnline()/pollOnline() do for the
+  // game row itself. RLS mirrors mind_chess_games: anyone holding the
+  // (unguessable) game id can read, only the two seated players can post
+  // — a spectator can watch the chat but not join it, same as they can
+  // watch the game but not move in it.
+  //
+  // Persisted, not ephemeral: moves persist (the row IS the game), so
+  // chat — the other half of what happened in this game — gets the same
+  // durability rather than vanishing on reload while moves don't.
+  function chatSenderLabel(row){
+    if(onlineState.userId&&row.sender_id===onlineState.userId) return 'You';
+    return row.color==='w'?'White':'Black';
+  }
+  async function loadOnlineChat(){
+    if(!onlineActive()) return;
+    chatLog.innerHTML='<p class="chat-empty">No messages yet.</p>';
+    onlineState.chatLastId=0;
+    const r=await db.from('mind_chess_chat').select('*').eq('game_id',onlineState.id).order('id',{ascending:true});
+    if(r.error||!r.data.length) return;
+    r.data.forEach(row=>{
+      appendChatMessage(chatSenderLabel(row),row.body,row.sender_id===onlineState.userId?'mine':'');
+      onlineState.chatLastId=Math.max(onlineState.chatLastId,row.id);
+    });
+  }
+  // Shared by the realtime .on('INSERT') handler and the poll fallback —
+  // chatLastId is the dedupe: whichever of the two delivers a given row
+  // first wins, the other (or our own optimistic append in
+  // sendOnlineChat()) is a no-op against an id already seen.
+  function receiveOnlineChat(row){
+    if(!row||!onlineState||onlineState.chatLastId>=row.id) return;
+    onlineState.chatLastId=row.id;
+    appendChatMessage(chatSenderLabel(row),row.body,row.sender_id===onlineState.userId?'mine':'');
+  }
+  async function pollOnlineChat(){
+    if(!onlineActive()) return;
+    const r=await db.from('mind_chess_chat').select('*').eq('game_id',onlineState.id).gt('id',onlineState.chatLastId||0).order('id',{ascending:true});
+    if(!r.error) r.data.forEach(receiveOnlineChat);
+  }
+  async function sendOnlineChat(text){
+    if(!onlineActive()) return;
+    if(onlineState.spectating||!onlineState.userId){ appendChatMessage('System','Spectators can’t send chat.','system'); return; }
+    const r=await db.from('mind_chess_chat').insert({
+      game_id:onlineState.id,sender_id:onlineState.userId,color:onlineState.color,body:text
+    }).select().single();
+    if(r.error){ appendChatMessage('System','Message could not send: '+r.error.message,'system'); return; }
+    onlineState.chatLastId=Math.max(onlineState.chatLastId||0,r.data.id);
+    appendChatMessage('You',text,'mine');
+  }
+
   // Loads a PGN pushed from the server (an opponent's move, or a reconnect)
   // and narrates the newest move the same way a local move would be.
   function loadOnlinePgn(pgn){
@@ -5871,6 +5982,7 @@
 
   async function pollOnline(){
     if(!onlineActive()) return;
+    pollOnlineChat();
     const r=await db.from('mind_chess_games').select('*').eq('id',onlineState.id).single();
     if(!r.error){ receiveOnline(r.data); return; }
     // PGRST116 = .single() matched zero rows — the row is gone for good
@@ -5889,9 +6001,11 @@
     clearInterval(onlineState.pollTimer);
     onlineState.channel=db.channel('mind-chess-game-'+onlineState.id)
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'mind_chess_games',filter:'id=eq.'+onlineState.id},e=>receiveOnline(e.new))
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'mind_chess_chat',filter:'game_id=eq.'+onlineState.id},e=>receiveOnlineChat(e.new))
       .subscribe();
     onlineState.pollTimer=setInterval(pollOnline,2000);
     copyInviteBtn.style.display=onlineState.spectating?'none':'';
+    loadOnlineChat();
   }
 
   async function rematchOnline(){
@@ -6036,7 +6150,7 @@
       if(r.error||!r.data) throw new Error('Game not found');
       const row=r.data;
       generation++;
-      mode='online'; modeSelect.value='online';
+      mode='online'; modeSelect.value='online'; updateChatVisibility();
       onlineState={id:row.id,color:null,spectating:true,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at,
         userId:null,whiteId:row.white_id,blackId:row.black_id,
         clockPreset:row.clock_preset||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
@@ -6146,6 +6260,27 @@
     }
   }
 
+  // OUR-97: POST /api/board/game/{gameId}/chat, room=player — the same
+  // authenticated Board API session (personal access token, via
+  // lichessFetch()) sendLichessMove() already uses. Appended locally right
+  // away, same optimistic-then-dedupe shape as the move path above;
+  // lastSentChat is what handleLichessEvent()'s chatLine branch matches
+  // against to swallow Lichess's own echo instead of showing it twice.
+  async function sendLichessChat(text){
+    if(!lichessState){ appendChatMessage('System','Not connected to a Lichess game.','system'); return; }
+    lichessState.lastSentChat={text,at:Date.now()};
+    appendChatMessage('You',text,'mine');
+    try{
+      await lichessFetch('/api/board/game/'+lichessState.gameId+'/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({room:'player',text}).toString()
+      });
+    }catch(err){
+      appendChatMessage('System','Message could not send: '+(err.message||'try again.'),'system');
+    }
+  }
+
   // Display-only clock, same anchor-and-derive shape as computeOnlineMs():
   // Lichess is the only real clock authority, but wtime/btime only arrive
   // with a gameState event (i.e. after a move), so between moves this ticks
@@ -6192,6 +6327,13 @@
         game.reset(); lastMove=null; gameOver=false;
         lichessState.moveCount=0;
         transcript.innerHTML='';
+        // Lichess doesn't resend chat history on gameFull the way it resends
+        // the move list — a reconnect only ever sees new chatLine events
+        // from here on, same as the reconnect-only-narrates-what's-missed
+        // shape applyLichessMoves() already has for moves. A genuinely new
+        // game (not a reconnect) still gets a clean log, same reasoning as
+        // clearing the transcript above.
+        chatLog.innerHTML='<p class="chat-empty">No messages yet.</p>';
       }
       lichessState.color=evt.white&&evt.white.id===lichessUsername?'w':'b';
       humanColor=lichessState.color;
@@ -6220,6 +6362,25 @@
         speak(lichessGameOverText(evt.status));
         renderAll();
       }
+    }else if(evt.type==='chatLine'){
+      // 'lichess' itself posts the room's boilerplate ("Type /help for
+      // commands" and the like) as a chatLine with that username — not a
+      // real person, so it's filtered rather than shown as an opponent
+      // message. Spectator-room lines are rare here (this app doesn't
+      // expose spectating someone else's Lichess game) but are labelled
+      // distinctly if one ever arrives, rather than folded into the
+      // player-room log as if the opponent said it.
+      if(!evt.username||evt.username==='lichess') return;
+      const mine=lichessUsername&&evt.username.toLowerCase()===lichessUsername.toLowerCase();
+      // Lichess echoes a sent message back on the same stream — sendLichessChat()
+      // already appended it optimistically, so this suppresses exactly that
+      // one echo (matched by text within a few seconds) rather than
+      // double-printing every message we send.
+      if(mine&&lichessState.lastSentChat&&lichessState.lastSentChat.text===evt.text
+         &&Date.now()-lichessState.lastSentChat.at<8000){
+        lichessState.lastSentChat=null; return;
+      }
+      appendChatMessage(mine?'You':(evt.room==='spectator'?evt.username+' (spectator)':evt.username),evt.text,mine?'mine':'');
     }
   }
 
@@ -6581,6 +6742,14 @@
   modeSelect.addEventListener('change',()=>{
     const prevMode=mode;
     mode=modeSelect.value;
+    updateChatVisibility();
+    // Stale chat from a previous online/lichess session must not linger
+    // into the next one — online mode re-fills this itself via
+    // subscribeOnline()/loadOnlineChat() a moment later, lichess mode
+    // re-fills it on its next fresh (non-reconnecting) gameFull, but
+    // between "just switched mode" and either of those, an empty log
+    // reads correctly and a leftover one from the last game does not.
+    if(prevMode!==mode&&(mode==='online'||mode==='lichess')) chatLog.innerHTML='<p class="chat-empty">No messages yet.</p>';
     // A shared device swapping hands into pass & play must not silently
     // inherit whoever calibrated last — require the explicit "this is still
     // me" toggle again every time two-player mode is (re)entered. Leaving it
@@ -6905,7 +7074,7 @@
       clockPreset=saved.clockPreset||0; syncClockUI();
       whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
-        mode='online'; modeSelect.value='online';
+        mode='online'; modeSelect.value='online'; updateChatVisibility();
         transcript.innerHTML='';
         return true;
       }
@@ -7259,7 +7428,7 @@
   const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
   const spectateMatch=location.hash.match(/^#spectate=([0-9a-fA-F-]{36})$/);
   if(inviteMatch){
-    mode='online'; modeSelect.value='online'; showOnlinePanel();
+    mode='online'; modeSelect.value='online'; updateChatVisibility(); showOnlinePanel();
     joinOnline(inviteMatch[1]);
   }else if(spectateMatch){
     spectateOnline(spectateMatch[1]);
