@@ -6484,3 +6484,38 @@ chat can't bleed into the next.
 
 Build `BUILD='v2-r89 (in-game text chat for online and Lichess modes)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r90): chat above the board, Lichess panel under Game settings
+
+Two pure position changes — no ids, handlers, persistence, or internal
+structure touched on either element.
+
+The "Opponent chat" panel (`#chatDetails`, OUR-97) moved from down by
+the transcript to just above `.boardpanel`, right after the online/
+lobby panels — so it's above the board and its control row rather than
+scrolled past it. Still gated by the same `updateChatVisibility()`
+(hidden outside online/lichess modes), still the same collapsible
+`<details>`, still defaults open.
+
+The Lichess connection panel (`#lichessPanel`) moved from just under
+the header (grouped with `#onlinePanel`/`#lobbyPanel`) to directly
+after `#gameSettingsDetails` closes, before `#voiceSettingsDetails` —
+reachable without scrolling, next to the other game-setup controls
+that decide what kind of game gets started, rather than off on its
+own above the board.
+
+Verified live: `#chatDetails` sits immediately before `.boardpanel` in
+document order and is still visible/hidden correctly across online,
+lichess, and computer modes; `#lichessPanel` is the literal next
+sibling of `#gameSettingsDetails` and precedes `#voiceSettingsDetails`;
+creating an online game and sending a chat message through the
+relocated panel still round-trips through Supabase exactly as before;
+the relocated Lichess panel still shows its token field, time-control
+select, AI level select, and seek/AI/resume buttons, all present and
+wired. Nothing else in page order changed — `#onlinePanel`,
+`#lobbyPanel`, `.boardpanel`, `#moveStrip`, `#appearanceDetails`,
+`#voiceSettingsDetails`, `#transcriptDetails` are all exactly where
+r89 left them.
+
+Build `BUILD='v2-r90 (chat above the board, Lichess panel under Game settings)'`.
+Published to `/v2/`.
