@@ -7228,3 +7228,67 @@ rounds established, not assumed from the row's existing math.
 
 Build `BUILD='v2-r99 (Abort/Resign moved into the board-head row)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r100): Abort hides once past the Lichess abort-eligible window
+
+Follow-up to r99: the Abort button had no awareness of whether abort
+was still valid. Checked lila's own source rather than guessing an
+exact move number — `modules/core/src/main/game/Game.scala`:
+```
+def abortable = status == Status.Started && playedPlies < 2 && nonMandatory
+def resignable = playable && !abortable
+```
+Abort is legal only before Black's first reply (`playedPlies < 2` —
+0 or 1 plies played); `resignable` is defined as exactly the
+complement, so Resign is correctly untouched by any of this — it's
+valid for the whole game by the same source, not something this entry
+had to special-case.
+
+`lichessState.moveCount` already tracks the same ply count Lichess
+itself uses (populated from the game stream's own move list via
+`applyLichessMoves()`, unchanged) — no new state needed, just a new
+`updateLichessAbortVisibility()` that reads it:
+`lichessAbortBtn.style.display` is `''` only while
+`lichessState.moveCount<2 && !gameOver`.
+
+This is the **primary mechanism** — called from every place moveCount
+actually changes (`applyLichessMoves()`, and both the optimistic bump
+and the rollback in `sendLichessMove()`), so the button reacts the
+moment real state says it should, not on a guess. The three places
+that used to unconditionally show Abort the instant a game connected
+(seek matched, AI game created, "Resume my current game") no longer
+do — a **resumed game already past the window used to show Abort
+immediately and wrongly** (a real bug this surfaced, not hypothetical:
+verified live below). They now leave Abort exactly as it already was
+and let the stream's own `gameFull`/`gameState` events decide via the
+same function, which is genuinely more correct for a fresh game too
+(moveCount 0 there, so it still shows right away) not just safer for a
+resume.
+
+The existing `catch` in `abortLichessGame()` already surfaced a real
+rejection via `warn()` — checked before assuming this needed building
+from scratch, and it didn't; reworded slightly to name the likely
+cause and documented as the **safety net**, not the primary path, for
+the rare case state races (a reply arriving between render and click)
+or is ever miscalculated.
+
+Verified live end-to-end with a controllable fake NDJSON stream
+(pushed real `gameFull`/`gameState` lines by hand, no real Lichess
+token available this session): fresh game at 0 plies — both buttons
+visible; after White's own first move (1 ply) — Abort still visible,
+matching `playedPlies < 2`; after Black's reply (2 plies) — Abort
+hides, Resign stays; forced Abort visible again and clicked it with
+`/abort` intercepted to return Lichess's real 400 shape
+(`{"error":"This game cannot be aborted"}`) — produced
+"Could not abort — Lichess API 400: This game cannot be aborted" in
+the transcript, confirming the safety net surfaces a real rejection
+clearly rather than silently. Separately reproduced the resume bug
+this fixes: clicking "Resume my current game" against a fake
+already-in-progress game (5 plies played) left Abort hidden
+immediately on click and still hidden once the real `gameFull`
+arrived — both correct, where the old unconditional-show code would
+have shown Abort wrongly at the click and only corrected it (if at
+all) once/if a later event happened to re-touch it.
+
+Build `BUILD='v2-r100 (Abort hides once past the Lichess abort-eligible window)'`.
+Published to `/v2/`.
