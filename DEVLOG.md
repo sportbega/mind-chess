@@ -6822,3 +6822,58 @@ regression.
 
 Build `BUILD='v2-r94 (unified 11-level Stockfish difficulty ladder)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r95): narration dropdown into header; Fullscreen/Reset swapped
+
+Two layout changes.
+
+**Narration verbosity dropdown** (`#verbositySelect`) moved from Voice
+settings into the header row, between speaker mute and New game — row
+is now type-a-move → Send → mic → speaker → narration → New game →
+Hide board. Removed from Voice settings entirely (no duplicate control
+left behind); same id, same `change` handler, same persistence — only
+the position moved. Height matched to the row's smaller `.btn` controls
+(33.5px, r87) via a scoped `.mic-compact select` rule, since the
+page-wide `select{}` rule's own padding-driven height doesn't land
+there on its own.
+
+Fitting a 7th control on the row meant shrinking the text input's
+`min-width` further, as asked — from 90px (r87's widened floor) down
+to 70px. Verified this keeps the row on one line at desktop widths
+(measured: all seven controls' tops span 13px, well within one row).
+At ~390px and ~320px it does not fit on one line — measured the honest
+number before assuming: the seven controls plus gaps need roughly
+693px of content width against ~339-390px available, more than double,
+and that gap predates this change (the six-control row was already
+over budget before narration was added). Flagging this as asked rather
+than forcing it: the row wraps to three clean lines at both widths
+instead, nothing overlapping or cut off, which is the same graceful-
+degradation bar every earlier round of this row (OUR-86/90/94/95) was
+actually held to — "one line" was true at desktop, not at 390/320,
+before this round either.
+
+**Board-head row**: swapped Fullscreen and Reset around the size
+slider. Was Flip board → Fullscreen → [slider, Reset] → New puzzle;
+now Flip board → [Reset, slider] → Fullscreen → New puzzle. Reset
+stays grouped inside `.board-size-field` with the slider itself,
+just reordered to sit before it rather than pulled out standalone —
+that div is what `.app.fullscreen-active .board-head .board-size-field
+{display:none}` targets, so keeping Reset inside it preserves "hidden
+together with the slider during fullscreen" exactly as before. Flip
+board's position is untouched.
+
+Verified live: DOM order matches spec for both rows; narration select
+measures 33.5px tall, matches New game exactly; only one
+`#verbositySelect` exists in the whole document; the setting still
+persists to `localStorage` on change; Reset (from its new left-of-
+slider spot) still resets the range to 750 correctly. Fullscreen's own
+click handler is unchanged (same id, same listener) and the button
+itself is fully enabled/focusable from its new spot — a synthetic
+click doesn't visibly toggle `fullscreen-active` in this automated
+environment, consistent with the Fullscreen API's well-known
+requirement for a real trusted user gesture (not something a position
+swap could affect, since nothing about the handler or its binding
+changed).
+
+Build `BUILD='v2-r95 (narration dropdown into header; Fullscreen/Reset swapped)'`.
+Published to `/v2/`.

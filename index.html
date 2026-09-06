@@ -183,8 +183,21 @@
      up with the mic/speaker circles (OUR-95 keeps those two bigger than
      the rest of the row on purpose — see below), not with Send/Hide
      board, which fall back to plain .btn sizing as of OUR-95. */
-  .mic-compact input[type=text]{flex:0 1 150px;min-width:90px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
+  /* OUR-106: min-width dropped from 90px back toward the 64px floor r87
+     widened it away from — the narration dropdown adds a 7th control to
+     fit, and this is still the one with a genuine floor to give (Send,
+     the icons, and the .btn controls don't shrink below their own
+     content). Basis stays 150px when there's room; only a tight row
+     pushes it down toward 70px, where "Type a move" does clip — an
+     accepted trade at the width this only kicks in at, not a default. */
+  .mic-compact input[type=text]{flex:0 1 150px;min-width:70px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
   .mic-compact input[type=text]::placeholder{color:var(--text-dim)}
+  /* OUR-106: matches the row's smaller .btn controls (33.5px, r87) rather
+     than the page-wide select{} rule's own padding-driven height, and
+     rather than the mic/speaker's 48px — this sits with New game/Hide
+     board, not the mic. flex-shrink:0 so a tight row shrinks the text
+     input first (it already has a floor via min-width), not this. */
+  .mic-compact select{height:33.5px;padding:0 8px;flex-shrink:0}
   /* OUR-95: Send and Hide board used to be forced to 48px to match the
      mic/speaker circles, but that made every button in the header row
      taller than Flip board/Fullscreen/Reset in .board-head (33.5px,
@@ -476,6 +489,17 @@
           <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
         </svg>
       </button>
+      <!-- OUR-106: moved here from Voice settings, between speaker mute and
+           New game as asked. Same id, same change handler, same
+           persistence — only the position moved, so no duplicate control
+           is left behind in Voice settings. Height matched to the row's
+           .btn-height controls (33.5px, r87) via .mic-compact select
+           rather than the page-wide select{} rule's own sizing. -->
+      <select id="verbositySelect">
+        <option value="terse" selected>Terse</option>
+        <option value="standard">Standard</option>
+        <option value="verbose">Verbose</option>
+      </select>
       <!-- OUR-100: moved here from Game settings, between speaker mute and
            Hide board as asked. Plain .btn with no override, same as Hide
            board — both fall back to .btn's own 33.5px height (r87), so
@@ -550,11 +574,19 @@
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
         <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
-        <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
+        <!-- OUR-106: swapped with Fullscreen below — Reset now sits left of
+             the slider, Fullscreen right of it. Reset stays grouped inside
+             .board-size-field with the slider itself (not pulled out
+             standalone): that's what the fullscreen-hide rule at
+             .app.fullscreen-active .board-head .board-size-field targets,
+             so moving Reset's position within the div rather than out of it
+             keeps "hidden together with the slider in fullscreen" exactly
+             as it worked before — only the order inside changed. -->
         <div class="board-size-field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
-          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
+          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
         </div>
+        <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
         <!-- OUR-104: only ever shown while mode==='puzzle' AND a puzzle is
              actually loaded (see updateNewPuzzleBtn()) — reuses the exact
              same startPuzzle(nextPuzzle()) call the "next puzzle" voice/
@@ -791,14 +823,6 @@
           <option value="1">Normal</option>
           <option value="1.15">Brisk</option>
           <option value="1.3">Fast</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="verbositySelect">Narration</label>
-        <select id="verbositySelect">
-          <option value="terse" selected>Terse</option>
-          <option value="standard">Standard</option>
-          <option value="verbose">Verbose</option>
         </select>
       </div>
       <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
@@ -3213,7 +3237,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r94 (unified 11-level Stockfish difficulty ladder)';
+  const BUILD='v2-r95 (narration dropdown into header; Fullscreen/Reset swapped)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
