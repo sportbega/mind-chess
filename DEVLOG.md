@@ -6268,3 +6268,44 @@ doesn't recur here either.
 
 Build `BUILD='v2-r85 (one header row: type, mic, mute, hide, send)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r86): header row reordered, widened, and height-aligned
+
+Three follow-up fixes to r85's single header row.
+
+Reorder: Send moved from last to second position. Row is now
+input → Send → mic → speaker mute → Hide board, left to right — matching
+the sequence a player actually uses (type or dictate, then send) rather
+than r85's input → mic → speaker → Hide board → Send, which put Send
+after three controls unrelated to typing. Pure markup reorder inside
+`#textForm`; no ids or handlers moved.
+
+Width: r85's `flex:0 1 120px;min-width:64px` on the text input actually
+clipped its own placeholder — measured, not assumed: "Type a move" needs
+roughly 150px at this font-size/padding, not 120px. Widened to
+`flex:0 1 150px;min-width:90px`, still bounded (not `flex:1`) so it can't
+resume dominating the row, and still shrinkable below its basis on a
+tight viewport rather than forcing overflow.
+
+Height: text input, Send, and Hide board were three different heights
+(the input via its own padding, the other two as ordinary `.btn`
+elements with no fixed height). Set `height:48px;padding:0 14px` on the
+text input and added a new `.mic-compact .btn{height:48px}` rule scoped
+to this row — not a change to `.btn` itself, which is reused in 36 other
+places this row has nothing to do with. Result: input, Send, Hide board,
+mic, and speaker all measure exactly 48px tall.
+
+Verified live: DOM order query confirms input → Send → mic → speaker →
+Hide board; placeholder reads "Type a move" with `scrollWidth ===
+clientWidth` (no clipping), confirmed visually too; all five controls
+measured at exactly 48px via `getBoundingClientRect()`; a dispatched
+`submit` event and a direct click on the Send button both apply a move
+through the existing handler; mic, speaker mute (still syncing Voice
+settings' checkbox both ways), and Hide board (still toggling
+`#boardVeil`) all work exactly as before; row wraps cleanly at both 390px
+and 320px (input+Send+mic / speaker+Hide board at 390px; input+Send /
+mic+speaker+Hide board at 320px), nothing overlapping or cut off at
+either width.
+
+Build `BUILD='v2-r86 (header row reordered, widened, and height-aligned)'`.
+Published to `/v2/`.
