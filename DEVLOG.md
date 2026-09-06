@@ -7365,3 +7365,61 @@ originally surfaced the bug.
 
 Build `BUILD='v2-r101 (fixed check/mate banner in fullscreen; muted-only Check/Checkmate/Castle sounds)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r102): fix — restoring a finished game no longer claims a move is pending
+
+Bug report (Supabase report id 27, build v2-r100): Adni needed two
+refreshes to get unstuck mid-game. The report's own PGN ends
+"19. Bd3#" — a completed checkmate — yet the restored session read
+"Game restored. Black to move." followed by "Loading the chess engine
+for this level."
+
+Traced `loadState()`, the restore path OUR-100's boardHidden work also
+touches: it already calls `game.game_over()` into `gameOver` correctly
+(line ~7583) — chess.js's own detection was never wrong. The actual
+bug was two places downstream that never *read* that value:
+
+1. The restore log line built "Game restored. X to move." from
+   `game.turn()` unconditionally, regardless of `gameOver` — actively
+   false for a finished game, since nothing was ever waiting on a move.
+2. `warmEngine()` — called unconditionally at the very end of boot —
+   only checked `mode==='computer'`, not `gameOver`, so it started a
+   7.3 MB Stockfish download and logged "Loading the chess engine" for
+   a position with no move left for that engine to ever make.
+
+Neither is an infinite loop by itself — `ensureComputerToMove()`
+already correctly no-ops on `gameOver`, and `moveGateOk()`/
+`canMoveNow()` already correctly refuse a move in a finished game — so
+nothing was ever technically deadlocked. But the two misleading
+messages together describe a game that's still waiting on something,
+when it never was, which is a UX dead end indistinguishable from a
+real stuck state: nothing the player does (typing a move, waiting for
+"the engine" that's loading for no reason) can move it forward, because
+there was never anything to move forward. Refreshing repeatedly just
+restores the identical misleading state each time — exactly the
+reported symptom.
+
+Fix: `warmEngine()` now also checks `gameOver` before starting the
+download. The restore log line now checks `gameOver` and, when true,
+appends `endSuffix()` — the exact same terminal-state text (and, if
+muted, the same OUR-96 banner and OUR-101 sample) every in-game
+checkmate/stalemate/draw already produces — instead of building a
+"whose move" sentence chess.js itself already says is meaningless
+here. Reused, not reimplemented, per the ask.
+
+Verified live: forced a save shaped exactly like the report (PGN
+ending in checkmate, `mode:'computer'`) via localStorage, reloaded in
+a fresh tab (the two-tab technique, to avoid the `beforeunload`-resave
+race documented since r86) — transcript read "Game restored.
+Checkmate — Black wins.", zero mentions of "Loading the chess engine"
+anywhere in the transcript, and confirmed via
+`performance.getEntriesByType('resource')` that no Stockfish resource
+request was ever made at all — not just that the log line was
+suppressed. The checkmate banner/sample also fired correctly on
+restore, a genuine bonus of reusing `endSuffix()`. Re-verified a normal
+mid-game save (PGN `1. e4 e5`, not terminal) is unaffected: "Game
+restored. White to move." and the engine-loading log line both still
+appear exactly as before.
+
+Build `BUILD='v2-r102 (fix: restoring a finished game no longer claims a move is pending)'`.
+Published to `/v2/`.
