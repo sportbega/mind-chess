@@ -438,6 +438,19 @@
   details.help summary{cursor:pointer;font-size:13px;color:var(--accent-2);font-weight:500}
   details.help ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
   details.help code{font-family:'IBM Plex Mono',monospace;color:var(--text);background:var(--panel-2);padding:1px 6px;border-radius:4px}
+  /* OUR-115: Statistics panel — a small table (mode/played/W/L/D) plus a
+     summary line and an openings list, not raw numbers in a <ul> the way
+     Voice settings' help text is. Reuses .field-grid's color tokens rather
+     than inventing new ones. */
+  .stats-summary{margin:10px 0 14px;font-size:13px;color:var(--text-dim);line-height:1.6}
+  .stats-summary b{color:var(--text)}
+  .stats-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px}
+  .stats-table th,.stats-table td{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line)}
+  .stats-table th{color:var(--text-dim);font-weight:500}
+  .stats-table td.num{text-align:right;padding-right:16px;font-variant-numeric:tabular-nums}
+  .stats-openings{list-style:none;margin:0;padding:0;font-size:13px}
+  .stats-openings li{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
+  .stats-openings li span:last-child{color:var(--text-dim)}
 </style>
 </head>
 <body>
@@ -719,6 +732,19 @@
       </div>
       <button class="btn" id="appearanceResetBtn" type="button" title="Resets the five sliders only — board and piece theme are a separate kind of choice and are left as they are.">Reset appearance</button>
     </div>
+  </details>
+
+  <!-- OUR-115: same collapsible-panel convention as Appearance/Game
+       settings above — read-only, so no field-grid form controls, just a
+       summary line, a per-mode table, and a top-openings list.
+       renderStats() (below, in JS) fills #statsBody the first time this
+       is opened (not eagerly at boot — online/Lichess counts need a
+       Supabase round trip that a player who never opens this panel
+       shouldn't pay for) and every time after, so a game finishing while
+       the panel is already open doesn't need its own refresh call site. -->
+  <details class="help" id="statsDetails">
+    <summary>Statistics</summary>
+    <div id="statsBody"><p class="empty">Loading…</p></div>
   </details>
 
   <details class="help" id="gameSettingsDetails" open>
@@ -1226,6 +1252,7 @@
         reportOut=$('reportOut'), reportCopyBtn=$('reportCopyBtn'), reportCloseBtn=$('reportCloseBtn'),
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
+        statsDetails=$('statsDetails'), statsBody=$('statsBody'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -2306,6 +2333,7 @@
   function resignComputerGame(){
     if(mode!=='computer'||gameOver) return;
     gameOver=true; stopClock();
+    onGameEnd(humanColor==='w'?'b':'w');
     const winner=humanColor==='w'?'Black':'White';
     speak('You resigned. '+winner+' wins.');
     renderAll();
@@ -2727,6 +2755,7 @@
         whiteMs=Math.max(0,whiteMs); blackMs=Math.max(0,blackMs);
         stopClock();
         gameOver=true;
+        onGameEnd(whiteMs<=0?'b':'w');
         const loser=whiteMs<=0?'White':'Black';
         speak(loser+'’s time is up. '+(loser==='White'?'Black':'White')+' wins on time.');
         renderAll();
@@ -3012,6 +3041,224 @@
   }
 
   // ===============================================================
+  // OUR-115: Statistics — completed-game logging and opening detection.
+  //
+  // Local modes (computer/two-player) log entirely to localStorage,
+  // matching every other per-browser setting this app already has
+  // (boardHidden, appearance, puzzle progress). Online/Lichess mirror to
+  // Supabase's mind_chess_results table instead of (or as well as)
+  // localStorage — flagged and chosen deliberately, not the simpler
+  // unified-local option: those two modes already have a stable identity
+  // the anonymous session onlineUser() creates, that a local-only log
+  // can't offer anything over, and mirroring means the stats survive a
+  // cleared localStorage the same way a Lichess player's own game history
+  // already does on lichess.org itself. Puzzles keep their own existing
+  // solved/attempted counter (PUZZLE_KEY) rather than being forced into a
+  // win/loss/draw shape that doesn't really fit them.
+  // ===============================================================
+  const GAMES_LOG_KEY='mind-chess-v2-games';
+  const GAMES_LOG_MAX=500;
+  function loadGamesLog(){
+    try{ return JSON.parse(localStorage.getItem(GAMES_LOG_KEY)||'[]'); }catch(e){ return []; }
+  }
+  function saveGamesLog(log){
+    try{ localStorage.setItem(GAMES_LOG_KEY, JSON.stringify(log.slice(-GAMES_LOG_MAX))); }catch(e){}
+  }
+  function logCompletedGame(entry){
+    const log=loadGamesLog();
+    log.push(entry);
+    saveGamesLog(log);
+  }
+
+  // openings.json is lichess-org/chess-openings (CC0-1.0, public domain),
+  // converted at build time from its own a.tsv..e.tsv into
+  // [eco, name, "san moves space-joined"] triples — see DEVLOG for the
+  // conversion. Fetched once, lazily, kicked off at boot rather than on
+  // first game-end so it's warm well before most games finish; a game
+  // that ends before it loads just gets no opening tag rather than
+  // blocking on the fetch.
+  let openingsBook=null;
+  fetch('openings.json').then(r=>r.json()).then(d=>{ openingsBook=d; }).catch(()=>{ openingsBook=[]; });
+  // Longest-prefix match against the book, linear-scanned — ~3800 short
+  // entries, once per finished game, is not worth a trie for.
+  function identifyOpening(sanHistory){
+    if(!openingsBook||!openingsBook.length||!sanHistory.length) return null;
+    let best=null, bestLen=0;
+    for(let i=0;i<openingsBook.length;i++){
+      const moves=openingsBook[i][2].split(' ');
+      if(moves.length<=bestLen||moves.length>sanHistory.length) continue;
+      let match=true;
+      for(let j=0;j<moves.length;j++){ if(moves[j]!==sanHistory[j]){ match=false; break; } }
+      if(match){ best=openingsBook[i]; bestLen=moves.length; }
+    }
+    return best;
+  }
+
+  // Single funnel every real "this game just ended" site calls (below,
+  // and in the clock/resign/Lichess-status handlers already touching
+  // gameOver=true) — replacing what used to be a bare assignment at each.
+  //
+  // Double-fire guard: keyed on mode+pgn (the finished game's own
+  // identity), not on `generation`. `generation` looked like the obvious
+  // choice — every call site that starts a genuinely new *local* game
+  // already bumps it for its own stale-callback guarding — but online and
+  // Lichess mode can be entered by just flipping modeSelect's value
+  // without going through playOnline()/joinOnline()/watchOnline() (the
+  // actual generation++ sites), and even in real play, the fact that most
+  // new-game sites bump it is a coincidence this function shouldn't have
+  // to trust. Keying on the finished game's own mode+pgn instead means a
+  // genuinely new completed game is never mistaken for a repeat of the
+  // last one regardless of what did or didn't touch `generation` in
+  // between, and two real completions of the same mode that happen to
+  // reach byte-identical PGNs (the only case this can't tell apart) is
+  // not a scenario worth guarding for.
+  //
+  // winnerColor: 'w'|'b' if that side won, null for a draw, or omit
+  // entirely to derive it from the current position's own checkmate
+  // state — the only caller that can do that is the game.game_over()
+  // branch in applyMove() below; resign and clock-timeout always know
+  // the winner directly (chess.js has no way to derive "the clock ran
+  // out" or "the other player resigned" from the board alone) and pass
+  // it explicitly.
+  let gameEndLoggedKey=null;
+  function onGameEnd(winnerColor){
+    const logKey=mode+'|'+game.pgn();
+    if(gameEndLoggedKey===logKey) return;
+    gameEndLoggedKey=logKey;
+    if(mode==='puzzle') return;
+    if(winnerColor===undefined) winnerColor=game.in_checkmate()?(game.turn()==='w'?'b':'w'):null;
+    // Two-player is pass-and-play on one device — there's no single "you"
+    // to score a win or loss against, so the raw winning color is stored
+    // instead of a personalized result. Every other mode has a real seat
+    // (humanColor) to score against.
+    const result=(mode==='two-player')
+      ? (winnerColor==='w'?'white':winnerColor==='b'?'black':'draw')
+      : (winnerColor===null?'draw':(winnerColor===humanColor?'win':'loss'));
+    const opening=identifyOpening(game.history());
+    const eco=opening?opening[0]:null, openingName=opening?opening[1]:null;
+    if(mode==='online'||mode==='lichess'){
+      if(!db) return;
+      onlineUser().then(user=>db.from('mind_chess_results').insert({
+        user_id:user.id, mode, color:humanColor,
+        result:(result==='draw'?'draw':result), pgn:game.pgn(), eco, opening_name:openingName
+      })).then(()=>{},()=>{});
+    }else{
+      logCompletedGame({mode, level:(mode==='computer'?levelKey:null),
+        color:(mode==='two-player'?null:humanColor), result, pgn:game.pgn(),
+        eco, openingName, endedAt:new Date().toISOString()});
+    }
+    if(statsDetails.open) renderStats();
+  }
+
+  // ---------------------------------------------------------------
+  // Stats aggregation and rendering. Reads the local log synchronously;
+  // online/Lichess entries are fetched from Supabase only when the panel
+  // is actually opened (onGameEnd() above only re-renders if it's already
+  // open) — a player who never opens Statistics shouldn't pay for the
+  // round trip on every single game.
+  // ---------------------------------------------------------------
+  const MODE_LABEL={computer:'Vs. computer','two-player':'Two-player',online:'Online',lichess:'Lichess'};
+  function summarizeEntries(entries){
+    // entries: {mode, result} where result is 'win'/'loss'/'draw' for
+    // every personalized mode, or 'white'/'black'/'draw' for two-player.
+    const byMode={};
+    for(const e of entries){
+      const m=byMode[e.mode]||(byMode[e.mode]={played:0,win:0,loss:0,draw:0,whiteWins:0,blackWins:0,byLevel:{}});
+      m.played++;
+      if(e.mode==='two-player'){
+        // No single "you" to score a personal win/loss against — tracked
+        // as which color won instead, rendered as its own row shape below.
+        if(e.result==='draw') m.draw++;
+        else if(e.result==='white') m.whiteWins++;
+        else if(e.result==='black') m.blackWins++;
+      }else{
+        m[e.result]++;
+      }
+      if(e.mode==='computer'&&e.level){
+        const lv=m.byLevel[e.level]||(m.byLevel[e.level]={played:0,win:0,loss:0,draw:0});
+        lv.played++; lv[e.result]++;
+      }
+    }
+    return byMode;
+  }
+  // Win/loss streak across every personalized mode (computer/online/
+  // Lichess — two-player has no "you" to keep a streak for), chronological
+  // by endedAt/created_at, a draw breaking the streak the same way a loss
+  // would rather than extending it.
+  function computeStreaks(entries){
+    const personal=entries.filter(e=>e.mode!=='two-player')
+      .sort((a,b)=>new Date(a.endedAt||a.created_at)-new Date(b.endedAt||b.created_at));
+    let current=0, currentType=null, best=0, bestType=null, run=0, runType=null;
+    for(const e of personal){
+      if(e.result==='draw'){ run=0; runType=null; continue; }
+      if(e.result===runType){ run++; } else { run=1; runType=e.result; }
+      if(run>best){ best=run; bestType=runType; }
+      current=run; currentType=runType;
+    }
+    return {current, currentType, best, bestType};
+  }
+  function topOpenings(entries,n){
+    const counts={};
+    for(const e of entries){ if(e.openingName||e.opening_name) counts[e.openingName||e.opening_name]=(counts[e.openingName||e.opening_name]||0)+1; }
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,n);
+  }
+  function renderStatsTable(byMode){
+    const modes=['computer','two-player','online','lichess'].filter(m=>byMode[m]);
+    if(!modes.length) return '<p class="empty">No games recorded yet — play a game to start tracking.</p>';
+    let rows='';
+    for(const m of modes){
+      const s=byMode[m];
+      // Two-player has no personal seat, so its row shows White/Black wins
+      // instead of the Won/Lost columns every other mode uses.
+      const wonCell=(m==='two-player')?(s.whiteWins+' W · '+s.blackWins+' B'):s.win;
+      const lostCell=(m==='two-player')?'—':s.loss;
+      rows+='<tr><td>'+MODE_LABEL[m]+'</td><td class="num">'+s.played+'</td><td class="num">'+wonCell
+        +'</td><td class="num">'+lostCell+'</td><td class="num">'+s.draw+'</td></tr>';
+    }
+    let levelRows='';
+    if(byMode.computer&&Object.keys(byMode.computer.byLevel).length){
+      const lvs=Object.keys(byMode.computer.byLevel).sort((a,b)=>(LEVELS[a]?.skill||0)-(LEVELS[b]?.skill||0));
+      levelRows='<h4 style="margin:14px 0 4px;font-size:12px;color:var(--text-dim);font-weight:500">By level (vs. computer)</h4><table class="stats-table"><tr><th>Level</th><th class="num">Played</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Drawn</th></tr>';
+      for(const lv of lvs){
+        const s=byMode.computer.byLevel[lv], name=(LEVELS[lv]&&LEVELS[lv].name)||lv;
+        levelRows+='<tr><td>'+name+'</td><td class="num">'+s.played+'</td><td class="num">'+s.win+'</td><td class="num">'+s.loss+'</td><td class="num">'+s.draw+'</td></tr>';
+      }
+      levelRows+='</table>';
+    }
+    return '<table class="stats-table"><tr><th>Mode</th><th class="num">Played</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Drawn</th></tr>'+rows+'</table>'+levelRows;
+  }
+  function renderStats(){
+    const local=loadGamesLog();
+    statsBody.innerHTML='<p class="empty">Loading…</p>';
+    const online=(db?onlineUser().then(user=>db.from('mind_chess_results').select('*').eq('user_id',user.id)
+      .order('created_at',{ascending:false}).limit(500)).then(r=>r.data||[]).catch(()=>[]):Promise.resolve([]));
+    online.then(remote=>{
+      const all=local.concat(remote);
+      const personalized=all.filter(e=>e.mode!=='two-player');
+      const totalPlayed=all.length;
+      const wins=personalized.filter(e=>e.result==='win').length;
+      const losses=personalized.filter(e=>e.result==='loss').length;
+      const drawCount=all.filter(e=>e.result==='draw').length;
+      const streaks=computeStreaks(personalized);
+      const byMode=summarizeEntries(all);
+      const openings=topOpenings(all,5);
+      let html='<div class="stats-summary">'
+        +'<div><b>'+totalPlayed+'</b> games played · <b>'+wins+'</b>W / <b>'+losses+'</b>L / <b>'+drawCount+'</b>D (personalized modes)</div>'
+        +'<div>Current streak: <b>'+(streaks.current>0?streaks.current+' '+(streaks.currentType==='win'?'win':'loss')+(streaks.current!==1?'s':''):'none')+'</b>'
+        +' · Best streak: <b>'+(streaks.best>0?streaks.best+' '+(streaks.bestType==='win'?'win':'loss')+(streaks.best!==1?'s':''):'none')+'</b></div>'
+        +'</div>';
+      html+=renderStatsTable(byMode);
+      if(openings.length){
+        html+='<h4 style="margin:14px 0 4px;font-size:12px;color:var(--text-dim);font-weight:500">Most-played openings</h4><ul class="stats-openings">';
+        for(const [name,count] of openings) html+='<li><span>'+name+'</span><span>'+count+'</span></li>';
+        html+='</ul>';
+      }
+      statsBody.innerHTML=html;
+    });
+  }
+  statsDetails.addEventListener('toggle',()=>{ if(statsDetails.open) renderStats(); });
+
+  // ===============================================================
   // Applying moves
   // ===============================================================
   function applyMove(spec){
@@ -3038,7 +3285,7 @@
     // predicting would spend the tip on a sentence nobody hears. Both append a
     // separate sentence, so the reserved first chunk still matches.
     speak(describeMove(applied,verbosity)+endSuffix()+recallNudge(applied)+tipFor());
-    if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); stopLichessClock(); }
+    if(game.game_over()){ gameOver=true; stopClock(); stopOnlineClock(); stopLichessClock(); onGameEnd(); }
     renderAll();
     if(mode==='online') saveOnline();
     if(mode==='lichess') sendLichessMove(applied);
@@ -3506,7 +3753,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r104 (Castling gets the same visual banner as Check/Checkmate)';
+  const BUILD='v2-r105 (Statistics: win/loss/streaks/openings across every mode)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6259,6 +6506,7 @@
       if(w<=0||b<=0){
         stopOnlineClock();
         gameOver=true;
+        onGameEnd(w<=0?'b':'w');
         const loser=w<=0?'White':'Black';
         speak(loser+'’s time is up. '+(loser==='White'?'Black':'White')+' wins on time.');
         renderAll();
@@ -6372,6 +6620,12 @@
       playMoveEventSounds(lastMove);
       speak(describeMove(lastMove,verbosity)+endSuffix());
     }
+    // OUR-115: covers the opponent delivering the final move (the human's
+    // own game-ending move is already logged from applyMove()'s own
+    // game.game_over() branch — the generation guard in onGameEnd() means
+    // this postgres_changes echo of that same write just no-ops here
+    // rather than double-logging it).
+    if(gameOver) onGameEnd();
     renderAll();
   }
 
@@ -6799,6 +7053,11 @@
         gameOver=true;
         stopLichessClock();
         lichessAbortBtn.style.display='none'; lichessResignBtn.style.display='none';
+        // Lichess's own gameState carries the winner directly when there is
+        // one ("white"/"aborted"->no winner/draw) — more reliable than
+        // deriving it from the local board, since abort/resign/timeout
+        // aren't things chess.js's own position can tell apart from a draw.
+        if(evt.status!=='aborted') onGameEnd(evt.winner==='white'?'w':evt.winner==='black'?'b':null);
         speak(lichessGameOverText(evt.status));
         renderAll();
       }
