@@ -6725,3 +6725,100 @@ fixed.
 
 Build `BUILD='v2-r93 (New game/puzzle stop forcing the board hidden; New puzzle button)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r94): unified 11-level Stockfish difficulty ladder
+
+Replaced Casual/Club/Sharp (custom alpha-beta) + Master (Stockfish) with
+an 11-level ladder — 1 (easiest) through 10, then "Capablanca Level" as
+the 11th and hardest — all of it Stockfish. Resolves OUR-71's long-
+standing "difficulty unification" backlog item, and finishes what r39/
+r53's original Skill Level rework started: three of the four old rungs
+were already Stockfish, this makes it eleven of eleven.
+
+Checked this build's actual tunable knobs before designing anything, per
+the ask: `Skill Level`, `UCI_Elo`, and `UCI_LimitStrength` are all present
+in `stockfish-18-lite-single.js`. Kept the existing (r39/r53-established,
+here re-confirmed rather than re-derived) reasoning for leaning on Skill
+Level + depth instead of UCI_Elo: this build's UCI_Elo floor is 1320,
+too high for a genuinely beatable bottom rung, where Skill Level goes
+lower. Checked Lichess's own reference point as asked — lichess-org/
+fishnet's `SkillLevel` table pairs skill -9..20 with depth 5..22 across
+its 8 levels — but fishnet's negative skill values aren't native
+Stockfish settings, they trigger a separate weighted-random-pick
+mechanism this app doesn't implement, so the new ladder stays inside
+Stockfish's native 0-20 floor (skill 0 at Level 1) and leans on depth 1
+at the bottom instead of a sub-zero skill trick. Depth remains the lever
+and movetime the ceiling (r53's finding: depth binds in single-digit ms
+on this hardware, so movetime essentially never does below the top
+rung) — Capablanca Level is the one rung with no depth cap, same
+"as good as it can be in the time given" shape "Master" used to have,
+just with a longer ceiling (3500ms vs 1200ms) since it's the only rung
+now asked to play at real strength.
+
+**The old hand-rolled alpha-beta engine is fully retired** —
+`evaluate()`/`searchScore()`/`localReply()`/`computerMove()` and the
+`BENCH-BASELINE` markers are gone, not left as dead code. It served two
+roles: the bottom "Casual" rung, and a fallback if Stockfish's WASM
+failed to load entirely. Both are gone: every rung is Stockfish, and a
+load failure now tells the player plainly that the computer can't move
+right now, rather than quietly downgrading them to a different, weaker
+opponent than the one they picked — the same "honest about what's
+happening" instinct the rest of this file already leans on. `searchDepth`
+and `lastComputerMove` (the alpha-beta search's own depth arg and anti-
+reversal state) are gone too — both were write-only once their one
+reader disappeared.
+
+**Real, accepted trade-off, flagged rather than buried:** Level 1 used
+to be the local engine specifically so a first-time visitor could start
+playing with nothing downloaded. That's gone — every level, including
+the easiest, now needs the 7.3 MB Stockfish download before a computer
+game's first move. `warmEngine()`'s old level-dependent gate is removed
+along with it. This is a direct, known consequence of "ALL levels
+running through Stockfish," not an oversight — surfacing it clearly
+since it changes first-visit behavior on Vs. computer.
+
+**Migration**, since existing saves have no way to express an 11-level
+scale: `loadState()` now resolves an old-shape save to its old 4-rung
+key exactly as before, then maps that through a new table onto the new
+scale — Casual→2, Club→5, Sharp→7, Master→Capablanca. Own judgment
+call, flagged here as asked: not a same-numbered slot, but roughly
+where each old rung's actual skill/depth now falls on the new curve.
+The much older 2.0 save shape (no `levelKey`, a `masterLevel` flag
+instead) still resolves through the same two-step path.
+
+**UI**: `levelSelect` now lists 1-10 with a short tag each (Beginner
+… Elite) plus "Capablanca Level", replacing the four named options.
+Numbers rather than eleven invented names, since a number places
+itself on a scale in a way a name alone doesn't; short tags keep an
+all-numeric list from reading as opaque.
+
+**tools/level-ladder.js** rewritten to match: the baseline-engine
+lift-out and the `spec.engine==='local'` dispatch are gone (nothing
+left to lift — every rung is Stockfish, driven the one way index.html
+drives it), `MATCHUPS` now walks all eleven rungs consecutively instead
+of the old four, and Elo anchoring samples a representative five rungs
+(1, 4, 7, 10, Capablanca) rather than all eleven, since eleven rungs
+times four anchors times games-per-anchor stopped being a quick bench.
+
+Verified: `node tools/level-ladder.js 1` played real Stockfish-vs-
+Stockfish games across the full ladder — Level 2 beat Level 1, and
+results continued through Level 9 vs Level 8 before the bench was left
+running (Capablanca's uncapped depth against Level 10's own 3000ms
+ceiling makes that particular matchup genuinely slow — expected, not a
+hang, and a single-game sample isn't a reliable monotonicity check on
+its own; `node tools/level-ladder.js 6`+ is the real test, left as a
+follow-up for a longer run). Live in the app: Level 1 loads Stockfish
+(confirmed via the "Loading the chess engine" log line — the exact
+regression check OUR-105 needed, since Level 1 no longer bypasses it
+the way Casual used to) and replies with a normal developing move;
+switching to Capablanca Level and continuing the game produced sound,
+principled replies with no crash. Migration verified for all four old
+keys (Casual/Club/Sharp/Master) plus the ancient 2.0 `masterLevel`
+shape, each resolving to the flagged new key exactly, using the same
+two-tab technique prior rounds established for a clean cross-reload
+check. Report diagnostics (`level=capablanca`) and the coach
+("Roughly balanced. (+0.2)") both confirmed working with no
+regression.
+
+Build `BUILD='v2-r94 (unified 11-level Stockfish difficulty ladder)'`.
+Published to `/v2/`.

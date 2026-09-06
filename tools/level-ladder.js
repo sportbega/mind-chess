@@ -5,28 +5,26 @@
 //   node tools/level-ladder.js [gamesPerPair]
 //
 // Writes _level-ladder.html, then open it at /_level-ladder.html and press
-// Run. It plays the Level select's rungs against each other and against the
-// engine they replaced, and prints the results.
+// Run. It plays the Level select's rungs against each other and prints the
+// results.
 //
 // Why it exists: until Day 4.0 the rungs were two different engines —
 // Casual/Club/Sharp were depths 1/2/3 of a hand-rolled alpha-beta, and only
 // Master was Stockfish. So "harder" changed the opponent's *character*, not
 // just its strength, and there was no way to say whether Sharp was actually
 // harder than Club or merely different. Moving every rung onto Stockfish's
-// Skill Level makes the question answerable, and this is what answers it.
+// Skill Level made the question answerable. OUR-105 finished the job: the
+// hand-rolled engine is gone entirely and every one of the eleven rungs
+// (1-10, plus "Capablanca Level") is Stockfish at a different skill/depth/
+// movetime — so this bench no longer needs a baseline engine to lift out of
+// index.html at all, just the LEVELS table.
 //
-// Two things it has to check, and they pull in opposite directions:
-//   1. Monotonic — each rung beats the one below it. Otherwise the select is
-//      lying to the player about what it does.
-//   2. The bottom rung is still forgiving. Stockfish at Skill Level 0 is a
-//      real chess engine having an off day; the old depth-1 alpha-beta hung
-//      pieces constantly. If the new Casual is much stronger than the old
-//      one, the ladder got honest by making the app harder to start playing,
-//      which for a *blindfold* opponent is the wrong trade.
+// What it checks: monotonic — each rung beats the one below it. Otherwise
+// the select is lying to the player about what it does.
 //
-// Both the LEVELS table and the baseline engine are lifted out of index.html
-// at build time rather than copied, so this cannot quietly measure something
-// the app no longer ships. If a marker moves, it exits loudly.
+// The LEVELS table is lifted out of index.html at build time rather than
+// copied, so this cannot quietly measure something the app no longer ships.
+// If the marker moves, it exits loudly.
 
 const fs = require('fs');
 const path = require('path');
@@ -48,12 +46,7 @@ function between(startMark, endMark, what){
   return page.slice(from + 1, to + 1);
 }
 
-const levelsSrc   = between('// LEVELS-START', '// LEVELS-END', 'the LEVELS table');
-const baselineSrc = between('// BENCH-BASELINE-START', '// BENCH-BASELINE-END', 'the fallback engine');
-
-// PIECE_VALUE lives outside the marked block; take it the same way.
-const pvMatch = page.match(/const PIECE_VALUE\s*=\s*\{[^}]*\}\s*;/);
-if(!pvMatch) throw new Error('Could not find PIECE_VALUE in index.html.');
+const levelsSrc = between('// LEVELS-START', '// LEVELS-END', 'the LEVELS table');
 
 const games = Math.max(1, parseInt(process.argv[2], 10) || 6);
 
@@ -80,20 +73,7 @@ const html = `<!doctype html>
 const out=document.getElementById('out');
 function say(s,cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=s; out.appendChild(d); }
 
-${pvMatch[0]}
-${baselineSrc}
 const LEVELS = ${levelsSrc.trim().replace(/^const LEVELS\s*=\s*/,'').replace(/;\s*$/,'')};
-
-// ---- the local engine, lifted whole ----
-// localReply() comes straight out of index.html, anti-reversal nudge and all,
-// so the Casual rung measured here is the Casual rung that ships. It closes
-// over three module globals, which the bench supplies rather than rewrites —
-// rewriting them is exactly how a bench starts measuring its own copy.
-let game=null, lastComputerMove=null, searchDepth=2;
-function localMove(g,depth){
-  game=g;
-  return localReply(depth);
-}
 
 // ---- Stockfish, driven exactly the way index.html drives it ----
 let worker=null;
@@ -116,8 +96,8 @@ function sfMove(fen,spec){
       const line=e.data;
       if(typeof line==='string'&&line.indexOf('bestmove')===0){ w.onmessage=null; resolve(line.split(' ')[1]); }
     };
-    // Same as applyStrength()/goCommand(): options are worker state, so state
-    // all of them every time or a run inherits the previous player's setting.
+    // Options are worker state, so state all of them every time or a run
+    // inherits the previous player's setting.
     w.postMessage('setoption name UCI_LimitStrength value false');
     w.postMessage('setoption name Skill Level value '+(typeof spec.skill==='number'?spec.skill:20));
     w.postMessage('position fen '+fen);
@@ -128,11 +108,8 @@ function sfMove(fen,spec){
   }));
 }
 
-// Dispatch on the LEVELS entry's own engine field, so the bench cannot
-// disagree with the app about which rung runs on what.
 function player(def){
   const spec=def.spec;
-  if(spec.engine==='local') return { label:def.label, move:g=>Promise.resolve(localMove(g,spec.depth)) };
   return { label:def.label, move:g=>sfMove(g.fen(),spec).then(uci=>
     (!uci||uci==='(none)')?null:{from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci.length>4?uci[4]:undefined}) };
 }
@@ -140,7 +117,6 @@ function player(def){
 const MAX_PLIES=200;   // adjudicated a draw past here; a real result is rare beyond it
 function playGame(white,black){
   const g=new Chess();
-  lastComputerMove=null;
   let plies=0;
   function step(){
     if(g.game_over()||plies>=MAX_PLIES){
@@ -183,20 +159,21 @@ function pairing(a,b,n){
   return next();
 }
 
-// Each rung against the one below it. That is the only claim the Level select
-// makes, and the only one worth checking — including across the seam, where
-// Club (Stockfish) meets Casual (the local engine). If the ladder holds there
-// too, the mixed bottom rung costs nothing the player can feel.
-const MATCHUPS=[
-  [{label:'Club',  spec:LEVELS['2']},      {label:'Casual',spec:LEVELS['1']}],
-  [{label:'Sharp', spec:LEVELS['3']},      {label:'Club',  spec:LEVELS['2']}],
-  [{label:'Master',spec:LEVELS['master']}, {label:'Sharp', spec:LEVELS['3']}]
-];
+// Each rung against the one directly below it, across all eleven — the
+// only claim the Level select makes, and the only one worth checking.
+const ORDER=['1','2','3','4','5','6','7','8','9','10','capablanca'];
+const MATCHUPS=ORDER.slice(1).map((k,i)=>{
+  const prev=ORDER[i];
+  return [{label:LEVELS[k].name,spec:LEVELS[k]},{label:LEVELS[prev].name,spec:LEVELS[prev]}];
+});
 
 // ---- Elo anchoring ----
 // Stockfish carries its own strength calibration (UCI_LimitStrength + UCI_Elo),
 // which is the only Elo scale available here that wasn't invented by us. So:
-// play each rung against a few of those settings and see where it sits.
+// play a representative sample of rungs against a few of those settings and
+// see where they sit. Not all eleven — that's eleven times four anchors times
+// ELO_GAMES games, which stops being a quick bench — so this samples the
+// bottom, middle, and top of the ladder.
 //
 // Read the caveat before believing a number. UCI_Elo is calibrated for normal
 // time control, and these anchors get ANCHOR_MS a move so the whole thing
@@ -208,6 +185,7 @@ const MATCHUPS=[
 const ANCHOR_MS=250;
 const ANCHORS=[1320,1600,2000,2400];
 const ELO_GAMES=2;
+const SAMPLE_KEYS=['1','4','7','10','capablanca'];
 
 function anchorPlayer(elo){
   return { label:'Elo'+elo, move:g=>sfInit().then(w=>new Promise(resolve=>{
@@ -244,29 +222,26 @@ function anchorPairing(rung,elo,n){
 document.getElementById('runElo').addEventListener('click',function(){
   this.disabled=true; out.innerHTML='';
   say('Elo anchoring — '+ELO_GAMES+' game(s) per anchor, anchors at '+ANCHOR_MS+'ms a move.');
+  say('Sampling levels '+SAMPLE_KEYS.join(', ')+' rather than all eleven.','dim');
   say('UCI_Elo is calibrated for normal time control; at '+ANCHOR_MS+'ms these anchors are','dim');
   say('weaker than their label. Read a result as "plays evenly with the Elo-N setting','dim');
   say('at this budget", not as a rating.','dim');
   say('');
-  const rungs=[
-    {label:'Casual',spec:LEVELS['1']},
-    {label:'Club',  spec:LEVELS['2']},
-    {label:'Sharp', spec:LEVELS['3']}
-  ];
+  const rungs=SAMPLE_KEYS.map(k=>({label:LEVELS[k].name,spec:LEVELS[k]}));
   let ri=0, ai=0;
   const scores={};
   (function next(){
     if(ri>=rungs.length){
       say('');
       say('summary (score = points out of '+ELO_GAMES+' per anchor):');
-      rungs.forEach(r=>say('  '+r.label.padEnd(8)+ANCHORS.map(e=>'Elo'+e+' '+scores[r.label+e]).join('   ')));
+      rungs.forEach(r=>say('  '+r.label.padEnd(16)+ANCHORS.map(e=>'Elo'+e+' '+scores[r.label+e]).join('   ')));
       return;
     }
     const rung=rungs[ri], elo=ANCHORS[ai];
     return anchorPairing(rung,elo,ELO_GAMES).then(t=>{
       const pts=(t.w+t.d/2).toFixed(1);
       scores[rung.label+elo]=pts+'/'+ELO_GAMES;
-      say('  '+rung.label.padEnd(8)+'vs Elo '+elo+'  →  +'+t.w+' ='+t.d+' -'+t.l+'   ('+pts+'/'+ELO_GAMES+')',
+      say('  '+rung.label.padEnd(16)+'vs Elo '+elo+'  →  +'+t.w+' ='+t.d+' -'+t.l+'   ('+pts+'/'+ELO_GAMES+')',
           t.w>t.l?'ok':(t.w<t.l?'bad':'dim'));
       ai++; if(ai>=ANCHORS.length){ ai=0; ri++; say(''); }
       next();
@@ -277,7 +252,7 @@ document.getElementById('runElo').addEventListener('click',function(){
 document.getElementById('run').addEventListener('click',function(){
   this.disabled=true; out.innerHTML='';
   say('LEVELS as index.html ships them:');
-  Object.keys(LEVELS).forEach(k=>say('  '+k.padEnd(7)+' '+JSON.stringify(LEVELS[k])));
+  Object.keys(LEVELS).forEach(k=>say('  '+k.padEnd(12)+' '+JSON.stringify(LEVELS[k])));
   say('');
   let i=0;
   const started=Date.now();
