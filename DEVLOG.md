@@ -7187,3 +7187,44 @@ own `min` attribute.
 
 Build `BUILD='v2-r98 (Bullet/Blitz split out of seek, kept for the Lichess AI game)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r99): Abort/Resign moved into the board-head row
+
+Moved `#lichessAbortBtn`/`#lichessResignBtn` from the Lichess
+connection panel (under Game settings, OUR-90) into board-head (Flip
+board/Reset/slider/Fullscreen/narration, OUR-86/OUR-96), same "reach
+it without scrolling during an active game" reasoning Hide board and
+New puzzle already moved for. Same ids, same click handlers
+(`abortLichessGame()`/`resignLichessGame()`, untouched), same show/
+hide toggling — every existing call site that already set
+`lichessAbortBtn/lichessResignBtn.style.display` (game start, watch,
+AI success, leave/stop) keeps working with zero changes, since it all
+addresses the buttons by id, not position. Checked
+`abortLichessGame()`/`resignLichessGame()` directly rather than
+assuming: neither had a confirmation dialog before this move, so
+there was nothing to preserve beyond the plain click handlers. Plain
+`.btn`, so they fall back to the row's own 33.5px height (r87)
+automatically, no new CSS needed.
+
+Left them out of the fullscreen-declutter hide list
+(`.app.fullscreen-active .board-head ...`) that Flip board/Fullscreen/
+the size field/narration are already on — those are display/settings
+controls, but aborting or resigning is a real in-game action a player
+might need mid-game without first exiting fullscreen, so hiding it
+there would work against the same "reachable without extra steps"
+reasoning this move exists for.
+
+Verified live: buttons confirmed inside `.board-head`, hidden by
+default; simulated an active Lichess game (AI challenge, fetch-
+intercepted — no real token this session) and confirmed both switch to
+visible and measure exactly 33.5px tall; clicked each and confirmed
+the real `abortLichessGame()`/`resignLichessGame()` handlers fired
+(intercepted the actual `/abort` and `/resign` POSTs); disconnecting
+correctly hid them again. Board-head's own wrap risk (OUR-86/OUR-90's
+history) re-checked with both new buttons forced visible: five clean
+lines at 390px, still nothing overlapping or off-screen at 320px
+either — confirmed via the same same-origin-iframe technique prior
+rounds established, not assumed from the row's existing math.
+
+Build `BUILD='v2-r99 (Abort/Resign moved into the board-head row)'`.
+Published to `/v2/`.

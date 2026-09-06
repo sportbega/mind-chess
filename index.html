@@ -595,6 +595,23 @@
              not two. Does not touch board visibility at all (OUR-103) —
              it inherits whatever startPuzzle() itself now leaves alone. -->
         <button class="btn" id="newPuzzleBtn" type="button" style="display:none">New puzzle</button>
+        <!-- OUR-109: moved here from the Lichess connection panel (down
+             under Game settings, OUR-90) so they're reachable without
+             scrolling during an active game — same reasoning Hide board
+             and New puzzle already moved for. Same ids, same click
+             handlers (abortLichessGame()/resignLichessGame(), unchanged),
+             same show/hide-on-active-game toggling (every place that
+             already set lichessAbortBtn/lichessResignBtn.style.display —
+             game start, watch, AI success, leave/stop — still does,
+             untouched); only the position moved. Plain .btn, so they fall
+             back to the row's own 33.5px height (r87) exactly like Flip
+             board/Reset/Fullscreen, with no new CSS needed. No
+             confirmation dialog existed before this move either — checked
+             abortLichessGame()/resignLichessGame() directly rather than
+             assuming, and there's nothing to preserve beyond the plain
+             click handlers. -->
+        <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
+        <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
       </div>
     </div>
     <div class="board-outer">
@@ -863,8 +880,6 @@
       <button class="btn" id="lichessAiBtn" type="button">Play the Lichess computer</button>
       <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
       <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
-      <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
-      <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
     </div>
   </div>
 
@@ -3372,7 +3387,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r98 (Bullet/Blitz split out of seek, kept for the Lichess AI game)';
+  const BUILD='v2-r99 (Abort/Resign moved into the board-head row)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
