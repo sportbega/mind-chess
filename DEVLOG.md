@@ -7067,3 +7067,77 @@ often slow/unlikely via this integration specifically (mirroring the
 existing "a voice move may not keep up" warning already on the same
 select) — a documentation nudge, not a code fix, since there's no bug
 here to fix.
+
+## 2026-09-06 — follow-up investigation: no, bot/Board API accounts cannot reach Quick Pairing (documented, not just inferred)
+
+Follow-up to the previous entry's Hook/Seek liquidity theory: checked
+whether a Board API account has ANY sanctioned path into Lichess's
+real Quick Pairing pool (the rating-matched system behind the colored
+lobby buttons) for Blitz/Rapid specifically, rather than the classic
+open-hook seek list. Checked the official spec first, not just source
+archaeology — and it turns out the official docs already answer this
+directly, in two places:
+
+**Board tag's own restrictions** (`doc/specs/lichess-api.yaml`, the
+tag mind-chess's `board:play` token actually uses — a normal account,
+not an upgraded Bot account):
+> Time controls: Rapid, Classical and Correspondence only. For direct
+> challenges, games vs AI, and bulk pairing, Blitz is also possible.
+
+Read precisely: **seeks are restricted to Rapid/Classical/
+Correspondence, full stop** — Blitz is only ever permitted for direct
+challenges, AI games, and bulk pairing, never for `/api/board/seek`.
+This is a *better* explanation than the previous entry's liquidity
+theory for why Blitz fails exactly like Bullet does: it isn't (just)
+that the classic hook list for fast controls is thin, it's that
+Lichess's own documented policy doesn't support Blitz seeks through
+this endpoint at all. Rapid works because it's one of the three
+explicitly sanctioned seek time controls; Classical and Correspondence
+the same. The liquidity argument still explains *why Lichess doesn't
+bother enforcing this with a hard error* (the request is accepted,
+looks identical, and simply never surfaces to a real opponent) rather
+than rejecting it outright — but the policy line is the real, written
+root cause, and supersedes guessing at pool internals.
+
+**Bot tag's own restrictions**, for the separate question this
+follow-up actually asked (can an upgraded Bot account reach pools at
+all, for any time control):
+> Bots can only play challenge games: pools and tournaments are
+> off-limits.
+
+Unambiguous, official, and not specific to Blitz — pools (Quick
+Pairing) are entirely walled off from Bot accounts, by design, for
+every time control including Rapid. There is no documented flag,
+scope, or upgrade path that grants pool access to a Bot/Board API
+integration. mind-chess doesn't even use an upgraded Bot account (it
+uses a normal account's `board:play` token), so the Board tag's own
+seek-time-control restriction is the more directly applicable one, but
+both point the same direction.
+
+**Community corroboration**: found and read a 2025 lila GitHub issue
+(lichess-org/lila#21015) proposing server-side bot matchmaking pools —
+closed. Lichess's lead maintainer (ornicar) response: "These changes
+address a use-case that is not supported: random bot-vs-bot games...
+Bots are for playing with humans, and occasionally, with another
+chosen bot — but not for benchmarking purposes. The current API
+handles these use-cases correctly I think." Confirms the intended
+integration shape is direct challenges, not pool-based matchmaking —
+consistent with, not contradicting, the documented restriction above.
+
+**Conclusion: no genuine working path exists — nothing built.** This
+is a hard, documented platform restriction, not a liquidity
+inconvenience or a missing request parameter. Per the ask, no
+workaround was attempted, since building one against an explicitly
+unsupported endpoint shape would not actually work (or would risk the
+account, per the Bot tag's own TOS-enforcement language) rather than
+fix anything.
+
+**Worth Adni's own call, not implemented here**: since Blitz seeks are
+now confirmed structurally unsupported by Lichess's own policy (not
+just unlikely to pair), it may be worth reconsidering whether Blitz
+belongs in the seek dropdown at all versus being clearly marked
+"opponent games and AI only" — Rapid/Classical/Correspondence remain
+fully supported for seeking as before, and Blitz still works correctly
+for "Play the Lichess computer" (`/api/challenge/ai`, one of the
+explicitly-permitted Blitz use cases) and for direct challenges. Not
+changed in this entry — flagging the decision, not making it.
