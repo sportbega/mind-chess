@@ -6080,3 +6080,93 @@ no "BOARD" label taking up the leftmost slot anymore.
 
 Build `BUILD='v2-r82 (dropped the BOARD label, lowered the default back
 down)'`. Published to `/v2/`.
+
+## 2026-09-06 (r83): click-to-move and drag-and-drop on the board
+
+Genuinely new input method — voice and typed algebraic notation (OUR-45)
+were the only ways to move a piece until now. Confirmed before building
+rather than assumed: pieces are still plain text glyphs in a `<div class="sq">`
+grid, not SVG/canvas (`SOLID[cell.type]` as `textContent`, color from
+`.white-piece`/`.black-piece`), and — this mattered — the squares had no
+identifier in the DOM at all. Added `div.dataset.square=sq` in
+`renderBoard()`; every click/drag/highlight target in this feature reads
+off that one attribute.
+
+Click-to-move and drag-and-drop are one state machine, not two — "select,
+then complete on a second input" and "pick up, then drop" are the same
+gesture with different endings. Built entirely on `pointerdown`/
+`pointermove`/`pointerup` (no separate touch handlers — Pointer Events
+already unify mouse/touch/pen, and `touch-action:none` on `.sq` stops
+mobile browsers from treating a board drag as a page scroll) and
+deliberately never depends on a native `'click'` event, to avoid any risk
+of double-handling between that and this. A press-and-release under 6px of
+movement is a click; past that, a floating `.drag-ghost` appears (copying
+the origin square's own *computed* color/stroke/size, not a hardcoded
+value, so it's automatically correct at any board size (r84/85) and under
+any of the nine themes (r69) without this code needing to know either) and
+follows the pointer via `elementFromPoint()`-based hit-testing, which is
+also how the drop target and hover highlight are found.
+
+Every move — click or drag — ends at `execPlan(planForMove(match))`, the
+exact function voice and typed input already call; `match` is just
+whichever entry in `game.moves({verbose:true}).filter(m=>m.from===sq)`
+has the clicked/dropped `.to`. Nothing here reimplements legality,
+check detection, or promotion — chess.js's own move list is the only
+source of truth (a pinned piece simply never lists the pin-violating
+square, by construction, the same as it already didn't for voice), and a
+pawn reaching the last rank hits `planForMove`'s existing `ask-promotion`
+branch, which prompts through the same `askPromotion()`/`pendingAction`
+flow voice and typed answers already resolve — no separate promotion UI
+was built. Verified this exact path live: engineered a real promotion via
+text moves in two-player mode, then made the actual capturing move by
+mouse and confirmed it produced the identical "Promote to what — queen,
+rook, bishop, or knight?" prompt, answered it as text, and got the correct
+`gxh8=Q` in the move history.
+
+`route()`'s inline gameOver/mode/turn gate — gameOver, `mode==='computer'`
+turn check, the `online`/`lichess` seat and status checks — was pulled out
+into two functions rather than duplicated: `canMoveNow()` (the original,
+spoken-warning behavior, used by voice/typed exactly as before) and a
+silent `moveGateOk()` twin mouse input uses to decide what's even
+selectable without narrating a rejection on every stray click.
+
+Confirmed, not assumed, that a hidden board needed an explicit guard: r77
+made the board-hidden veil `pointer-events:none` specifically so
+board-head's own controls stayed clickable through it, which means the
+squares underneath are just as reachable unless blocked here too — a
+mouse move that only worked because the position was still technically
+clickable would defeat blindfold mode's whole point. `onBoardPointerDown`
+returns immediately whenever `boardHidden` is true.
+
+Selection state (`selectedSquare`/`legalTargets`) self-heals in
+`renderBoard()` rather than needing to be cleared at every one of the
+sixteen-odd call sites that already funnel through it (moves, undo, new
+game, pgn load, online/Lichess sync): if the selected square no longer
+holds a piece of the side to move, the selection is dropped right there.
+
+Highlighting uses `var(--accent)`/`var(--accent-2)` — already themed
+across all nine board palettes (r69) — via `box-shadow`, which layers
+over `.last`/`.checked` without a specificity fight the way a background-
+color highlight would have.
+
+Verified live end-to-end, not just read for correctness: click-to-select
+plus highlighting (pawn's two-square range, e.g.), click-to-move
+completing through the shared path with real narration and move-history
+output, drag-and-drop with the ghost/hover/origin-dimming visuals and a
+real move landing correctly, an illegal drop snapping back with no state
+change, switching selection to a different own piece without deselecting
+first, re-clicking the same piece to deselect, clicking an illegal square
+to deselect, board-hidden fully blocking interaction, board-flip mapping
+clicks to the correct logical square under a mirrored layout, the minimum
+(420px) board size, and fullscreen. Not independently re-verified: pinned-
+piece highlighting specifically — not because it's untested, but because
+it's chess.js's own check-safety filter inside the exact `moves()` call
+already trusted everywhere else in this file, so there is no code path
+here that could get it wrong without also breaking voice input's legality
+checking, which would have surfaced already. Also not verified: real touch
+hardware — Pointer Events + `touch-action:none` is the standard,
+well-established way to make this work on a touchscreen, but no physical
+device was in reach to confirm it firsthand.
+
+Build `BUILD='v2-r83 (click-to-move and drag-and-drop on the board)'`.
+Published to `/v2/`.

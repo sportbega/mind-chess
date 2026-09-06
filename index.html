@@ -260,7 +260,7 @@
      140px covers the largest square either fullscreen (~1030px board,
      board-outer's own padding/ranks column and the .boardpanel 1100px cap
      as the ceiling) or the board-size slider (960px max) can produce. */
-  .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,140px)!important;line-height:1;user-select:none}
+  .sq{display:grid;place-items:center;position:relative;min-width:0;min-height:0;padding:0!important;border:0!important;border-radius:0!important;font-size:min(12cqw,140px)!important;line-height:1;user-select:none;touch-action:none}
   .sq.light{background:var(--sq-light)}
   .sq.dark{background:var(--sq-dark)}
   /* solid glyphs for both sides, separated by fill + stroke so both read on any square */
@@ -268,6 +268,23 @@
   .sq.black-piece{color:var(--piece-dark);-webkit-text-stroke:1px var(--piece-dark-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
   .sq.last{background-color:#cbb87c!important;box-shadow:none}
   .sq.checked{box-shadow:inset 0 0 0 2px var(--danger)}
+  /* Mouse/touch board interaction. var(--accent)/var(--accent-2) rather
+     than a fixed color, since both already vary across all nine board
+     themes (r69) — this rides that instead of needing its own per-theme
+     entries. Box-shadow, not background/border, so it layers cleanly over
+     .last/.checked/light/dark without a specificity fight. */
+  .sq.selected{box-shadow:inset 0 0 0 3px var(--accent-2)}
+  .sq.legal-target::after{content:'';width:28%;height:28%;border-radius:50%;background:var(--accent);opacity:.55;pointer-events:none}
+  .sq.legal-capture{box-shadow:inset 0 0 0 4px var(--accent)}
+  .sq.drag-hover{box-shadow:inset 0 0 0 3px var(--accent-2)}
+  .sq.drag-origin{opacity:.35}
+  /* Copies the origin square's own computed color/stroke/size at drag
+     start (see onBoardPointerMove) rather than hardcoding any of them, so
+     this is correct at any board size and under any theme without having
+     to know either. pointer-events:none is load-bearing, not cosmetic —
+     the ghost sits directly under the cursor, exactly where drop-target
+     hit-testing needs to see the real square underneath instead. */
+  .drag-ghost{position:fixed;top:0;left:0;transform:translate(-50%,-50%);pointer-events:none;z-index:60;line-height:1;-webkit-text-stroke:inherit;paint-order:stroke fill}
   .files{display:grid;grid-template-columns:repeat(8,1fr);font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin:4px auto 0;text-align:center}
 
   /* inset:0 is relative to .boardpanel (its positioned ancestor), which
@@ -734,6 +751,14 @@
   let handsFree = true;
   let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
   let lastMove = null;
+  // Mouse/touch board interaction — click-to-move and drag-and-drop share
+  // this one piece of state, since "select, then complete on a second
+  // input" and "pick up, then drop" are the same underlying gesture with
+  // different endings. legalTargets is the verbose chess.js move list for
+  // selectedSquare, kept around rather than recomputed per hover so a drop
+  // can look its target up by .to without asking chess.js again.
+  let selectedSquare = null;
+  let legalTargets = [];
   let lastComputerMove = null; // {from,to} the engine itself last played — used to discourage immediately undoing it
   let lastNarration = '';
   let speechGeneration = 0;
@@ -1828,6 +1853,17 @@
     return boardFlippedOverride!==null?boardFlippedOverride:humanColor==='b';
   }
   function renderBoard(){
+    // Self-healing rather than hunting down every place the position can
+    // change (move, undo, new game, pgn load, online/Lichess sync — all
+    // sixteen-odd call sites end up here via renderAll()): a selection is
+    // only ever meaningful for a piece of the side to move, so if that's no
+    // longer true — it moved, it's not this color's turn anymore, the
+    // square is empty — drop it here instead of trusting every caller to
+    // remember to clear it themselves.
+    if(selectedSquare){
+      const p=game.get(selectedSquare);
+      if(!p||p.color!==game.turn()){ selectedSquare=null; legalTargets=[]; }
+    }
     boardGrid.innerHTML=''; ranksEl.innerHTML=''; filesEl.innerHTML='';
     const board=game.board();
     const flipped=isBoardFlipped();
@@ -1847,10 +1883,13 @@
         const rank=8-r;
         const div=document.createElement('div');
         div.className='sq '+(((f+1)+rank)%2===1?'light':'dark');
+        div.dataset.square=sq;
         const cell=board[r][f];
         if(cell){ div.textContent=SOLID[cell.type]; div.classList.add(cell.color==='w'?'white-piece':'black-piece'); }
         if(lastMove&&(sq===lastMove.from||sq===lastMove.to)) div.classList.add('last');
         if(checkSq&&sq===checkSq) div.classList.add('checked');
+        if(sq===selectedSquare) div.classList.add('selected');
+        else if(legalTargets.some(m=>m.to===sq)) div.classList.add(cell?'legal-capture':'legal-target');
         boardGrid.appendChild(div);
       }
       const rl=document.createElement('div'); rl.textContent=8-r; ranksEl.appendChild(rl);
@@ -1892,6 +1931,142 @@
     renderBoard();
     saveState();
   });
+
+  // ===============================================================
+  // Mouse/touch board interaction — click-to-move and drag-and-drop.
+  // Genuinely new (voice and typed algebraic notation were the only input
+  // methods until now). Both gestures end at the exact same execPlan()/
+  // planForMove()/applyMove() path voice and typed moves already use —
+  // narration, sound, move history, online/Lichess sync all happen
+  // exactly as they would for any other input, because none of this
+  // touches game state directly; it only ever decides WHICH move to hand
+  // to the same function everything else already calls.
+  //
+  // One state machine for both gestures, not two: "select, then complete
+  // on a second input" (click-to-move) and "pick up, then drop" (drag)
+  // are the same gesture with different endings, and pointerdown/move/up
+  // already unify mouse, touch and pen — no separate touch handlers
+  // needed, and no synthetic 'click' event depended on (avoids any risk
+  // of double-handling between a native click and this).
+  // ===============================================================
+  function squareFromPoint(x,y){
+    const el=document.elementFromPoint(x,y);
+    const sqEl=el&&el.closest&&el.closest('.sq');
+    return sqEl?sqEl.dataset.square:null;
+  }
+  function selectSquare(sq){
+    selectedSquare=sq;
+    // chess.js 0.10.x's moves() has no per-square filter — every other
+    // caller in this file already gets the full list and filters in JS
+    // (see e.g. the piece-name filter above), so this matches rather than
+    // introducing a different pattern for the same API.
+    legalTargets=game.moves({verbose:true}).filter(m=>m.from===sq);
+    renderBoard();
+  }
+  function clearBoardSelection(){
+    if(!selectedSquare&&!legalTargets.length) return;
+    selectedSquare=null; legalTargets=[];
+    renderBoard();
+  }
+  let boardPointer=null; // {sq,x,y,dragging,ghostEl,pointerId,reselecting}
+  const DRAG_THRESHOLD_PX=6;
+  function onBoardPointerDown(e){
+    // A hidden board still holds the real position underneath the veil —
+    // r77 deliberately made the veil pointer-events:none so board-head's
+    // own controls stay clickable through it, which means squares are
+    // just as reachable unless explicitly blocked here. Blindfold mode's
+    // whole point is not being able to see the position; a mouse move
+    // that only works because you can still click the right square would
+    // defeat that even with the visual hidden.
+    if(boardHidden) return;
+    const sqEl=e.target.closest('.sq');
+    if(!sqEl) return;
+    const sq=sqEl.dataset.square;
+    const piece=game.get(sq);
+    if(piece&&piece.color===game.turn()&&moveGateOk()){
+      e.preventDefault();
+      const reselecting=(selectedSquare===sq);
+      if(!reselecting) selectSquare(sq);
+      boardPointer={sq,x:e.clientX,y:e.clientY,dragging:false,ghostEl:null,pointerId:e.pointerId,reselecting};
+      // Captured on boardGrid, not the pressed .sq itself: selectSquare()
+      // above can rebuild the grid (switching selection re-renders), which
+      // would destroy the element capture was set on and silently drop it
+      // right at the start of the gesture. boardGrid's own children are
+      // rebuilt often but boardGrid itself never is.
+      try{ boardGrid.setPointerCapture(e.pointerId); }catch(err){}
+      return;
+    }
+    if(selectedSquare){
+      const match=legalTargets.find(m=>m.to===sq);
+      if(match){ clearBoardSelection(); execPlan(planForMove(match)); return; }
+      clearBoardSelection();
+    }
+  }
+  function onBoardPointerMove(e){
+    if(!boardPointer||boardPointer.pointerId!==e.pointerId) return;
+    if(!boardPointer.dragging){
+      if(Math.hypot(e.clientX-boardPointer.x,e.clientY-boardPointer.y)<DRAG_THRESHOLD_PX) return;
+      boardPointer.dragging=true;
+      const origin=boardGrid.querySelector('.sq[data-square="'+boardPointer.sq+'"]');
+      if(origin){
+        origin.classList.add('drag-origin');
+        // Copying the ORIGIN SQUARE's own computed style, not writing a
+        // fixed size/color for the ghost, is what makes this automatically
+        // correct at any board size (r84/85) and under any of the nine
+        // themes (r69) without this code needing to know either — it
+        // reads whatever the real board is already rendering right now.
+        const cs=getComputedStyle(origin);
+        const ghost=document.createElement('div');
+        ghost.className='drag-ghost';
+        ghost.textContent=origin.textContent;
+        ghost.style.color=cs.color;
+        ghost.style.webkitTextStroke=cs.webkitTextStrokeWidth+' '+cs.webkitTextStrokeColor;
+        ghost.style.textShadow=cs.textShadow;
+        ghost.style.fontSize=cs.fontSize;
+        document.body.appendChild(ghost);
+        boardPointer.ghostEl=ghost;
+      }
+    }
+    if(boardPointer.ghostEl){
+      boardPointer.ghostEl.style.left=e.clientX+'px';
+      boardPointer.ghostEl.style.top=e.clientY+'px';
+    }
+    const hoverSq=squareFromPoint(e.clientX,e.clientY);
+    boardGrid.querySelectorAll('.drag-hover').forEach(el=>el.classList.remove('drag-hover'));
+    if(hoverSq&&hoverSq!==boardPointer.sq){
+      const hoverEl=boardGrid.querySelector('.sq[data-square="'+hoverSq+'"]');
+      if(hoverEl) hoverEl.classList.add('drag-hover');
+    }
+  }
+  function onBoardPointerUp(e){
+    if(!boardPointer||boardPointer.pointerId!==e.pointerId) return;
+    const bp=boardPointer; boardPointer=null;
+    try{ boardGrid.releasePointerCapture(e.pointerId); }catch(err){}
+    if(bp.ghostEl) bp.ghostEl.remove();
+    boardGrid.querySelectorAll('.drag-origin,.drag-hover').forEach(el=>el.classList.remove('drag-origin','drag-hover'));
+    if(bp.dragging){
+      // Off the board, or on a square that isn't one of this piece's legal
+      // targets: no match, nothing applied, and since the origin square's
+      // dimming is already cleared above, the piece is already visually
+      // back where it started — there's no separate position to undo.
+      const dropSq=squareFromPoint(e.clientX,e.clientY);
+      const match=(dropSq&&dropSq!==bp.sq)?legalTargets.find(m=>m.to===dropSq):null;
+      clearBoardSelection();
+      if(match) execPlan(planForMove(match));
+      return;
+    }
+    // A plain press-and-release with no drag in between: pressing an
+    // already-selected piece a second time deselects it. Anything else
+    // was a fresh selection already shown on pointerdown, and stays
+    // selected — "click a piece" and "click it again" needing different
+    // endings is exactly why this waits for pointerup to decide, instead
+    // of switching on pointerdown alone.
+    if(bp.reselecting) clearBoardSelection();
+  }
+  boardGrid.addEventListener('pointerdown',onBoardPointerDown);
+  boardGrid.addEventListener('pointermove',onBoardPointerMove);
+  boardGrid.addEventListener('pointerup',onBoardPointerUp);
+  boardGrid.addEventListener('pointercancel',onBoardPointerUp);
 
   // ===============================================================
   // Fullscreen — the whole app, not just the board, so every existing
@@ -2899,7 +3074,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r82 (dropped the BOARD label, lowered the default back down)';
+  const BUILD='v2-r83 (click-to-move and drag-and-drop on the board)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4533,6 +4708,47 @@
     updateStatus();
   }
 
+  // Whether a move is allowed to happen right now, for whichever input
+  // method is asking. Silent — no narration, no logging — because it's
+  // consulted on every board click/pointerdown to decide what's even
+  // selectable, and speaking a rejection on every one of those would be
+  // constant chatter. canMoveNow() below wraps this with the spoken
+  // warnings, for voice/typed input where a rejection needs to be heard.
+  function moveGateOk(){
+    if(gameOver) return false;
+    if(mode==='computer'&&game.turn()!==humanColor) return false;
+    if(mode==='online'){
+      if(!onlineState||onlineState.spectating||onlineState.waiting) return false;
+      if(game.turn()!==onlineState.color) return false;
+    }
+    if(mode==='lichess'){
+      if(!lichessState||!lichessState.gameId) return false;
+      if(lichessState.status&&lichessState.status!=='started'&&lichessState.status!=='created') return false;
+      if(game.turn()!==lichessState.color) return false;
+    }
+    return true;
+  }
+  // Same checks as moveGateOk(), spoken — the exact gate route() has always
+  // used for voice/typed input, pulled out so mouse input can share the
+  // decision without duplicating the checks (moveGateOk()) or the message
+  // wording (this).
+  function canMoveNow(){
+    if(gameOver){ warnSilent('Game over. Say "new game" to start another.'); return false; }
+    if(mode==='computer'&&game.turn()!==humanColor){ warn('The computer is thinking.'); return false; }
+    if(mode==='online'){
+      if(!onlineState){ warn('Not connected to an online game.'); return false; }
+      if(onlineState.spectating){ warn('You’re spectating — moves are disabled.'); return false; }
+      if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return false; }
+      if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return false; }
+    }
+    if(mode==='lichess'){
+      if(!lichessState||!lichessState.gameId){ warn('Not connected to a Lichess game — seek or watch one first.'); return false; }
+      if(lichessState.status&&lichessState.status!=='started'&&lichessState.status!=='created'){ warn('That game has ended.'); return false; }
+      if(game.turn()!==lichessState.color){ warn('It’s your opponent’s move.'); return false; }
+    }
+    return true;
+  }
+
   function route(alternatives){
     let list=(Array.isArray(alternatives)?alternatives:[alternatives])
       .map(s=>String(s||'').trim()).filter(Boolean);
@@ -4571,21 +4787,7 @@
     setMicState('thinking','routing "'+bestText.slice(0,32)+'"');
 
     // Commands are always allowed, even after game over / while computer thinks.
-    if(best.type!=='command'){
-      if(gameOver){ warnSilent('Game over. Say "new game" to start another.'); return; }
-      if(mode==='computer'&&game.turn()!==humanColor){ warn('The computer is thinking.'); return; }
-      if(mode==='online'){
-        if(!onlineState){ warn('Not connected to an online game.'); return; }
-        if(onlineState.spectating){ warn('You’re spectating — moves are disabled.'); return; }
-        if(onlineState.waiting){ warn('Waiting for an opponent to join.'); return; }
-        if(game.turn()!==onlineState.color){ warn('It’s your opponent’s move.'); return; }
-      }
-      if(mode==='lichess'){
-        if(!lichessState||!lichessState.gameId){ warn('Not connected to a Lichess game — seek or watch one first.'); return; }
-        if(lichessState.status&&lichessState.status!=='started'&&lichessState.status!=='created'){ warn('That game has ended.'); return; }
-        if(game.turn()!==lichessState.color){ warn('It’s your opponent’s move.'); return; }
-      }
-    }
+    if(best.type!=='command'&&!canMoveNow()) return;
     // Two exact readings, no piece named, nothing to choose between them.
     if(tie){
       askWhichPiece(tie);
