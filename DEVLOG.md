@@ -6519,3 +6519,76 @@ r89 left them.
 
 Build `BUILD='v2-r90 (chat above the board, Lichess panel under Game settings)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r91): New game moved to header; a real mouse/keyboard promotion picker
+
+Two changes.
+
+**New game relocated.** Moved from Game settings into the header row,
+between speaker mute and Hide board as asked. Plain `.btn` with no
+override — same as Hide board, both fall back to `.btn`'s own 33.5px
+height (r87) — so it matches exactly with zero new CSS. Same id, same
+`newGameBtn.addEventListener('click', ...)`, same behavior; only the
+element's position in the page moved.
+
+**Real bug fixed: promotion had no working mouse/keyboard answer.**
+Investigated `askPromotion()` first, per the ask, rather than guessing
+from the symptom: it only ever set `pendingAction={type:'promotion',...}`
+and spoke/logged the question — the only way to *answer* it was
+`resolvePending()`'s `'promotion'` branch, reachable exclusively through
+`route()` (voice or the typed-text form). Mouse/drag promotion (r83)
+already correctly detected the ambiguous move and called `askPromotion()`
+— chess.js's own promotion branch in `planForMove()` — so the "muted"
+framing in the report was a red herring: this was never actually gated
+on `voiceOn`. A mouse/drag player who never touched voice or the text
+box simply had no way to answer at all, muted or not — narration being
+off just made the missing affordance visible instead of masked by a
+spoken prompt.
+
+Added a real visual picker (`#promotionPicker`, four `.promo-choice`
+buttons) rather than special-casing mouse input around the existing
+voice/text answer: `resolvePromotion(piece)` is now the one function
+both the picker's clicks/keys and `resolvePending()`'s existing
+voice/typed branch funnel into, so there's exactly one place a
+promotion actually gets applied regardless of which input answered it.
+Shown/positioned from `updateStatus()` — already the one convergence
+point every `pendingAction` mutation in this file runs through — via
+`positionPromotionPicker()`, which reads the destination square's live
+`getBoundingClientRect()` so it tracks correctly across board sizes
+(r78-r82), themes (r69), and a flipped board with no special-casing.
+Piece glyphs reuse `.sq`'s own `.white-piece`/`.black-piece` color
+rules, so a choice renders in whatever theme is active without this
+code needing to know it.
+
+Keyboard: Q/R/B/N resolves directly (ignored while a text field has
+focus, so it can't steal a letter out of something actually being
+typed); Left/Right arrows rove focus between the four real `<button>`
+elements (Tab/Enter/Space already reach them natively); Escape cancels
+back to before the move — extended the existing global Escape handler
+(r58's barge-in-without-a-mic listener) rather than adding a second
+one, checking for an open promotion prompt first since the two can
+never be relevant at the same time. First choice autofocuses exactly
+once per prompt (guarded by `promotionPickerShown`, reset when the
+prompt closes) — not on every `updateStatus()` call, which fires far
+more often than the prompt actually opens.
+
+Never gated on `voiceOn` anywhere in the new code — shown for every
+input method, and voice/typed answers still work exactly as before
+alongside it (an addition, not a replacement).
+
+Verified live, muted (two-player mode, real click/drag/keyboard
+gestures via synthetic PointerEvents/KeyboardEvents against the actual
+handlers, not a shortcut): engineered a real capturing promotion
+(`b7` pawn onto `a8`), then resolved it four separate times — Rook by
+click, Bishop by drag-and-drop, Knight by the `n` key, Queen by click
+again — each producing the correct `bxa8=<piece>` in the move history
+with `speechSynthesis.speak()` never called (confirmed via a spy) and
+the picker hiding itself after each. Escape confirmed to cancel
+cleanly with no move applied. Unmuted: the same click/drag sequence
+still opened the picker (not suppressed) *and* narration spoke the
+question (`speechSynthesis.speaking` true) — both together, as asked;
+answering by typing "rook" still resolved it and hid the picker,
+confirming the existing voice/typed path is untouched.
+
+Build `BUILD='v2-r91 (New game moved to header; a real mouse/keyboard promotion picker)'`.
+Published to `/v2/`.
