@@ -6925,3 +6925,72 @@ wraps cleanly at 390px/320px with the new control included.
 
 Build `BUILD='v2-r96 (narration dropdown to board-head; title shares one line with header)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r97): full time-control list — Lichess seek + internal clock, with increment
+
+Two related additions.
+
+**Lichess seek panel**: expanded from Correspondence/Rapid/Classical to
+the full "Quick Pairing" list (1+0 and 2+1 Bullet; 3+0/3+2/5+0/5+3
+Blitz; 10+0/10+5/15+10 Rapid; 30+0/30+20 Classical), plus Correspondence
+and a genuine Custom (minutes + increment inputs), grouped by category
+to match how Lichess's own lobby groups them. Checked the real
+`POST /api/board/seek` parameters rather than assuming, per the ask:
+`time` is minutes, `increment` is seconds, both confirmed against the
+endpoint's own spec — so the option values ("M-S", the same shape
+Lichess itself writes a time control) map straight onto the request
+with no unit conversion. Same transport as before (`lichessFetch`,
+same seek/poll/AI-challenge flow) — only the value space got bigger,
+plus one real branch (Custom) reading two number inputs instead of a
+table lookup.
+
+Bullet/blitz are included because this asked for them, but the
+original build's own reasoning for excluding them — a voice move takes
+longer than a click — was a considered trade-off, not an oversight, so
+it's kept visible in the select's title rather than silently dropped:
+"Bullet and blitz move fast — a voice move may not keep up."
+
+**Internal clock**: same list (minus Correspondence — flagged, not
+silently decided: a days-per-move deadline has no equivalent in a
+same-session ticking clock, so it's Lichess-only by design) added to
+Game settings' Clock select, reusing the exact clock mechanism that
+already existed (`clockPreset`/`whiteMs`/`blackMs`/`startClock()`'s
+`setInterval`) rather than a second timer system. The one real gap
+that mechanism never had: increment. Added `clockIncrement` (seconds)
+alongside `clockPreset` (minutes), credited to the mover's own clock
+right after their move — in `applyMove()` for computer/two-player, and
+in `saveOnline()` at the same moment for online games (online keeps
+its own separate clock state, `onlineState`, so it needed the same
+addition made twice, once per clock implementation, not shared code).
+A new `clock_increment` column was added to `mind_chess_games`
+(migration in `supabase/migrations/20260906_add_clock_increment.sql`,
+defaulting existing rows to 0) since online's clock lives in that row,
+not just in memory.
+
+Both selects share one parser (`parseTimeControlValue()`, "M-S" →
+`{minutes,increment}`) and one preset set (`CLOCK_FIXED`), so a value
+string means the same thing in both places. The Custom stepper gained
+a second pair of `−`/`+` buttons for increment, next to the existing
+minutes stepper, following the same pattern rather than a new one.
+
+Verified live: both selects render all 13/12 options with the right
+`<optgroup>` labels; selecting 2+1 in two-player mode showed the clock
+counting down and then visibly jumping *up* by ~1s immediately after a
+move (1:39 → 1:40), confirming the increment credit; the Custom
+steppers (minutes and, newly, seconds) both work and persist; a real
+online game created with 3+2 stored `clock_preset:3, clock_increment:2`
+in the database (checked directly via SQL), and playing a move produced
+a `white_ms` reflecting the increment credit. For the Lichess side —
+no real token available this session, so verified by intercepting
+`fetch()` rather than a live opponent: patched `window.fetch` to
+capture the outgoing `POST /api/board/seek` body for four presets
+(1+0, 15+10, 30+20, Correspondence) plus a Custom 7+4, and confirmed
+each produced exactly the right `time`/`increment`/`days` parameters;
+also confirmed `playLichessAI()`'s existing Correspondence→Rapid
+fallback still sends `clock.limit=600` / `clock.increment=5` correctly
+now that it resolves through the same shared config function. Setting
+persistence (both selects, both steppers) confirmed to survive a fresh
+reload via the two-tab technique.
+
+Build `BUILD='v2-r97 (full time-control list: Lichess seek + internal clock, with increment)'`.
+Published to `/v2/`.

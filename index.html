@@ -716,21 +716,47 @@
           <option value="capablanca">Capablanca Level</option>
         </select>
       </div>
+      <!-- OUR-108: same 11-preset ladder as the Lichess seek panel below,
+           minus Correspondence — a days-per-move deadline has no
+           equivalent in a same-session ticking clock (see CLOCK_PRESETS'
+           own comment), so it's Lichess-only by design, not an oversight.
+           Option values are "minutes-seconds" (matching how Lichess itself
+           writes a time control, e.g. "10+5"), parsed by
+           parseTimeControlValue() — the same parser the Lichess select
+           uses, so both stay in sync with one source of truth for what a
+           given value string means. -->
       <div class="field">
         <label for="clockSelect">Clock</label>
         <select id="clockSelect">
           <option value="0" selected>No clock</option>
-          <option value="3">3 min</option>
-          <option value="5">5 min</option>
-          <option value="10">10 min</option>
-          <option value="20">20 min</option>
-          <option value="30">30 min</option>
+          <optgroup label="Bullet">
+            <option value="1-0">1+0</option>
+            <option value="2-1">2+1</option>
+          </optgroup>
+          <optgroup label="Blitz">
+            <option value="3-0">3+0</option>
+            <option value="3-2">3+2</option>
+            <option value="5-0">5+0</option>
+            <option value="5-3">5+3</option>
+          </optgroup>
+          <optgroup label="Rapid">
+            <option value="10-0">10+0</option>
+            <option value="10-5">10+5</option>
+            <option value="15-10">15+10</option>
+          </optgroup>
+          <optgroup label="Classical">
+            <option value="30-0">30+0</option>
+            <option value="30-20">30+20</option>
+          </optgroup>
           <option value="custom">Custom…</option>
         </select>
         <div class="stepper" id="customClockRow" style="display:none">
           <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
           <span id="customClockLabel">15 min</span>
           <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
+          <button class="btn" id="customClockIncMinus" type="button" aria-label="Subtract 1 second increment">&minus;</button>
+          <span id="customClockIncLabel">0 sec</span>
+          <button class="btn" id="customClockIncPlus" type="button" aria-label="Add 1 second increment">+</button>
         </div>
       </div>
       <div class="field">
@@ -762,12 +788,47 @@
       <input type="password" id="lichessTokenInput" placeholder="Lichess API token" autocomplete="off" style="flex:1;min-width:160px" />
       <button class="btn" id="lichessSaveTokenBtn" type="button">Save token</button>
     </div>
+    <!-- OUR-108: full Lichess "Quick Pairing" list plus Correspondence and
+         Custom, grouped the same way Lichess's own lobby groups them.
+         Option values are "minutes-seconds" — parseTimeControlValue()
+         reads them straight into the seek's own time/increment params
+         (minutes and seconds respectively, per Lichess's real
+         POST /api/board/seek parameters — checked, not assumed: time is
+         minutes, increment is seconds, confirmed against the endpoint's
+         own spec). Bullet/blitz are included because this asked for them,
+         but the title below keeps the original voice-latency warning —
+         it was a real, considered trade-off (a voice move takes longer
+         than a click), not an oversight, so surfacing it rather than
+         silently dropping it felt right even though the option is now
+         offered. -->
     <div class="online-actions">
-      <select id="lichessTimeSelect" title="Blitz and bullet are excluded — a voice move takes longer than a click.">
+      <select id="lichessTimeSelect" title="Bullet and blitz move fast — a voice move may not keep up. Rapid or slower plays best by voice.">
+        <optgroup label="Bullet">
+          <option value="1-0">1+0 Bullet</option>
+          <option value="2-1">2+1 Bullet</option>
+        </optgroup>
+        <optgroup label="Blitz">
+          <option value="3-0">3+0 Blitz</option>
+          <option value="3-2">3+2 Blitz</option>
+          <option value="5-0">5+0 Blitz</option>
+          <option value="5-3">5+3 Blitz</option>
+        </optgroup>
+        <optgroup label="Rapid">
+          <option value="10-0">10+0 Rapid</option>
+          <option value="10-5" selected>10+5 Rapid</option>
+          <option value="15-10">15+10 Rapid</option>
+        </optgroup>
+        <optgroup label="Classical">
+          <option value="30-0">30+0 Classical</option>
+          <option value="30-20">30+20 Classical</option>
+        </optgroup>
         <option value="corr">Correspondence (3 days/move)</option>
-        <option value="rapid" selected>Rapid (10+5)</option>
-        <option value="classical">Classical (30+20)</option>
+        <option value="custom">Custom…</option>
       </select>
+      <span class="stepper" id="lichessCustomRow" style="display:none">
+        <input type="number" id="lichessCustomMinutes" min="0" max="180" value="10" style="width:52px" title="Minutes per side" /> min +
+        <input type="number" id="lichessCustomIncrement" min="0" max="180" value="0" style="width:52px" title="Increment in seconds" /> sec
+      </span>
       <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
       <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
       <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
@@ -1028,11 +1089,31 @@
   // Clock: 0 = no clock. Runs off game.turn(), so it works the same for
   // computer/two-player/online without per-mode special-casing — the
   // computer's think time counts against its own clock for free.
+  //
+  // OUR-108: clockIncrement (seconds, added to the mover's own clock right
+  // after their move — see applyMove()) joins clockPreset (minutes). The
+  // select's values are "minutes-seconds" strings (parseTimeControlValue()
+  // below), the same shape the Lichess seek panel's own select uses, so a
+  // preset means the same thing in both places.
   let clockPreset = 0;         // minutes per side, 0 = off
+  let clockIncrement = 0;      // seconds added to the mover's clock after each of their moves
   let whiteMs = 0, blackMs = 0;
   let clockTimer = null;
-  let customClockMin = 15;     // remembers the last value dialed in via the Custom stepper
-  const CLOCK_FIXED = new Set([0,3,5,10,20,30]); // values with a dedicated <option>; anything else is "Custom"
+  let customClockMin = 15;     // remembers the last minutes value dialed in via the Custom stepper
+  let customClockIncSec = 0;   // remembers the last increment value dialed in via the Custom stepper
+  // "minutes-seconds" values with a dedicated <option>; anything else that
+  // isn't 0 (no clock) is "Custom". Shared with the Lichess select's own
+  // presets — see LICHESS_TIME_CONTROLS — so both grow from one list if a
+  // preset is ever added or removed.
+  const CLOCK_FIXED = new Set(['1-0','2-1','3-0','3-2','5-0','5-3','10-0','10-5','15-10','30-0','30-20']);
+  // Reads a clockSelect/lichessTimeSelect option value into {minutes,
+  // increment} — both selects use the identical "M-S" shape (matching how
+  // Lichess itself writes a time control, "10+5"), so one parser serves
+  // both rather than two copies of the same split-and-parseInt.
+  function parseTimeControlValue(v){
+    const m=/^(\d+)-(\d+)$/.exec(v);
+    return m?{minutes:+m[1],increment:+m[2]}:null;
+  }
 
   const PIECE_NAME = {p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
   const PIECE_VALUE = {p:1,n:3,b:3,r:5,q:9,k:0};
@@ -1087,6 +1168,8 @@
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
+        customClockIncLabel=$('customClockIncLabel'),
+        customClockIncMinus=$('customClockIncMinus'), customClockIncPlus=$('customClockIncPlus'),
         handsFreeToggle=$('handsFreeToggle'), bargeInToggle=$('bargeInToggle'),
         newGameBtn=$('newGameBtn'), originBanner=$('originBanner'),
         onlinePanel=$('onlinePanel'), onlineStatusEl=$('onlineStatus'), createOnlineBtn=$('createOnlineBtn'),
@@ -1096,6 +1179,7 @@
         lichessPanel=$('lichessPanel'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
         lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
+        lichessCustomRow=$('lichessCustomRow'), lichessCustomMinutes=$('lichessCustomMinutes'), lichessCustomIncrement=$('lichessCustomIncrement'),
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
         lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiBtn=$('lichessAiBtn'),
         chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
@@ -2576,24 +2660,34 @@
     whiteMs=blackMs=clockPreset*60000;
     startClock();
   }
-  // Reflects clockPreset onto the select + custom stepper — needed both
-  // after a user picks "Custom…" and after restoring a saved custom value
-  // on reload (which won't match any of the select's fixed <option>s).
+  // Reflects clockPreset/clockIncrement onto the select + custom steppers —
+  // needed both after a user picks "Custom…" and after restoring a saved
+  // custom value on reload (which won't match any of the select's fixed
+  // <option>s).
   function syncClockUI(){
-    if(CLOCK_FIXED.has(clockPreset)){
-      clockSelect.value=String(clockPreset);
+    const key=clockPreset+'-'+clockIncrement;
+    if(clockPreset===0){
+      clockSelect.value='0';
+      customClockRow.style.display='none';
+    }else if(CLOCK_FIXED.has(key)){
+      clockSelect.value=key;
       customClockRow.style.display='none';
     }else{
-      customClockMin=clockPreset;
+      customClockMin=clockPreset; customClockIncSec=clockIncrement;
       clockSelect.value='custom';
       customClockLabel.textContent=customClockMin+' min';
+      customClockIncLabel.textContent=customClockIncSec+' sec';
       customClockRow.style.display='';
     }
     customClockMinus.disabled=customClockMin<=1;
     customClockPlus.disabled=customClockMin>=180;
+    customClockIncMinus.disabled=customClockIncSec<=0;
+    customClockIncPlus.disabled=customClockIncSec>=180;
   }
   clockSelect.addEventListener('change',()=>{
-    clockPreset=(clockSelect.value==='custom')?customClockMin:+clockSelect.value;
+    if(clockSelect.value==='0'){ clockPreset=0; clockIncrement=0; }
+    else if(clockSelect.value==='custom'){ clockPreset=customClockMin; clockIncrement=customClockIncSec; }
+    else{ const tc=parseTimeControlValue(clockSelect.value); clockPreset=tc.minutes; clockIncrement=tc.increment; }
     syncClockUI();
     resetClock();
     renderAll();
@@ -2605,8 +2699,16 @@
     resetClock();
     renderAll();
   }
+  function nudgeCustomClockInc(delta){
+    customClockIncSec=Math.max(0,Math.min(180,customClockIncSec+delta));
+    clockIncrement=customClockIncSec;
+    syncClockUI();
+    saveState();
+  }
   customClockMinus.addEventListener('click',()=>nudgeCustomClock(-1));
   customClockPlus.addEventListener('click',()=>nudgeCustomClock(1));
+  customClockIncMinus.addEventListener('click',()=>nudgeCustomClockInc(-1));
+  customClockIncPlus.addEventListener('click',()=>nudgeCustomClockInc(1));
   window.addEventListener('beforeunload',saveState);
 
   // ===============================================================
@@ -2765,6 +2867,15 @@
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
     playMoveSound(!!applied.captured);
+    // OUR-108: increment is added to the mover's own clock right after
+    // their move — standard clock behavior, and the same moment
+    // saveOnline() adds it for online games (see there). Online/lichess
+    // keep their own separate clock state (onlineState/lichessState), so
+    // this local clock is only ever running for computer/two-player, which
+    // is exactly when this should touch it.
+    if(clockPreset&&clockIncrement&&mode!=='online'&&mode!=='lichess'){
+      if(applied.color==='w') whiteMs+=clockIncrement*1000; else blackMs+=clockIncrement*1000;
+    }
     // Tips go last, after the nudge, and like the nudge they are excluded from
     // predictNarration() — both mutate "what have I already said" state, and
     // predicting would spend the tip on a sentence nobody hears. Both append a
@@ -3238,7 +3349,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r96 (narration dropdown to board-head; title shares one line with header)';
+  const BUILD='v2-r97 (full time-control list: Lichess seek + internal clock, with increment)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6021,11 +6132,15 @@
       // Deduct the mover's think time now, optimistically, so this client's
       // own display doesn't jump when the realtime echo of this same write
       // comes back — the echo will just confirm what's already shown.
+      // OUR-108: increment (seconds) is credited back to the mover right
+      // here, the same moment applyMove() credits it for a local game —
+      // standard clock behavior, added once per move, not on every tick.
       const nowMs=Date.now();
       const elapsed=Math.max(0,nowMs-onlineState.lastMoveAt);
+      const incMs=(onlineState.clockIncrement||0)*1000;
       const mover=game.turn()==='w'?'b':'w';
       let w=onlineState.whiteMs, b=onlineState.blackMs;
-      if(mover==='w') w=Math.max(0,w-elapsed); else b=Math.max(0,b-elapsed);
+      if(mover==='w') w=Math.max(0,w-elapsed)+incMs; else b=Math.max(0,b-elapsed)+incMs;
       onlineState.whiteMs=w; onlineState.blackMs=b; onlineState.lastMoveAt=nowMs;
       patch.white_ms=w; patch.black_ms=b; patch.last_move_at=new Date(nowMs).toISOString();
     }
@@ -6110,6 +6225,7 @@
     onlineState.whiteId=row.white_id;
     onlineState.blackId=row.black_id;
     onlineState.clockPreset=row.clock_preset||0;
+    onlineState.clockIncrement=row.clock_increment||0;
     onlineState.whiteMs=row.white_ms||0;
     onlineState.blackMs=row.black_ms||0;
     onlineState.lastMoveAt=row.last_move_at?new Date(row.last_move_at).getTime():Date.now();
@@ -6193,9 +6309,9 @@
     try{
       onlineNote('Creating online game…');
       const user=await onlineUser();
-      const preset=clockPreset, initMs=preset*60000;
+      const preset=clockPreset, inc=clockIncrement, initMs=preset*60000;
       const r=await db.from('mind_chess_games').insert({
-        white_id:user.id,pgn:'',clock_preset:preset,white_ms:initMs,black_ms:initMs,last_move_at:new Date().toISOString()
+        white_id:user.id,pgn:'',clock_preset:preset,clock_increment:inc,white_ms:initMs,black_ms:initMs,last_move_at:new Date().toISOString()
       }).select().single();
       if(r.error) throw r.error;
       generation++;
@@ -6203,12 +6319,13 @@
       humanColor='w';
       onlineState={id:r.data.id,color:'w',waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:r.data.updated_at,
         userId:user.id,whiteId:r.data.white_id,blackId:r.data.black_id,
-        clockPreset:preset,whiteMs:initMs,blackMs:initMs,lastMoveAt:Date.now()};
+        clockPreset:preset,clockIncrement:inc,whiteMs:initMs,blackMs:initMs,lastMoveAt:Date.now()};
       location.hash='game='+r.data.id;
       subscribeOnline();
       clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
+      customClockIncMinus.disabled=true; customClockIncPlus.disabled=true;
       transcript.innerHTML='';
-      log('Board','Online game created. You’re White.'+(preset?(' Clock: '+preset+' min per side.'):'')+' Copy the invite link and send it to your opponent.');
+      log('Board','Online game created. You’re White.'+(preset?(' Clock: '+preset+' min'+(inc?'+'+inc:'')+' per side.'):'')+' Copy the invite link and send it to your opponent.');
       // OUR-103: same bug as startNewGame()/startPuzzle() — used to force
       // the board hidden on every new online game regardless of the
       // player's own preference. joinOnline() right below never did this
@@ -6247,7 +6364,7 @@
       humanColor=row.white_id===user.id?'w':'b';
       onlineState={id:row.id,color:humanColor,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at,
         userId:user.id,whiteId:row.white_id,blackId:row.black_id,
-        clockPreset:row.clock_preset||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
+        clockPreset:row.clock_preset||0,clockIncrement:row.clock_increment||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
         lastMoveAt:row.last_move_at?new Date(row.last_move_at).getTime():Date.now()};
       transcript.innerHTML='';
       log('Board','Joined online game. You’re '+(humanColor==='w'?'White':'Black')+'.');
@@ -6255,6 +6372,7 @@
       location.hash='game='+row.id;
       subscribeOnline();
       clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
+      customClockIncMinus.disabled=true; customClockIncPlus.disabled=true;
       startOnlineClock();
       onlineNote(describeOnlineStatus());
     }catch(err){
@@ -6269,10 +6387,11 @@
     generation++;
     humanColor=color;
     onlineState={id,color,waiting:true,starting:false,channel:null,pollTimer:null,lastUpdated:null,
-      userId:null,whiteId:null,blackId:null,clockPreset:0,whiteMs:0,blackMs:0,lastMoveAt:Date.now()};
+      userId:null,whiteId:null,blackId:null,clockPreset:0,clockIncrement:0,whiteMs:0,blackMs:0,lastMoveAt:Date.now()};
     db.auth.getSession().then(({data:{session}})=>{ if(onlineState&&onlineState.id===id) onlineState.userId=session?.user?.id||null; });
     showOnlinePanel();
     clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
+    customClockIncMinus.disabled=true; customClockIncPlus.disabled=true;
     onlineNote('Reconnecting to online game…');
     location.hash='game='+id;
     subscribeOnline();
@@ -6311,7 +6430,7 @@
       mode='online'; modeSelect.value='online'; updateChatVisibility();
       onlineState={id:row.id,color:null,spectating:true,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at,
         userId:null,whiteId:row.white_id,blackId:row.black_id,
-        clockPreset:row.clock_preset||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
+        clockPreset:row.clock_preset||0,clockIncrement:row.clock_increment||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
         lastMoveAt:row.last_move_at?new Date(row.last_move_at).getTime():Date.now()};
       transcript.innerHTML='';
       log('Board','Spectating — White vs Black.'+(onlineState.waiting?' Waiting for a second player.':''));
@@ -6320,6 +6439,7 @@
       showOnlinePanel();
       createOnlineBtn.style.display='none'; lobbyBtn.style.display='none'; stopSpectateBtn.style.display='';
       clockSelect.disabled=true; customClockMinus.disabled=true; customClockPlus.disabled=true;
+      customClockIncMinus.disabled=true; customClockIncPlus.disabled=true;
       subscribeOnline();
       startOnlineClock();
       setBoardHidden(false);
@@ -6674,16 +6794,43 @@
     }
   }
 
-  // Excludes blitz/bullet on purpose — a voice move takes longer than a
-  // click, so this app only offers time controls slow enough to survive
-  // that round-trip. `rated:false` is hardcoded: this is a new, unproven
-  // integration and a bad move sent by a misheard command should not cost
-  // a real rating point while it's still being shaken out.
-  const LICHESS_TIME_CONTROLS={
-    corr:{days:3,label:'a correspondence'},
-    rapid:{time:10,increment:5,label:'a rapid'},
-    classical:{time:30,increment:20,label:'a classical'}
+  // OUR-108: full Lichess "Quick Pairing" list (Bullet through Classical),
+  // plus Correspondence and Custom — bullet/blitz included on request,
+  // even though the original build deliberately left them out (a voice
+  // move takes longer than a click; see the select's own title attribute,
+  // which keeps that warning visible rather than silently dropping it).
+  // `rated:false` stays hardcoded regardless of time control: this is a
+  // new, unproven integration and a bad move sent by a misheard command
+  // should not cost a real rating point while it's still being shaken out.
+  //
+  // Category names (bullet/blitz/rapid/classical) are purely for the
+  // spoken/logged "Looking for a ___ opponent" message — checked against
+  // Lichess's real POST /api/board/seek parameters rather than assumed:
+  // `time` is minutes, `increment` is seconds, both confirmed against the
+  // endpoint's own spec, so parseTimeControlValue()'s "M-S" split maps
+  // straight onto them with no unit conversion needed.
+  const LICHESS_CATEGORY={
+    '1-0':'bullet','2-1':'bullet',
+    '3-0':'blitz','3-2':'blitz','5-0':'blitz','5-3':'blitz',
+    '10-0':'rapid','10-5':'rapid','15-10':'rapid',
+    '30-0':'classical','30-20':'classical'
   };
+  // Resolves the select's current value (a fixed "M-S" preset, 'corr', or
+  // 'custom') into the {time,increment,label} or {days,label} shape both
+  // seekLichessGame() and playLichessAI() already expected — one place
+  // that understands the select's three value shapes, rather than three
+  // copies of the same corr/custom special-casing.
+  function currentLichessTimeConfig(){
+    const v=lichessTimeSelect.value;
+    if(v==='corr') return {days:3,label:'a correspondence'};
+    if(v==='custom'){
+      const time=Math.max(0,Math.min(180,+lichessCustomMinutes.value||0));
+      const increment=Math.max(0,Math.min(180,+lichessCustomIncrement.value||0));
+      return {time,increment,label:'a custom'};
+    }
+    const tc=parseTimeControlValue(v);
+    return {time:tc.minutes,increment:tc.increment,label:'a '+(LICHESS_CATEGORY[v]||'timed')};
+  }
   let lichessSeekController=null, lichessSeekPollTimer=null;
 
   function cancelLichessSeek(announce){
@@ -6696,7 +6843,7 @@
   async function seekLichessGame(){
     if(!lichessToken){ lichessNote('Paste and save a token first.'); return; }
     if(lichessState) leaveLichess();
-    const cfg=LICHESS_TIME_CONTROLS[lichessTimeSelect.value];
+    const cfg=currentLichessTimeConfig();
     try{ await ensureLichessUsername(); }
     catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
     const body=new URLSearchParams({rated:'false'});
@@ -6753,8 +6900,8 @@
     // The AI replies instantly — there's no "days per move" for it, so a
     // correspondence time-select falls back to rapid rather than sending a
     // param the endpoint doesn't support.
-    let cfg=LICHESS_TIME_CONTROLS[lichessTimeSelect.value];
-    if(cfg.days) cfg=LICHESS_TIME_CONTROLS.rapid;
+    let cfg=currentLichessTimeConfig();
+    if(cfg.days) cfg={time:10,increment:5,label:'a rapid'};
     try{ await ensureLichessUsername(); }
     catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
     const body=new URLSearchParams({level:lichessAiLevelSelect.value,
@@ -6807,6 +6954,11 @@
     try{ await lichessFetch('/api/board/game/'+lichessState.gameId+'/resign',{method:'POST'}); }
     catch(err){ warn('Could not resign: '+(err.message||'try again.')); }
   }
+  // Same show/hide-on-'custom' pattern as the internal clock's own
+  // customClockRow (see clockSelect.addEventListener above).
+  lichessTimeSelect.addEventListener('change',()=>{
+    lichessCustomRow.style.display=(lichessTimeSelect.value==='custom')?'':'none';
+  });
   lichessSeekBtn.addEventListener('click',seekLichessGame);
   lichessCancelSeekBtn.addEventListener('click',()=>cancelLichessSeek(true));
   lichessAiBtn.addEventListener('click',playLichessAI);
@@ -7200,7 +7352,7 @@
         // this client held a seat (reconnectOnline() assumes a real color).
         onlineId:(onlineState&&!onlineState.spectating)?onlineState.id:null,
         onlineColor:(onlineState&&!onlineState.spectating)?onlineState.color:null,
-        clockPreset,whiteMs,blackMs
+        clockPreset,clockIncrement,whiteMs,blackMs
       }));
     }catch(e){}
   }
@@ -7249,7 +7401,7 @@
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn; updateSpeakerBtn();
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
-      clockPreset=saved.clockPreset||0; syncClockUI();
+      clockPreset=saved.clockPreset||0; clockIncrement=saved.clockIncrement||0; syncClockUI();
       whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
         mode='online'; modeSelect.value='online'; updateChatVisibility();
