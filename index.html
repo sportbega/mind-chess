@@ -110,6 +110,39 @@
   .check-alert.checkmate{background:var(--danger); color:#fff}
   .check-alert.castle{background:var(--accent-2); color:#0f1e1c}
 
+  /* OUR-116: game review overlay. Fixed, dim backdrop, centered card —
+     same weight of treatment as the promotion picker's own fixed
+     positioning below, just full-screen instead of anchored to a square. */
+  .review-overlay{position:fixed;inset:0;z-index:90;background:#000c;display:flex;align-items:center;justify-content:center;padding:16px}
+  .review-overlay[hidden]{display:none}
+  .review-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;max-width:920px;width:100%;max-height:92vh;overflow:auto}
+  .review-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .review-head h3{margin:0;font-size:16px;font-weight:600}
+  .review-progress{font-size:13px;color:var(--text-dim)}
+  .review-progress .bar{height:6px;border-radius:3px;background:var(--panel-2);margin-top:8px;overflow:hidden}
+  .review-progress .bar-fill{height:100%;background:var(--accent-2);transition:width .15s ease}
+  .review-content{display:flex;flex-wrap:wrap;gap:18px}
+  .review-accuracy{flex:1 1 100%;display:flex;gap:24px;font-size:14px}
+  .review-accuracy b{font-size:20px;display:block}
+  .review-board-row{display:flex;gap:8px;align-items:stretch;flex:0 0 auto}
+  .review-evalbar{width:14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
+  .review-evalbar-fill{width:100%;background:#f2f2f0;transition:height .2s ease}
+  .review-board{flex:0 0 auto}
+  .review-eval-text{flex:1 1 100%;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+  .review-movelist{flex:1 1 260px;min-width:220px;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+  .review-move{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px;background:none;border:0;color:var(--text);text-align:left;width:100%}
+  .review-move:hover{background:var(--panel-2)}
+  .review-move.current{background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--accent-2)}
+  .review-move .num{color:var(--text-dim);min-width:26px}
+  .review-move .san{flex:1}
+  .review-badge{font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
+  .review-badge.best{background:var(--accent-2);color:#0f1e1c}
+  .review-badge.excellent{background:var(--ok);color:#0f1e0c}
+  .review-badge.good{background:var(--text-dim);color:#12141a}
+  .review-badge.inaccuracy{background:#d7b23a;color:#241d05}
+  .review-badge.mistake{background:#d98a3d;color:#241505}
+  .review-badge.blunder{background:var(--danger);color:#fff}
+
   /* OUR-99: promotion picker. position:fixed and positioned in JS from the
      destination square's own getBoundingClientRect() (positionPromotionPicker()),
      same reasoning as .check-alert above. .promo-choice reuses .sq's own
@@ -473,6 +506,31 @@
        the app's own narration is muted. -->
   <div class="check-alert" id="checkAlert" role="status" aria-live="polite"></div>
 
+  <!-- OUR-116: game review overlay. A separate, read-only board
+       (#reviewBoardGrid) rather than reusing the live boardGrid/game —
+       the live board stays interactive-selection code (selectedSquare,
+       legalTargets, click-to-move) that a finished, already-reviewed-only
+       game has no business touching, and this way reviewing can never
+       leave the live board's own state inconsistent. -->
+  <div class="review-overlay" id="reviewOverlay" hidden>
+    <div class="review-card">
+      <div class="review-head">
+        <h3>Game Review</h3>
+        <button type="button" class="btn" id="reviewCloseBtn">Close</button>
+      </div>
+      <div id="reviewProgress" class="review-progress"></div>
+      <div id="reviewContent" class="review-content" hidden>
+        <div class="review-accuracy" id="reviewAccuracy"></div>
+        <div class="review-board-row">
+          <div class="review-evalbar" id="reviewEvalBar" title="Evaluation, White's perspective"><div class="review-evalbar-fill" id="reviewEvalFill"></div></div>
+          <div class="board-grid review-board" id="reviewBoardGrid" style="--board-max:420px"></div>
+        </div>
+        <div class="review-eval-text" id="reviewEvalText"></div>
+        <div class="review-movelist" id="reviewMoveList"></div>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <p class="eyebrow">Voice / blindfold mode</p>
@@ -648,6 +706,11 @@
              does, so a second button doing the same thing would be
              redundant rather than a real second action. Flagged, not built. -->
         <button class="btn" id="computerResignBtn" type="button" style="display:none">Resign</button>
+        <!-- OUR-116: shown for any completed game (computer/two-player/
+             online/Lichess), not just computer mode — see
+             updateReviewButtonVisibility(), called from updateStatus()
+             like every other board-head button here. -->
+        <button class="btn" id="reviewGameBtn" type="button" style="display:none">Review game</button>
       </div>
     </div>
     <div class="board-outer">
@@ -1253,6 +1316,10 @@
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         statsDetails=$('statsDetails'), statsBody=$('statsBody'),
+        reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
+        reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
+        reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
+        reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -2319,6 +2386,16 @@
     rematchBtn.style.display=(mode==='online'&&onlineState&&!onlineState.spectating&&gameOver)?'':'none';
     positionPromotionPicker();
     updateComputerResignVisibility();
+    updateReviewButtonVisibility();
+  }
+  // OUR-116: shown for any completed game this session's stats already
+  // cover (computer/two-player/online/Lichess — puzzle excluded, same as
+  // onGameEnd() itself). Keyed on lastCompletedGame still matching the
+  // live mode+pgn rather than a separate reset call site at every
+  // "new game" site: once a new game actually starts, game.pgn() no
+  // longer matches what was reviewed, so this hides itself for free.
+  function updateReviewButtonVisibility(){
+    reviewGameBtn.style.display=(lastCompletedGame&&gameOver&&mode===lastCompletedGame.mode&&game.pgn()===lastCompletedGame.pgn)?'':'none';
   }
   // OUR-112: mirrors updateLichessAbortVisibility()'s "recompute from
   // current state, called from renderAll() rather than threaded through
@@ -3136,19 +3213,28 @@
       : (winnerColor===null?'draw':(winnerColor===humanColor?'win':'loss'));
     const opening=identifyOpening(game.history());
     const eco=opening?opening[0]:null, openingName=opening?opening[1]:null;
+    const pgn=game.pgn();
     if(mode==='online'||mode==='lichess'){
       if(!db) return;
       onlineUser().then(user=>db.from('mind_chess_results').insert({
         user_id:user.id, mode, color:humanColor,
-        result:(result==='draw'?'draw':result), pgn:game.pgn(), eco, opening_name:openingName
+        result:(result==='draw'?'draw':result), pgn, eco, opening_name:openingName
       })).then(()=>{},()=>{});
     }else{
       logCompletedGame({mode, level:(mode==='computer'?levelKey:null),
-        color:(mode==='two-player'?null:humanColor), result, pgn:game.pgn(),
+        color:(mode==='two-player'?null:humanColor), result, pgn,
         eco, openingName, endedAt:new Date().toISOString()});
     }
+    // OUR-116: remembered so "Review game" doesn't have to re-derive which
+    // finished game it's reviewing from whatever `mode`/`game` happen to
+    // hold at click time — both are safe to read immediately after a real
+    // completion, but a player could in principle poke the mode selector
+    // before clicking Review, and this way that can't matter.
+    lastCompletedGame={mode, pgn, humanColor, level:(mode==='computer'?levelKey:null)};
+    updateReviewButtonVisibility();
     if(statsDetails.open) renderStats();
   }
+  let lastCompletedGame=null;
 
   // ---------------------------------------------------------------
   // Stats aggregation and rendering. Reads the local log synchronously;
@@ -3227,6 +3313,36 @@
     }
     return '<table class="stats-table"><tr><th>Mode</th><th class="num">Played</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Drawn</th></tr>'+rows+'</table>'+levelRows;
   }
+  // OUR-116: the accuracy trend Phase 1 (OUR-114) deferred — unblocked
+  // now that Review actually produces a per-game accuracy figure.
+  // Reviewing is opt-in per game (the ask left "full review vs. a light
+  // background pass" to judgment; this ships the simpler of the two —
+  // whatever games a player has actually opened Review on, no separate
+  // background-analysis pass), so the trend only ever includes games
+  // that were reviewed, which is stated in the empty-state text rather
+  // than left implicit.
+  function accuracyTrendPoints(local,remote){
+    const points=[];
+    for(const e of local){
+      if(e.mode==='two-player'||!e.color) continue;
+      const acc=e.color==='w'?e.accuracyWhite:e.accuracyBlack;
+      if(acc!=null) points.push({t:e.endedAt,acc});
+    }
+    for(const r of remote){ if(r.accuracy!=null) points.push({t:r.created_at,acc:r.accuracy}); }
+    points.sort((a,b)=>new Date(a.t)-new Date(b.t));
+    return points.slice(-20);
+  }
+  function renderAccuracyTrend(points){
+    if(!points.length) return '<h4 style="margin:14px 0 4px;font-size:12px;color:var(--text-dim);font-weight:500">Accuracy trend</h4><p class="empty">No reviewed games yet — use "Review game" after a game ends to add one.</p>';
+    const avg=points.reduce((s,p)=>s+p.acc,0)/points.length;
+    const W=280,H=60,pad=4;
+    const xs=points.map((p,i)=>points.length>1?pad+i*(W-2*pad)/(points.length-1):W/2);
+    const ys=points.map(p=>H-pad-(Math.max(0,Math.min(100,p.acc))/100)*(H-2*pad));
+    const path=xs.map((x,i)=>(i===0?'M':'L')+x.toFixed(1)+' '+ys[i].toFixed(1)).join(' ');
+    const dots=xs.map((x,i)=>'<circle cx="'+x.toFixed(1)+'" cy="'+ys[i].toFixed(1)+'" r="2.5" fill="var(--accent-2)"><title>'+points[i].acc.toFixed(1)+'%</title></circle>').join('');
+    return '<h4 style="margin:14px 0 4px;font-size:12px;color:var(--text-dim);font-weight:500">Accuracy trend (last '+points.length+' reviewed games, avg '+avg.toFixed(1)+'%)</h4>'
+      +'<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" style="display:block"><path d="'+path+'" fill="none" stroke="var(--accent-2)" stroke-width="1.5"/>'+dots+'</svg>';
+  }
   function renderStats(){
     const local=loadGamesLog();
     statsBody.innerHTML='<p class="empty">Loading…</p>';
@@ -3242,10 +3358,13 @@
       const streaks=computeStreaks(personalized);
       const byMode=summarizeEntries(all);
       const openings=topOpenings(all,5);
+      // 'loss' already ends in 's' — concatenating another for the plural
+      // read "losss"; pick the whole word instead of gluing one on.
+      const streakWord=(type,n)=>type==='win'?(n===1?'win':'wins'):(n===1?'loss':'losses');
       let html='<div class="stats-summary">'
         +'<div><b>'+totalPlayed+'</b> games played · <b>'+wins+'</b>W / <b>'+losses+'</b>L / <b>'+drawCount+'</b>D (personalized modes)</div>'
-        +'<div>Current streak: <b>'+(streaks.current>0?streaks.current+' '+(streaks.currentType==='win'?'win':'loss')+(streaks.current!==1?'s':''):'none')+'</b>'
-        +' · Best streak: <b>'+(streaks.best>0?streaks.best+' '+(streaks.bestType==='win'?'win':'loss')+(streaks.best!==1?'s':''):'none')+'</b></div>'
+        +'<div>Current streak: <b>'+(streaks.current>0?streaks.current+' '+streakWord(streaks.currentType,streaks.current):'none')+'</b>'
+        +' · Best streak: <b>'+(streaks.best>0?streaks.best+' '+streakWord(streaks.bestType,streaks.best):'none')+'</b></div>'
         +'</div>';
       html+=renderStatsTable(byMode);
       if(openings.length){
@@ -3253,10 +3372,294 @@
         for(const [name,count] of openings) html+='<li><span>'+name+'</span><span>'+count+'</span></li>';
         html+='</ul>';
       }
+      html+=renderAccuracyTrend(accuracyTrendPoints(local,remote));
       statsBody.innerHTML=html;
     });
   }
   statsDetails.addEventListener('toggle',()=>{ if(statsDetails.open) renderStats(); });
+
+  // ===============================================================
+  // OUR-116: Game review — Stockfish-driven post-game analysis.
+  //
+  // Every formula and threshold below is taken directly from lila's own
+  // source (fetched and read, not paraphrased from a summary) rather than
+  // invented:
+  //   - Win% from centipawns: chess/core/src/main/scala/eval.scala,
+  //     WinPercent.fromCentiPawns/winningChances — cp is ceiled to
+  //     ±1000 first (a mate score becomes exactly ±1000, signed), then
+  //     Win% = 50 + 50*clamp(2/(1+exp(-0.00368208*cp))-1, -1, 1).
+  //   - Per-move accuracy: modules/analyse/src/main/AccuracyPercent.scala,
+  //     fromWinPercents — 100 flat if the move didn't lose Win%, else
+  //     clamp(103.1668100711649*exp(-0.04354415386753951*winPercentDrop)
+  //     - 3.166924740191411 + 1, 0, 100).
+  //   - Judgment thresholds: modules/tree/src/main/Advice.scala,
+  //     CpAdvice.winningChanceJudgements — Blunder/Mistake/Inaccuracy at
+  //     winningChances deltas of .3/.2/.1. winningChances lives on a
+  //     [-1,+1] scale (Win% = 50+50*winningChances), so translated onto
+  //     the same 0-100 Win% scale everything else here uses, those are
+  //     Win% drops of 15/10/5 — NOT 30/20/10. That correction matters: an
+  //     earlier summary of this same research (OUR-114's own devlog
+  //     entry) stated the drop-based thresholds in winningChances units
+  //     while describing them as "win% drop", which is off by 2x. This
+  //     is the corrected, re-verified version, from the primary source
+  //     a second time rather than trusting that prior paraphrase.
+  //   - Game accuracy: AccuracyPercent.gameAccuracy — the mean of a
+  //     volatility-weighted mean and a harmonic mean of that color's
+  //     per-move accuracies, where each move's weight is the standard
+  //     deviation of Win% inside a window around it, clamped [0.5, 12].
+  //     Reimplemented faithfully but not byte-identical: lila's own
+  //     window construction front-pads the first (windowSize-2)
+  //     transitions with a copy of the very first window rather than
+  //     centering; this instead centers a window of the same size on
+  //     each transition, which produces the same "sharp stretches weigh
+  //     more" effect without replicating that specific edge behavior.
+  //     Flagged rather than silently approximated.
+  //
+  // Brilliant is NOT implemented — deferred again, as flagged going into
+  // this phase. It isn't in lila's server-side Advice.scala at all (that
+  // module only ever produces Inaccuracy/Mistake/Blunder); Lichess's own
+  // Brilliant/Great tags come from separate client-side sacrifice-
+  // detection heuristics with no clean published formula, meaningfully
+  // more work than everything else in this feature combined. Best fills
+  // the same "you found the top move" role instead (a move exactly
+  // matching the engine's own top choice at that position), and
+  // Excellent/Good below Best are this app's own graduated bands over
+  // the same Win%-drop metric, not sourced from Lichess — the three
+  // worse tiers (Inaccuracy/Mistake/Blunder) are the only categories
+  // with an exact published cutoff to match.
+  // ===============================================================
+  const CP_CEILING=1000;
+  function winningChancesFromCpWhite(cpWhite){
+    return Math.max(-1,Math.min(1, 2/(1+Math.exp(-0.00368208*cpWhite))-1));
+  }
+  function winPercentFromCpWhite(cpWhite){ return 50+50*winningChancesFromCpWhite(cpWhite); }
+  // evalObj: {kind:'cp'|'mate', value} from stockfishAnalyse(), value from
+  // the POV of `sideToMove` (UCI convention) — converts to a signed,
+  // ceiled centipawn score from White's own POV.
+  function signedCpFromWhite(evalObj, sideToMove){
+    let cp;
+    if(!evalObj) return 0;
+    if(evalObj.kind==='mate') cp=(evalObj.value>0?CP_CEILING:-CP_CEILING);
+    else cp=Math.max(-CP_CEILING,Math.min(CP_CEILING,evalObj.value));
+    return sideToMove==='w'?cp:-cp;
+  }
+  function accuracyFromWinPercents(before,after){
+    if(after>=before) return 100;
+    const diff=before-after;
+    const raw=103.1668100711649*Math.exp(-0.04354415386753951*diff)-3.166924740191411;
+    return Math.max(0,Math.min(100,raw+1));
+  }
+  // dropWp: Win% points lost by the move, from the mover's own POV.
+  // isBest: the move exactly matched the engine's own top choice at that
+  // position. Inaccuracy/Mistake/Blunder cutoffs (5/10/15) are lila's
+  // own, corrected as described above; Excellent/Good are this app's own
+  // interpolation, not Lichess's.
+  function classifyMove(dropWp,isBest){
+    if(isBest) return 'best';
+    if(dropWp<=2) return 'excellent';
+    if(dropWp<=5) return 'good';
+    if(dropWp<=10) return 'inaccuracy';
+    if(dropWp<=15) return 'mistake';
+    return 'blunder';
+  }
+  function fenTurn(fen){ return fen.split(' ')[1]; }
+
+  // Runs stockfishAnalyse() over every position of a finished game's PGN
+  // (N moves -> N+1 positions, each position's own analysis reused as
+  // both "after" for the move that reached it and "before" for the move
+  // that leaves it, rather than analysing every move twice) at a bounded
+  // movetime, reporting progress as it goes. onProgress(i, n) is called
+  // after each position; the whole thing is cancellable via `token` —
+  // stops issuing further engine calls (but does not abort one already
+  // in flight, since stockfishAnalyse()'s own worker has no cancel) once
+  // reviewToken has moved on, e.g. because the overlay was closed.
+  async function analyzeGame(pgn,movetimeMs,onProgress,getToken,myToken){
+    const scratch=new Chess();
+    try{ scratch.load_pgn(pgn); }catch(e){ return null; }
+    const moves=scratch.history({verbose:true});
+    const replay=new Chess();
+    const fens=[replay.fen()];
+    for(const m of moves){ replay.move({from:m.from,to:m.to,promotion:m.promotion}); fens.push(replay.fen()); }
+    const evals=[];
+    for(let i=0;i<fens.length;i++){
+      if(getToken()!==myToken) return null;
+      const res=await stockfishAnalyse(fens[i],movetimeMs);
+      evals.push(res);
+      onProgress(i+1,fens.length);
+    }
+    if(getToken()!==myToken) return null;
+    const perMove=moves.map((m,i)=>{
+      const before=evals[i], after=evals[i+1];
+      const opponent=m.color==='w'?'b':'w';
+      const wpBeforeWhite=winPercentFromCpWhite(signedCpFromWhite(before,m.color));
+      const wpAfterWhite=winPercentFromCpWhite(signedCpFromWhite(after,opponent));
+      const wpBeforeMover=m.color==='w'?wpBeforeWhite:100-wpBeforeWhite;
+      const wpAfterMover=m.color==='w'?wpAfterWhite:100-wpAfterWhite;
+      const drop=wpBeforeMover-wpAfterMover;
+      const uci=m.from+m.to+(m.promotion||'');
+      const isBest=!!(before&&before.bestmove&&before.bestmove===uci);
+      return {ply:i,color:m.color,san:m.san,uci,fenBefore:fens[i],fenAfter:fens[i+1],
+        evalBefore:before,evalAfter:after,accuracy:(before&&after)?accuracyFromWinPercents(wpBeforeMover,wpAfterMover):null,
+        drop,classification:(before&&after)?classifyMove(drop,isBest):null};
+    });
+    // Volatility weighting: a centered window (see the note above on why
+    // this isn't byte-identical to lila's own front-padded sliding one)
+    // over the White-POV Win% series, standard deviation clamped [0.5,12].
+    const wpWhiteSeries=evals.map((e,i)=>e?winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))):null);
+    const windowSize=Math.max(2,Math.min(8,Math.round(moves.length/10)||2));
+    const half=Math.floor(windowSize/2);
+    function weightAt(i){
+      let lo=Math.max(0,i-half), hi=Math.min(wpWhiteSeries.length-1,i+half);
+      const vals=wpWhiteSeries.slice(lo,hi+1).filter(v=>v!=null);
+      if(vals.length<2) return 0.5;
+      const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+      const variance=vals.reduce((a,b)=>a+(b-mean)*(b-mean),0)/vals.length;
+      return Math.max(0.5,Math.min(12,Math.sqrt(variance)));
+    }
+    function gameAccuracy(color){
+      const rows=perMove.filter(m=>m.color===color&&m.accuracy!=null);
+      if(!rows.length) return null;
+      let wSum=0, waSum=0;
+      for(const r of rows){ const w=weightAt(r.ply+1); wSum+=w; waSum+=w*r.accuracy; }
+      const weighted=waSum/wSum;
+      const harmonic=rows.length/rows.reduce((s,r)=>s+1/Math.max(1e-6,r.accuracy),0);
+      return (weighted+harmonic)/2;
+    }
+    return {perMove,fens,evals,accuracy:{w:gameAccuracy('w'),b:gameAccuracy('b')}};
+  }
+
+  // Patches the accuracy this review computed back into whichever store
+  // logged the game (localStorage for computer/two-player, the
+  // mind_chess_results row for online/Lichess) — unblocks OUR-114's
+  // deferred accuracy trend line. Local entries keep both colors'
+  // accuracy (two-player has no single "you"); the Supabase row's
+  // `accuracy` column is always the human's own, since that table only
+  // ever holds this player's own games.
+  function updateGameAccuracy(descriptor,accWhite,accBlack){
+    if(descriptor.mode==='online'||descriptor.mode==='lichess'){
+      if(!db) return;
+      const humanAcc=descriptor.humanColor==='w'?accWhite:accBlack;
+      onlineUser().then(user=>db.from('mind_chess_results').update({accuracy:humanAcc})
+        .eq('user_id',user.id).eq('mode',descriptor.mode).eq('pgn',descriptor.pgn))
+        .then(()=>{ if(statsDetails.open) renderStats(); },()=>{});
+    }else{
+      const log=loadGamesLog();
+      for(let i=log.length-1;i>=0;i--){
+        if(log[i].mode===descriptor.mode&&log[i].pgn===descriptor.pgn){
+          log[i].accuracyWhite=accWhite; log[i].accuracyBlack=accBlack; break;
+        }
+      }
+      saveGamesLog(log);
+      if(statsDetails.open) renderStats();
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Review UI — its own read-only board (see the HTML comment above
+  // #reviewOverlay for why it's not the live boardGrid), a move list
+  // with classification badges, and a simple eval bar/text.
+  // ---------------------------------------------------------------
+  let reviewToken=0, reviewResult=null, reviewPositionIdx=0;
+  function renderReviewBoard(fen,flipped){
+    reviewBoardGrid.innerHTML='';
+    const probe=new Chess(); probe.load(fen);
+    const board=probe.board();
+    for(let ri=0;ri<8;ri++){
+      const r=flipped?7-ri:ri;
+      for(let fi=0;fi<8;fi++){
+        const f=flipped?7-fi:fi;
+        const div=document.createElement('div');
+        div.className='sq '+(((f+1)+(8-r))%2===1?'light':'dark');
+        const cell=board[r][f];
+        if(cell){ div.textContent=SOLID[cell.type]; div.classList.add(cell.color==='w'?'white-piece':'black-piece'); }
+        reviewBoardGrid.appendChild(div);
+      }
+    }
+  }
+  // Renders the position at reviewResult.perMove/fens index `idx` (0 =
+  // starting position, i = the position after move i for i in
+  // 1..perMove.length).
+  function showReviewPosition(idx){
+    if(!reviewResult) return;
+    reviewPositionIdx=idx;
+    const fen=reviewResult.fens[idx];
+    renderReviewBoard(fen,isBoardFlipped());
+    const evalObj=reviewResult.evals[idx];
+    const stm=fenTurn(fen);
+    const cpWhite=signedCpFromWhite(evalObj,stm);
+    const wpWhite=evalObj?winPercentFromCpWhite(cpWhite):50;
+    reviewEvalFill.style.height=Math.max(0,Math.min(100,wpWhite))+'%';
+    let txt;
+    if(!evalObj){
+      // Stockfish has no score/bestmove to give at a checkmated (or
+      // stalemated) position — nothing left to search — so this is
+      // expected, not a failed analysis; say which one it actually is.
+      const probe=new Chess(); probe.load(fen);
+      txt=probe.in_checkmate()?'Checkmate':probe.in_stalemate()?'Stalemate':'No evaluation';
+    }
+    else if(evalObj.kind==='mate') txt='Mate in '+Math.abs(evalObj.value)+' ('+(signedCpFromWhite(evalObj,stm)>0?'White':'Black')+')';
+    else txt=(cpWhite>=0?'+':'')+(cpWhite/100).toFixed(2);
+    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+txt;
+    const items=reviewMoveList.querySelectorAll('.review-move');
+    items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
+  }
+  function classificationLabel(c){
+    return {best:'Best',excellent:'Excellent',good:'Good',inaccuracy:'Inaccuracy',mistake:'Mistake',blunder:'Blunder'}[c]||'';
+  }
+  function renderReviewResult(result){
+    reviewResult=result;
+    reviewProgress.hidden=true;
+    reviewContent.hidden=false;
+    const accW=result.accuracy.w, accB=result.accuracy.b;
+    reviewAccuracy.innerHTML=
+      '<div>White accuracy<b>'+(accW!=null?accW.toFixed(1)+'%':'—')+'</b></div>'
+      +'<div>Black accuracy<b>'+(accB!=null?accB.toFixed(1)+'%':'—')+'</b></div>';
+    let html='';
+    for(let i=0;i<result.perMove.length;i+=2){
+      const w=result.perMove[i], b=result.perMove[i+1];
+      html+='<button type="button" class="review-move" data-idx="'+(i+1)+'">'
+        +'<span class="num">'+(i/2+1)+'.</span><span class="san">'+w.san+'</span>'
+        +(w.classification?'<span class="review-badge '+w.classification+'">'+classificationLabel(w.classification)+'</span>':'')
+        +'</button>';
+      if(b){
+        html+='<button type="button" class="review-move" data-idx="'+(i+2)+'">'
+          +'<span class="num"></span><span class="san">'+b.san+'</span>'
+          +(b.classification?'<span class="review-badge '+b.classification+'">'+classificationLabel(b.classification)+'</span>':'')
+          +'</button>';
+      }
+    }
+    reviewMoveList.innerHTML=html;
+    reviewMoveList.querySelectorAll('.review-move').forEach(el=>{
+      el.addEventListener('click',()=>showReviewPosition(+el.dataset.idx));
+    });
+    showReviewPosition(result.perMove.length);
+  }
+  function openReviewOverlay(){
+    if(!lastCompletedGame) return;
+    const descriptor=lastCompletedGame;
+    reviewToken++;
+    const myToken=reviewToken;
+    reviewOverlay.hidden=false;
+    reviewContent.hidden=true;
+    reviewProgress.hidden=false;
+    reviewProgress.innerHTML='Analyzing move 0 of 0…<div class="bar"><div class="bar-fill" style="width:0%"></div></div>';
+    const REVIEW_MOVETIME_MS=250;
+    analyzeGame(descriptor.pgn,REVIEW_MOVETIME_MS,(i,n)=>{
+      if(reviewToken!==myToken) return;
+      reviewProgress.innerHTML='Analyzing move '+i+' of '+n+'…<div class="bar"><div class="bar-fill" style="width:'+Math.round(100*i/n)+'%"></div></div>';
+    },()=>reviewToken,myToken).then(result=>{
+      if(reviewToken!==myToken||!result) return;
+      renderReviewResult(result);
+      updateGameAccuracy(descriptor,result.accuracy.w,result.accuracy.b);
+    }).catch(err=>{
+      if(reviewToken!==myToken) return;
+      reviewProgress.innerHTML='Review failed: '+((err&&err.message)||'the engine could not be reached.');
+    });
+  }
+  function closeReviewOverlay(){ reviewToken++; reviewOverlay.hidden=true; reviewResult=null; }
+  reviewGameBtn.addEventListener('click',openReviewOverlay);
+  reviewCloseBtn.addEventListener('click',closeReviewOverlay);
+  reviewOverlay.addEventListener('click',e=>{ if(e.target===reviewOverlay) closeReviewOverlay(); });
 
   // ===============================================================
   // Applying moves
@@ -3753,7 +4156,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r105 (Statistics: win/loss/streaks/openings across every mode)';
+  const BUILD='v2-r106 (Game Review: Stockfish move classification, accuracy %, and the accuracy trend)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

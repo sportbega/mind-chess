@@ -7711,3 +7711,136 @@ before shipping.
 
 Build `BUILD='v2-r105 (Statistics: win/loss/streaks/openings across every mode)'`.
 Published to `/v2/`. Phase 3 (game review) picks up next session.
+
+## 2026-09-06 (r106): Game Review — Stockfish move classification, accuracy %, and the accuracy trend
+
+Phase 3, closing out the stats/review arc r105 opened. Re-verified
+r105's own research before building rather than trusting last session's
+paraphrase of it — re-fetched `AccuracyPercent.scala` and, this time,
+`Advice.scala` and scalachess's `eval.scala` directly (`gh api
+repos/lichess-org/lila/contents/...` / `.../scalachess/...`, base64-decoded,
+read the actual Scala) since the ask specifically said to confirm
+anything unclear before implementing.
+
+**Found and fixed a real error in r105's own devlog, before writing a
+line of review code.** r105 stated the Blunder/Mistake/Inaccuracy
+cutoffs as "Win% drops of 30/20/10". Re-reading `Advice.scala`'s
+`winningChanceJudgements` (`.3 -> Blunder, .2 -> Mistake, .1 ->
+Inaccuracy`) against `WinPercent.winningChances` in scalachess's
+`eval.scala` shows those three constants are thresholds on
+`winningChances`, which lives on a **[-1, +1]** scale — Win% itself is
+`50 + 50*winningChances`, a **[0, 100]** scale. A winningChances delta of
+0.3 is a Win% delta of 15, not 30. The 30/20/10 figures conflated the
+two scales (probably from a search-result paraphrase rather than the
+primary source, back in r105). Corrected here, from the source a second
+time: **Blunder ≥15, Mistake ≥10, Inaccuracy ≥5** Win% points lost, on
+the same 0-100 scale the accuracy formula already uses. Also newly
+sourced this session: scalachess's own cp ceiling (`±1000`, mate scores
+become exactly `±1000` signed) and `WinPercent.fromCentiPawns`'s exact
+multiplier (`-0.00368208`), both quoted verbatim in the new code's own
+comments.
+
+**Formulas, implemented directly from source, not approximated:**
+Win% = `50 + 50*clamp(2/(1+exp(-0.00368208*cpWhite))-1, -1, 1)`;
+per-move accuracy = 100 flat if Win% didn't drop, else
+`clamp(103.1668100711649*exp(-0.04354415386753951*winPercentDrop) -
+3.166924740191411 + 1, 0, 100)` (`AccuracyPercent.fromWinPercents`,
+exact constants); game accuracy per color = mean of a volatility-weighted
+mean and a harmonic mean of that color's per-move accuracies
+(`AccuracyPercent.gameAccuracy`). The volatility weighting (stdev of
+Win% in a window, clamped [0.5, 12]) is faithful in spirit but not
+byte-identical — lila's own window construction front-pads the first
+few transitions with a copy of the very first window rather than
+centering; this centers a window of the same size on every transition
+instead. Flagged rather than silently approximated, same as the UI not
+being pixel-identical to Lichess's analysis board.
+
+**Brilliant: deferred again, as flagged going in.** It isn't in lila's
+server-side `Advice.scala` at all — that module only ever produces
+Inaccuracy/Mistake/Blunder. Lichess's own Brilliant/Great tags come from
+separate client-side sacrifice-detection heuristics with no clean
+published formula, meaningfully more work than the rest of this feature
+combined. Shipped the other six: Best (the played move exactly matches
+the engine's own top choice at that position — not sourced from
+Lichess, this app's own criterion for the role Best plays), Excellent/
+Good (this app's own graduated bands over the Win%-drop metric, not
+Lichess's own numbers — only Inaccuracy/Mistake/Blunder have a published
+cutoff to match), and the corrected Inaccuracy/Mistake/Blunder.
+
+**Engine loop**: reuses `stockfishAnalyse()` (already existed, unmodified
+— OUR-47's coach feature already needed exactly "eval + bestmove for a
+position") over every position in the game (N moves → N+1 positions, each
+position's own analysis serving as both "after" for the move that reached
+it and "before" for the move that leaves it — N+1 engine calls, not 2N).
+250ms movetime per position by default. A 13-position (12-move) game
+reviewed in ~5s wall time once the engine's already warm this session;
+the very first review of a session pays Stockfish's one-time ~7.3MB
+WASM load on top of that, same one-time cost every other engine feature
+in this app already has. Progress shown live ("Analyzing move i of n"
+plus a bar) via the existing async/Promise plumbing — nothing blocks the
+main thread since every engine call already awaits a worker message.
+Cancellable: closing the overlay bumps a token the analysis loop checks
+between positions, so a closed review stops issuing further engine calls
+rather than continuing to burn cycles unseen.
+
+**UI**: `#reviewGameBtn`, board-head, shown for any completed game this
+session's stats already cover (computer/two-player/online/Lichess, not
+puzzle — same scope as `onGameEnd()`), self-hiding once a new game starts
+the same way `computerResignBtn` already does (visibility recomputed from
+current state in `updateStatus()`, not a separate reset call site).
+Clicking it opens a full-screen overlay: a progress bar during analysis,
+then move list with color-coded classification badges, click any move to
+jump a **separate, read-only review board** to that position (deliberately
+not the live `boardGrid` — that one still carries `selectedSquare`/
+`legalTargets`/click-to-move state a finished, review-only game has no
+business touching), a vertical eval bar plus numeric centipawn/mate text,
+and both players' accuracy % shown prominently at the top.
+
+**Feeds OUR-114's deferred accuracy trend, as asked.** Computer/two-player
+entries get an `accuracyWhite`/`accuracyBlack` pair patched onto their
+localStorage log entry after review; online/Lichess rows get their
+`accuracy` column (already present, unused until now) patched via a
+targeted Supabase `update()`. Trend only ever includes games that were
+actually reviewed — not a background auto-analysis pass — which the ask
+left as a judgment call; stated in the panel's own empty-state text
+rather than left implicit. Rendered as a small inline SVG sparkline plus
+the average, added to the Statistics panel.
+
+**Bug caught by testing the actual update, not by re-reading the
+migration and assuming insert+select covered it**: the Phase 1
+migration's RLS never added an UPDATE policy on `mind_chess_results` —
+only INSERT and SELECT. The accuracy patch for a reviewed online/Lichess
+game silently no-opped (no error surfaced; Supabase just returns success
+with the row untouched under RLS). Caught by querying the table directly
+after a review rather than trusting the UI's own success path. Fixed
+with a second migration adding `mind_chess_results_update`, scoped to
+`user_id = auth.uid()` like the other two. Re-verified after the fix:
+the same review now shows the accuracy column populated in the table
+directly.
+
+Also fixed in passing while reading the streak text during testing (a
+pre-existing r105 bug, not part of this phase's own build): "2 losss"
+—concatenating an 's' onto a word that already ends in one. Now picks
+"win"/"wins"/"loss"/"losses" as whole words.
+
+Verified live: a real fool's-mate computer game (mode=computer) reviewed
+end to end — 1.f3 correctly Inaccuracy, e6 Excellent, 2.g4 correctly
+Blunder (the actual game-losing move), accuracy 24.5%/92.8%; a longer
+12-move computer game with a real hung pawn and hung knight (3.Bc4?? and
+4.O-O??, both ignoring undefended pieces) correctly classified both as
+Blunder, with the recapturing moves correctly Best/Excellent — sanity-
+checked against the actual position, not just "a badge appeared";
+two-player fool's-mate reviewed with separate White/Black accuracy (no
+personalized figure, matching r105's own two-player handling); online
+mode (simulated seat, no real opponent available this session) reviewed
+and its `mind_chess_results` row's `accuracy` column confirmed populated
+by querying Supabase directly — this is what caught the missing UPDATE
+policy above. Move-list click-to-jump confirmed moving the review board,
+eval bar, and eval text together. Accuracy trend confirmed picking up
+three reviewed games (two local, one Supabase-mirrored) with the correct
+average, correctly excluding the two-player game. Stats and reviewed-game
+data confirmed persisting across a full reload. Test rows removed from
+`mind_chess_results` before shipping.
+
+Build `BUILD='v2-r106 (Game Review: Stockfish move classification, accuracy %, and the accuracy trend)'`.
+Published to `/v2/`.
