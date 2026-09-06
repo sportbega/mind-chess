@@ -5772,3 +5772,87 @@ Transcript all open with only Appearance collapsed.
 
 Build `BUILD='v2-r76 (Voice settings open by default too)'`. Published to
 `/v2/`.
+
+## 2026-09-06 (r77): the veil was eating board-head clicks
+
+Second attempt at the board-size drag jitter Adni reported after r72's
+fix. r72 was only ever verified with a synthetic `dispatchEvent()` loop
+plus a `requestAnimationFrame` substitution, because rAF genuinely does
+not fire in this CDP-automated tab — meaning the previous "verified" never
+touched a real browser paint cycle, and re-running that same synthetic
+test again this round would have proven nothing new. Two real, different
+things came out of actually re-examining this instead of re-confirming
+r72.
+
+**Real finding #1 — a genuine interaction bug, found only through actual
+DOM hit-testing.** `document.elementFromPoint()` at the board-size
+slider's own coordinates returned `#boardVeil`, not the slider. `.board-
+veil{position:absolute;inset:0}` sits inside `.boardpanel{position:
+relative}`, which spans `.board-head` (Flip/Fullscreen/Size/Hide board)
+as well as `.board-outer` beneath it — so whenever the board is hidden
+(blindfold mode's *default* state), that purely-decorative overlay,
+which has never had a click handler of its own, silently intercepts every
+real mouse click aimed at any board-head control, slider included. A
+`.click()` call or a dispatched `'input'` event — everything r72's
+"verification" used — bypasses the browser's actual hit-testing entirely,
+which is exactly why this never surfaced before: no amount of synthetic
+event dispatching could have found it; only `elementFromPoint()` or an
+actual click could. Fixed with one declaration, `pointer-events:none` on
+`.board-veil`. If Adni was testing with the board hidden — the normal
+starting state — this alone would make dragging the slider feel broken
+far beyond anything a few extra layout reads could explain.
+
+**Real finding #2 — the actual jitter mechanism, found by re-reading the
+dependency chain, not by re-timing it.** r72's own fix comment claimed
+the `--board-max` custom-property write was "cheap and stays
+synchronous" on every raw `'input'` event, batching only what happened
+*after* it (`syncFilesWidth()`'s forced-layout read, the `localStorage`
+write). That was already false the moment it was written: r71 — shipped
+one build *before* r72 — had just made `.app`'s own `max-width` a
+function of this same variable (`max(720px, calc(var(--board-max,680px)
++ …))`). Once the page's outermost flex column's width depends on it,
+writing `--board-max` doesn't just resize `.board-grid` — it forces the
+browser to recompute `.app`'s width and cascade layout to every section
+on the page (header, move history, Game/Voice/Appearance/Transcript),
+up to 100+ times a second during a fast drag. r72's synthetic test
+counted JS calls (`getBoundingClientRect`, `localStorage.setItem`); a
+whole-page layout cascade costing more per event lives entirely inside
+the browser's own layout engine, invisible to a call counter, and was
+never something that test could have caught even with real rAF timing.
+This also directly explains the keyboard/mouse asymmetry Adni pointed
+at: keyboard's discrete steps are naturally rate-limited to under one
+press per rendered frame by human reflexes, so keyboard never triggered
+more than one of these cascades per frame to begin with — mouse drag is
+the only input method fast enough to expose it. Fixed by moving the
+`--board-max` write itself into the same rAF-coalesced callback r72
+already had, instead of leaving it as the one synchronous piece.
+
+**What could and couldn't be verified this round.** Confirmed finding #1
+directly: `elementFromPoint()` now returns the slider itself, not the
+veil, at the same coordinates. Confirmed finding #2's mechanism by
+instrumenting the actual browser API — wrapped
+`CSSStyleDeclaration.prototype.setProperty` and swept the same synthetic
+136-event drag used for r72: `--board-max` now gets written **once**,
+down from 136 times, with the correct final value persisted. That is
+real evidence the batching mechanism works exactly as designed, using a
+genuine browser API rather than counting my own function calls — but it
+is still not proof of frame-by-frame smoothness in a real browser, and
+that gap is not closed. Tried harder than last round to close it anyway:
+attempted a genuine mouse click and a real drag gesture via the browser
+automation tools' pixel-coordinate and element-reference targeting,
+repeatedly, at coordinates independently confirmed correct via
+`elementFromPoint()`. Every attempt failed — confirmed by a document-level
+listener for `pointerdown`/`mousedown`/`mouseup`/`click` that captured
+**zero** events across multiple tries at multiple coordinates and multiple
+elements, not just the board controls. That means no real pointer input
+of any kind could be delivered to the page in this automation session
+this round, on top of the already-known fact that `requestAnimationFrame`
+never fires in it either. Both the input side and the render side of a
+real drag are therefore unverifiable by this agent in this environment —
+stated plainly rather than re-presenting a synthetic pass as proof of the
+real thing. The fixes are the best that source-level analysis and every
+available instrument in this environment could support; whether the
+drag now actually *feels* smooth needs a real device.
+
+Build `BUILD='v2-r77 (the veil was eating board-head clicks)'`. Published
+to `/v2/`.

@@ -249,7 +249,17 @@
   .sq.checked{box-shadow:inset 0 0 0 2px var(--danger)}
   .files{display:grid;grid-template-columns:repeat(8,1fr);font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin:4px auto 0;text-align:center}
 
-  .board-veil{position:absolute;inset:0;border-radius:var(--radius);background:rgba(18,20,26,.9);backdrop-filter:blur(6px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px}
+  /* inset:0 is relative to .boardpanel (its positioned ancestor), which
+     spans .board-head too, not just .board-outer underneath this — so
+     without pointer-events:none, this purely-decorative overlay (no
+     click handler of its own, ever) silently ate every real mouse click
+     on Flip/Fullscreen/the size slider/Hide board whenever the board was
+     hidden, confirmed via elementFromPoint() landing on #boardVeil at the
+     slider's own coordinates rather than the input itself. A dispatched
+     .click()/synthetic 'input' event bypasses hit-testing entirely, which
+     is exactly why no amount of scripted testing had ever surfaced this —
+     only a real, hit-tested click could. */
+  .board-veil{position:absolute;inset:0;pointer-events:none;border-radius:var(--radius);background:rgba(18,20,26,.9);backdrop-filter:blur(6px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px}
   .board-veil svg{width:34px;height:34px;color:var(--accent-2);opacity:.8}
   .board-veil p{font-size:13px;color:var(--text-dim);max-width:30ch;margin:0}
 
@@ -1920,27 +1930,41 @@
   const BOARD_SIZE_DEFAULT=680;
   // A dragged range input fires 'input' far more often than the display can
   // even show — every mousemove tick, easily 60-100+/sec, versus a keyboard
-  // press which fires once per discrete step. The CSS var write below is
-  // cheap and stays synchronous so the grid itself tracks the mouse with no
-  // lag, but syncFilesWidth() calls getBoundingClientRect() (a forced
-  // layout read) and the old code ran that — plus a synchronous
-  // localStorage.setItem — on EVERY one of those events via
-  // setTimeout(fn,0), which doesn't even guarantee landing before the next
-  // paint. That's layout-thrashing and a disk-backed write firing many
-  // times more often than a frame can render, which is exactly what reads
-  // as jitter/tearing between the grid and the rest of the board frame
-  // during a fast drag, while discrete keyboard steps were rare enough to
-  // never expose it. Coalescing both into one requestAnimationFrame — using
-  // whatever the latest value was by the time the frame actually runs —
-  // caps this at one layout read and one write per rendered frame, matching
-  // the CSS-only cost of any other drag-to-resize control.
+  // press which fires once per discrete step (never more than one per
+  // rendered frame — that's the whole reason keyboard never exposed this).
+  //
+  // r72 batched syncFilesWidth()'s forced-layout read and the localStorage
+  // write into one requestAnimationFrame per burst, on the theory that the
+  // `--board-max` custom-property write itself was cheap enough to stay
+  // synchronous on every raw event. That was true when it was written —
+  // and already false by then, because r71 (shipped one build earlier) had
+  // just made `.app`'s own max-width a function of this exact variable
+  // (`max(720px, calc(var(--board-max,680px) + …))`, see .app in <style>).
+  // Once the outermost flex column's width depends on it, writing this
+  // property doesn't just resize `.board-grid` — it forces the browser to
+  // recompute the width of `.app` and cascade layout to literally every
+  // section on the page (header, move history, Game/Voice/Appearance/
+  // Transcript panels), on every single mousemove tick during a drag. r72's
+  // synthetic test only ever counted JS call counts (getBoundingClientRect,
+  // localStorage.setItem); it had no way to see a full-page layout cascade
+  // costing more per event than before, because that cost lives entirely
+  // inside the browser's own layout engine, invisible to a call counter —
+  // and doubly invisible here, since requestAnimationFrame itself doesn't
+  // fire at all in this CDP-automated tab, so no test run in this
+  // environment can measure real paint-cycle cost either. Batching the
+  // property write itself into the same rAF-coalesced callback — instead
+  // of just what happens after it — means the browser only pays that
+  // whole-page layout cost once per rendered frame, no matter how many
+  // raw events arrive in between, the same way the CSS-only cost of any
+  // other drag-to-resize control is bounded by the display's own refresh
+  // rate rather than the input device's sampling rate.
   let boardSizePendingPx=null, boardSizeRAF=null;
   function applyBoardSize(px){
-    document.documentElement.style.setProperty('--board-max',px+'px');
     boardSizePendingPx=px;
     if(boardSizeRAF) return;
     boardSizeRAF=requestAnimationFrame(()=>{
       boardSizeRAF=null;
+      document.documentElement.style.setProperty('--board-max',boardSizePendingPx+'px');
       syncFilesWidth();
       try{ localStorage.setItem(BOARD_SIZE_KEY,boardSizePendingPx); }catch(e){}
     });
@@ -2809,7 +2833,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r76 (Voice settings open by default too)';
+  const BUILD='v2-r77 (the veil was eating board-head clicks)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
