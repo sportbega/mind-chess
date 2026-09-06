@@ -7907,3 +7907,33 @@ rows were left untouched — nothing found here justifies changing either of the
 
 Build `BUILD='v2-r107 (Lichess reconnect can carry an already-final game status)'`.
 Published to `/v2/`.
+
+## 2026-09-07 (r108): fix — Statistics table column alignment
+
+Adni reported the per-mode table's numbers not lining up under their
+Played/Won/Lost/Drawn headers — a layout bug, data already confirmed
+correct.
+
+Found immediately by reading the CSS next to the markup: `renderStatsTable()`
+puts `class="num"` on both the `<th>` header cells and the `<td>` data
+cells, but `.stats-table td.num{text-align:right;...}` only ever
+selected the `<td>` half. Headers stayed left-aligned (inherited from
+the generic `.stats-table th,.stats-table td{text-align:left}` rule)
+while every data cell was right-aligned — headers and numbers were
+never going to land in the same place. One-line fix: `.stats-table
+th.num,.stats-table td.num{...}`.
+
+Verified live with synthetic data covering all four modes at once
+(computer, two-player, online, Lichess — two-player's own "1 W · 0 B"
+text included, not just plain numbers) plus the by-level sub-table:
+all four columns align cleanly under their headers in both tables, at
+desktop width and re-checked with the panel constrained to 375px
+(narrowed the actual DOM element rather than the browser window, which
+this automation couldn't resize) — no wrapping or overflow at either
+width, since it's a plain HTML table with no width-dependent styling
+to begin with. Test data (local log entries and three Supabase rows
+under a separate anonymous session, confirmed by `user_id` before
+deleting) removed after verification.
+
+Build `BUILD='v2-r108 (fix: Statistics table column alignment)'`.
+Published to `/v2/`.
