@@ -144,15 +144,20 @@
      flex-shrink stays enabled with a floor so a genuinely tight row (see
      the 320px check below) shrinks this before anything else has to.
      height:48px/box-sizing:border-box (global reset, see *{}) lines this
-     up with the mic/speaker circles and the two .btn siblings below,
-     rather than each of the four having its own separate height. */
-  .mic-compact input[type=text]{flex:0 1 150px;min-width:90px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px}
+     up with the mic/speaker circles (OUR-95 keeps those two bigger than
+     the rest of the row on purpose — see below), not with Send/Hide
+     board, which fall back to plain .btn sizing as of OUR-95. */
+  .mic-compact input[type=text]{flex:0 1 150px;min-width:90px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
   .mic-compact input[type=text]::placeholder{color:var(--text-dim)}
-  /* Send and Hide board are ordinary .btn elements elsewhere in the app
-     (36 other uses) with no fixed height of their own — scoped to this
-     row specifically rather than changing .btn's height globally, which
-     would have resized every settings-panel button along with it. */
-  .mic-compact .btn{height:48px}
+  /* OUR-95: Send and Hide board used to be forced to 48px to match the
+     mic/speaker circles, but that made every button in the header row
+     taller than Flip board/Fullscreen/Reset in .board-head (33.5px,
+     .btn's natural height from its own padding/font-size). Matching the
+     smaller of the two standards means just letting these two fall back
+     to plain .btn sizing — mic and speaker stay at 48px on purpose (see
+     .icon-btn.mic-size and #micBtn below), since dropping the mic to
+     33.5px would put its touch target below the ~44-48px guidance from
+     OUR-73. */
   /* Quick-access speaker mute (OUR-91). Base size for anywhere this class
      is reused standalone; .mic-size (OUR-93) overrides it to match #micBtn
      exactly (48px / 20px icon) rather than the smaller general size, since
@@ -369,7 +374,6 @@
     <div>
       <p class="eyebrow">Voice / blindfold mode</p>
       <h1>Mind Chess</h1>
-      <p class="status" id="statusLine">White to move — board hidden</p>
     </div>
     <!-- One row, five controls, in this order (OUR-93): type-a-move,
          mic, speaker mute, hide/reveal board, Send. Was two separate
@@ -891,7 +895,7 @@
   };
 
   const $ = id => document.getElementById(id);
-  const transcript=$('transcript'), moveStrip=$('moveStrip'), statusLine=$('statusLine'),
+  const transcript=$('transcript'), moveStrip=$('moveStrip'),
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
@@ -1957,12 +1961,6 @@
   }
   function updateStatus(){
     const t=game.turn()==='w'?'White':'Black';
-    let extra=gameOver?' — game over':(pendingAction?' — waiting on you':'');
-    if(mode==='online'&&onlineState&&!gameOver){
-      if(onlineState.spectating) extra=onlineState.waiting?' — waiting for a second player':'';
-      else extra=onlineState.waiting?' — waiting for opponent':(game.turn()===onlineState.color?' — your move':' — opponent’s move');
-    }
-    statusLine.textContent=t+' to move — '+(boardHidden?'board hidden':'board visible')+extra;
     turnPill.textContent=gameOver?'Game over':t+' to move';
     renderClock();
     rematchBtn.style.display=(mode==='online'&&onlineState&&!onlineState.spectating&&gameOver)?'':'none';
@@ -3126,7 +3124,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r86 (header row reordered, widened, and height-aligned)';
+  const BUILD='v2-r87 (dropped the redundant status line, centered placeholder, matched button heights)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
