@@ -6309,3 +6309,47 @@ either width.
 
 Build `BUILD='v2-r86 (header row reordered, widened, and height-aligned)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r87): dropped the redundant status line, centered placeholder, matched button heights
+
+Three UI fixes.
+
+Removed `#statusLine` ("White to move — board hidden") from under the
+title. Its turn-state half was already fully duplicated by `#turnPill`
+in `.board-head`, which has shown "X to move"/"Game over" since it was
+introduced — so deleting the element and the `updateStatus()` line that
+wrote to it drops nothing that isn't already visible elsewhere. The
+online-mode "your move"/"opponent's move"/"waiting for opponent" text
+that also lived in that same string had nowhere else it was shown, but
+that's the piece Adni called out as removable regardless; the `extra`
+local in `updateStatus()` had no other reader once the line was gone, so
+it went with it rather than being left dead.
+
+Centered the "Type a move" placeholder with `text-align:center` on
+`#textInput` — also centers whatever the player actually types, which is
+the same treatment the field's short move-length content (`Nf3`, `e4`)
+reads fine with either way.
+
+Unified button heights across both control rows. Measured first, not
+assumed: `.board-head`'s Flip board/Fullscreen/Reset are 33.5px (`.btn`'s
+own padding/font-size, no override); the header row's Send/Hide board/
+mic/speaker were forced to 48px (r86). Matching the smaller standard
+across the board would have taken the mic button's touch target below
+the ~44-48px guidance called out at OUR-73 — flagged this before
+touching anything, and the direction back was to bring Send and Hide
+board down to the 33.5px standard but leave mic and speaker at 48px.
+Removed the `.mic-compact .btn{height:48px}` rule entirely (Send/Hide
+board fall back to plain `.btn` sizing, matching Flip/Fullscreen/Reset
+exactly); mic/speaker's own `.icon-btn.mic-size`/`#micBtn` sizing is
+untouched, so they stay at 48px.
+
+Verified live: `#statusLine` is `null` in the DOM; `getComputedStyle`
+confirms `text-align:center` on the text input; `getBoundingClientRect()`
+on all seven controls shows Flip board/Fullscreen/Reset/Send/Hide board
+at exactly 33.5px and mic/speaker at exactly 48px — matched within each
+group, mic/speaker deliberately bigger and still at an accessible touch
+target size; screenshot confirms the row reads cleanly with no visual
+regression.
+
+Build `BUILD='v2-r87 (dropped the redundant status line, centered placeholder, matched button heights)'`.
+Published to `/v2/`.
