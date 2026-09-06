@@ -7423,3 +7423,84 @@ appear exactly as before.
 
 Build `BUILD='v2-r102 (fix: restoring a finished game no longer claims a move is pending)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r103): sample-audio GC hardening; local Resign for computer mode
+
+Two things.
+
+**Investigated: OUR-111's Check/Checkmate/Castle samples reportedly silent
+in computer mode.** r101 only verified two-player and Lichess; Adni
+confirmed a fresh game, muted, human moving first, the computer's own
+check/checkmate/castle replies stayed silent. Live-forced every one of
+those three events through the *real* `applyMove()` path (not
+`predictNarration()`'s speculative probe) via `triggerComputerMove()`
+itself — a forced Fool's-Mate (`Qh4#` delivered by the computer) and a
+forced computer-side `O-O`, both driven through the actual engine-reply
+flow, not synthesized. Both correctly constructed `new Audio()` against
+`game-end.mp3`/`castle.mp3` respectively, with zero `speechSynthesis`
+calls — the trigger call site (`playMoveEventSounds(applied)` inside
+`applyMove()`) has no mode branch at all, so there is no code-path gap
+between computer-generated and player-generated moves to find. Also
+checked and ruled out, by reading rather than guessing: `voiceOn` is
+never reset on a mode switch; `whenSpeechIdle()` returns synchronously
+when muted (no hidden multi-second stall between the computer's move
+landing and the sound firing); `say()`/`speak()` are no-ops when muted,
+so no TTS contention.
+
+Did not confirm the actual root cause — asked Adni to narrow the repro
+rather than patch from the symptom alone (per the standing "no
+guess-patching" rule), and got "total silence, fresh game, human moves
+first, computer replies with check/mate/castle" back, which rules out
+the one theory the trigger-path testing couldn't (a same-page autoplay
+gate on a restored game where the computer moves before any click).
+
+Found one real, if unconfirmed, candidate while re-reading the two
+functions involved: `playMoveSound()` and `playEventSound()` both
+construct `new Audio()` as a plain local variable with no reference kept
+past the function returning — not a GC root just because `.play()` was
+called on it. `applyMove()` calls both back-to-back in the same tick for
+a check/checkmate/castle move (the move sound, then the event sound),
+which is exactly the pattern most likely to have one of the two
+collected mid-playback. Applied the fix either way: a module-level
+`liveSampleAudio` set plus `keepAlive(audio)`, called from both
+functions, holds a strong reference until the element fires `ended` or
+`error`. Re-verified after the change that the sample-audio trigger
+still fires correctly (forced computer checkmate again, `game-end.mp3`
+requested as before) — this is a hardening applied without being able
+to reproduce the original silence locally, not a confirmed fix; asked
+Adni to re-test on a real build and report back if it's still silent so
+the next pass has a narrower target.
+
+**New: local Resign for computer mode.** `#computerResignBtn` — same
+board-head row as `lichessResignBtn`, same plain `.btn` styling, visible
+whenever `mode==='computer'` and the game isn't over (`updateComputerResignVisibility()`,
+called from `updateStatus()` so it tracks both mode switches and game-end
+on every render rather than needing a call site at each). Clicking it
+sets `gameOver=true`, stops the clock, and speaks/logs "You resigned.
+White wins."/"Black wins." (whichever color isn't `humanColor`) through
+the same `speak()`/`turnPill` machinery checkmate already drives — no new
+game-over UI, `updateStatus()`'s existing `gameOver?'Game over':...`
+line covers it for free. No ply gating, matching `lichessResignBtn`
+(resign has never been restricted there either).
+
+**No local Abort added — flagged, not built.** Lichess's Abort/Resign
+split exists because an early Lichess cancel dodges a real cost a later
+one can't: a rating hit, an opponent left waiting for a game that
+technically started. A local game against the internal engine has
+neither. "Cancel before it's really underway" is just what the New game
+button already sitting in the header already does — a second button
+with the identical effect would be redundant, not a second action, so
+this was deliberately skipped rather than built to mirror Lichess's
+shape for its own sake. Two-player mode getting its own Resign was not
+built either: not asked for, and while it would be a one-line copy of
+the computer-mode handler with a differently-worded winner string, it
+wasn't trivial enough to fold in silently — flagging it here instead.
+
+Verified live: Resign button appears only in computer mode, hides on
+click along with `turnPill` reading "Game over" and the correct log
+line, reappears on New game, and correctly disappears/reappears when
+switching away from and back to computer mode without a New game in
+between.
+
+Build `BUILD='v2-r103 (sample-audio GC hardening; local Resign for computer mode)'`.
+Published to `/v2/`.

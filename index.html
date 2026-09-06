@@ -620,6 +620,20 @@
              click handlers. -->
         <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
         <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
+        <!-- OUR-112: local equivalent of lichessResignBtn for the internal
+             computer opponent — same plain .btn, same board-head placement,
+             visible only mid-game in mode==='computer' (see
+             updateComputerResignVisibility(), called from updateStatus() so
+             it tracks gameOver/mode on every render rather than needing its
+             own call site at each place either changes).
+             No local Abort button: Lichess's Abort/Resign split exists
+             because Lichess has real stakes an early cancel should dodge —
+             a rating hit, an opponent left waiting. A local game against the
+             internal engine has neither; "cancel before it's really
+             underway" is just what New game (already in the header) already
+             does, so a second button doing the same thing would be
+             redundant rather than a real second action. Flagged, not built. -->
+        <button class="btn" id="computerResignBtn" type="button" style="display:none">Resign</button>
       </div>
     </div>
     <div class="board-outer">
@@ -1227,6 +1241,7 @@
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
         lichessCustomRow=$('lichessCustomRow'), lichessCustomMinutes=$('lichessCustomMinutes'), lichessCustomIncrement=$('lichessCustomIncrement'),
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
+        computerResignBtn=$('computerResignBtn'),
         lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiTimeSelect=$('lichessAiTimeSelect'), lichessAiBtn=$('lichessAiBtn'),
         chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
         puzzleInfo=$('puzzleInfo');
@@ -2275,7 +2290,26 @@
     renderClock();
     rematchBtn.style.display=(mode==='online'&&onlineState&&!onlineState.spectating&&gameOver)?'':'none';
     positionPromotionPicker();
+    updateComputerResignVisibility();
   }
+  // OUR-112: mirrors updateLichessAbortVisibility()'s "recompute from
+  // current state, called from renderAll() rather than threaded through
+  // every place mode/gameOver can change" shape — piggybacks on updateStatus()
+  // running after every real move, resign, and mode switch instead of a
+  // dedicated call site at each of those. No ply gating (unlike Lichess's
+  // Abort): Lichess resign has none either, and there's even less reason for
+  // a local game to restrict conceding earlier than a rated one does.
+  function updateComputerResignVisibility(){
+    computerResignBtn.style.display=(mode==='computer'&&!gameOver)?'':'none';
+  }
+  function resignComputerGame(){
+    if(mode!=='computer'||gameOver) return;
+    gameOver=true; stopClock();
+    const winner=humanColor==='w'?'Black':'White';
+    speak('You resigned. '+winner+' wins.');
+    renderAll();
+  }
+  computerResignBtn.addEventListener('click',resignComputerGame);
   function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
   function setBoardHidden(h){
@@ -2893,10 +2927,27 @@
       tap.start(now); tap.stop(now+duration);
     }catch(e){}
   }
+  // OUR-113: a bare `new Audio()` with no reference held past this function
+  // is fair game for GC mid-playback — V8 does not treat "currently playing"
+  // as a GC root by itself. playMoveSound() fires once per move and mostly
+  // got away with it; playEventSound() below fires a *second* Audio() in the
+  // same tick right after it (move-self.mp3, then check/checkmate/castle),
+  // which is exactly the pattern most likely to get one of the two
+  // collected before it finishes. keepAlive() below is the fix for both:
+  // hold a strong reference in a live set until the element itself reports
+  // it is done, then let it go.
+  const liveSampleAudio=new Set();
+  function keepAlive(audio){
+    liveSampleAudio.add(audio);
+    const release=()=>liveSampleAudio.delete(audio);
+    audio.addEventListener('ended',release);
+    audio.addEventListener('error',release);
+  }
   function playMoveSound(capture){
     try{
       const audio=new Audio(capture?CAPTURE_SOUND_URL:MOVE_SOUND_URL);
       audio.preload='auto'; audio.volume=.92;
+      keepAlive(audio);
       audio.play().catch(()=>woodFallback(capture));
     }catch(e){ woodFallback(capture); }
   }
@@ -2930,6 +2981,7 @@
     try{
       const audio=new Audio(url);
       audio.preload='auto'; audio.volume=.92;
+      keepAlive(audio);
       audio.play().catch(()=>{});
     }catch(e){}
   }
@@ -3443,7 +3495,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r102 (fix: restoring a finished game no longer claims a move is pending)';
+  const BUILD='v2-r103 (sample-audio GC hardening; local Resign for computer mode)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
