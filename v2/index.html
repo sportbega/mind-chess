@@ -91,6 +91,24 @@
   .banner b{color:var(--danger)}
   .banner code{font-family:'IBM Plex Mono',monospace;background:var(--panel-2);padding:1px 6px;border-radius:4px;font-size:12px}
 
+  /* OUR-96: muted-narration visual for check/checkmate. Fixed + centered so
+     it surfaces regardless of scroll position or board-hidden state;
+     pointer-events:none so it never intercepts the mouse-move hover that
+     OUR-91 relies on, and never needs a click to dismiss — it just fades
+     on its own (see JS timeout). Check and checkmate are two different
+     colors (accent vs danger) as well as different text, so they don't
+     read as the same event at a glance. */
+  .check-alert{
+    position:fixed; top:14px; left:50%; transform:translateX(-50%) translateY(-10px);
+    z-index:80; pointer-events:none; opacity:0;
+    padding:10px 26px; border-radius:999px; font-family:'Inter',sans-serif;
+    font-weight:700; font-size:15px; letter-spacing:.02em;
+    box-shadow:0 10px 30px #0007; transition:opacity .2s ease,transform .2s ease;
+  }
+  .check-alert.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .check-alert.check{background:var(--accent); color:#1b140a}
+  .check-alert.checkmate{background:var(--danger); color:#fff}
+
   header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
   .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2);margin:0 0 4px}
   h1{font-family:'Newsreader',serif;font-weight:500;font-style:italic;font-size:clamp(28px,5vw,38px);margin:0}
@@ -369,6 +387,14 @@
     In the Mind Chess folder, run <code>python3 -m http.server 8000</code>, then visit
     <code>http://localhost:8000/index.html</code>.
   </div>
+
+  <!-- OUR-96: check/checkmate stay silent under narration mute (voiceOn=false)
+       by design — that's what mute means — but they're too important a game
+       state change to disappear entirely. Fixed rather than inside .boardpanel
+       so it still surfaces while the board itself is hidden (blindfold mode's
+       default). aria-live so a screen reader still gets the state even though
+       the app's own narration is muted. -->
+  <div class="check-alert" id="checkAlert" role="status" aria-live="polite"></div>
 
   <header>
     <div>
@@ -898,7 +924,7 @@
   const transcript=$('transcript'), moveStrip=$('moveStrip'),
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
-        ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'),
+        ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
         boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'),
@@ -2515,12 +2541,27 @@
     if(m.promotion) t+=' Promotes to '+PIECE_NAME[m.promotion]+'.';
     return t;
   }
+  // OUR-96: brief, self-dismissing — no click needed, and it never blocks
+  // board interaction (see .check-alert's pointer-events:none).
+  let checkAlertTimer=null;
+  function flashCheckAlert(kind){
+    clearTimeout(checkAlertTimer);
+    checkAlert.textContent=kind==='checkmate'?'Checkmate':'Check';
+    checkAlert.className='check-alert show '+kind;
+    checkAlertTimer=setTimeout(()=>checkAlert.classList.remove('show'),2200);
+  }
+  // endSuffix() is the one place that already asks game.in_checkmate()/
+  // in_check() to build the spoken suffix — reusing that same detection here
+  // rather than asking chess.js again elsewhere. The visual is muted-only:
+  // when voiceOn is true the spoken "Check."/"Checkmate — ..." already
+  // covers it, and stacking a banner on top of narration that already says
+  // the same thing would just be noise.
   function endSuffix(){
-    if(game.in_checkmate()) return ' Checkmate — '+(game.turn()==='w'?'Black':'White')+' wins.';
+    if(game.in_checkmate()){ if(!voiceOn) flashCheckAlert('checkmate'); return ' Checkmate — '+(game.turn()==='w'?'Black':'White')+' wins.'; }
     if(game.in_stalemate()) return ' Stalemate — draw.';
     if(game.insufficient_material()) return ' Draw — insufficient material.';
     if(game.in_threefold_repetition()) return ' Draw by repetition.';
-    if(game.in_check()) return ' Check.';
+    if(game.in_check()){ if(!voiceOn) flashCheckAlert('check'); return ' Check.'; }
     return '';
   }
 
@@ -3124,7 +3165,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r87 (dropped the redundant status line, centered placeholder, matched button heights)';
+  const BUILD='v2-r88 (a visual check/checkmate alert when narration is muted)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
