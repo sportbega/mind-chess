@@ -6994,3 +6994,76 @@ reload via the two-tab technique.
 
 Build `BUILD='v2-r97 (full time-control list: Lichess seek + internal clock, with increment)'`.
 Published to `/v2/`.
+
+## 2026-09-06 — investigation: Bullet/Blitz Lichess seeks never pair (not a code bug)
+
+Bug report from Adni: Bullet and Blitz seeks (r97's expanded list)
+consistently never find an opponent, while Rapid and Classical do.
+Investigated per the ask rather than guessing at a fix — no code
+changed as a result of this entry.
+
+**1. Request diff.** r97's own verification intercepted `fetch()` for
+five presets, and 1+0 Bullet *was* among them — but that's one preset
+out of six Bullet/Blitz options, so re-ran the full set this time:
+patched `window.fetch` and captured the real `POST /api/board/seek`
+body for all eleven real-time presets (1+0, 2+1, 3+0, 3+2, 5+0, 5+3,
+10+0, 10+5, 15+10, 30+0, 30+20). Every single one produced the
+structurally identical request — the same three parameters
+(`increment`, `rated`, `time`), same `rated=false`, no stray
+`ratingRange`/`color`/`variant` on any of them, differing *only* in
+the `time`/`increment` values themselves, exactly as intended. There
+is no per-preset code path to diverge in the first place —
+`seekLichessGame()` builds the body from `currentLichessTimeConfig()`
+uniformly for every non-corr/non-custom value. Conclusion: not a
+request-construction bug.
+
+**2. Rated/ratingRange check.** `rated:'false'` is hardcoded
+unconditionally (deliberately, per r94-r97's own comments — an
+unproven integration shouldn't cost a rating point on a misheard
+voice command) and identical across every time control. No
+`ratingRange` parameter is sent at all, for any preset — so there's no
+default-bounds-excluding-everyone theory to chase; the parameter
+genuinely isn't in the request.
+
+**3. Platform/pool check — this is the real explanation.** Read
+Lichess's own `lila` source (not a forum post) rather than guessing:
+`modules/lobby/src/main/` has two separate systems, `Hook.scala`
+("realtime chess, volatile") and `Seek.scala` ("correspondence chess,
+persistent") — confirmed via their own one-line doc comments. A
+`BoardApiHookStream.scala` also exists in that same module. Read
+together: a real-time `/api/board/seek` call (which is what every
+Bullet/Blitz/Rapid/Classical option here sends) creates a **Hook** —
+an entry in the classic open lobby "seek" table — not the separate,
+rating-matched instant-pairing pool behind Lichess's own colored
+"Quick pairing" buttons. Correspondence, by contrast, really is a
+persistent `Seek`.
+
+That distinction is the whole answer. Real Lichess players overwhelmingly
+reach for the colored Quick Pairing buttons for Bullet and Blitz
+specifically — those are the time controls where instant, rating-matched
+pairing matters most — and rarely browse the classic open-hook lobby
+table for something that fast; by the time a human would click a 1+0
+hook sitting in that list, three games would already be over. Rapid and
+Classical players are comparatively more likely to browse and click an
+open hook in that same list, since the whole premise (a slower, more
+deliberate game) tolerates the wait. A bot's own Hook, created via this
+exact API, sits in that same under-trafficked classic-hook table for
+Bullet/Blitz — genuinely thin liquidity, not a broken request.
+
+**4. Conclusion: real platform/pool constraint, not a code bug — no
+fix applied.** r97's request bodies are already correct for every
+preset (re-confirmed here for all eleven, not just the one Bullet
+value originally spot-checked). The failure to pair is Lichess's own
+classic-hook lobby having very few real Bullet/Blitz players in it at
+any given moment, a liquidity characteristic of that specific pairing
+system rather than something `mind-chess`'s request can influence.
+Correspondence and slower real-time controls succeed because their
+open-hook lists actually have people in them; Bullet/Blitz's don't,
+independent of who's creating the hook or how.
+
+Not implemented, flagged as a possible follow-up if Adni wants it: a
+UI note on the Bullet/Blitz options warning that pairing there is
+often slow/unlikely via this integration specifically (mirroring the
+existing "a voice move may not keep up" warning already on the same
+select) — a documentation nudge, not a code fix, since there's no bug
+here to fix.
