@@ -109,6 +109,24 @@
   .check-alert.check{background:var(--accent); color:#1b140a}
   .check-alert.checkmate{background:var(--danger); color:#fff}
 
+  /* OUR-99: promotion picker. position:fixed and positioned in JS from the
+     destination square's own getBoundingClientRect() (positionPromotionPicker()),
+     same reasoning as .check-alert above. .promo-choice reuses .sq's own
+     .white-piece/.black-piece color rules (stroke/shadow included) so a
+     picked piece renders in exactly the board's current theme colors,
+     without this needing to know what theme is active. */
+  .promotion-picker{
+    position:fixed; z-index:90; display:flex; gap:6px;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:8px; box-shadow:0 14px 34px #000a;
+  }
+  .promo-choice{
+    width:52px; height:52px; display:flex; align-items:center; justify-content:center;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+    font-size:34px; line-height:1; cursor:pointer; padding:0;
+  }
+  .promo-choice:hover, .promo-choice:focus-visible{border-color:var(--accent); outline:none}
+
   header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
   .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2);margin:0 0 4px}
   h1{font-family:'Newsreader',serif;font-weight:500;font-style:italic;font-size:clamp(28px,5vw,38px);margin:0}
@@ -448,6 +466,13 @@
           <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
         </svg>
       </button>
+      <!-- OUR-100: moved here from Game settings, between speaker mute and
+           Hide board as asked. Plain .btn with no override, same as Hide
+           board — both fall back to .btn's own 33.5px height (r87), so
+           this matches it exactly with no new CSS needed. Same id, same
+           click handler (see newGameBtn.addEventListener below); only the
+           position moved. -->
+      <button class="btn" id="newGameBtn" type="button">New game</button>
       <!-- Moved here from .board-head (OUR-90): the button that reveals a
            hidden board used to live inside the row that's part of what's
            hidden, reachable only by scrolling to (and half-seeing) the
@@ -522,6 +547,23 @@
     <div class="board-veil" id="boardVeil">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><line x1="3" y1="21" x2="21" y2="3"/></svg>
       <p>Board hidden. Play by ear, or tap "Reveal board" to check the position.</p>
+    </div>
+    <!-- OUR-99: a real bug, not just a UX gap — askPromotion() only ever
+         had a spoken/typed answer (see resolvePending()'s 'promotion'
+         branch), so a mouse/drag player with the mic never touched had no
+         way to answer it at all, muted or not. position:fixed rather than
+         nested in board-outer's own coordinate space, since it's
+         positioned from the destination square's live getBoundingClientRect()
+         (see positionPromotionPicker()) which is already viewport-relative —
+         fixed makes that a direct assignment with no scroll-offset math.
+         Never gated on voiceOn: shown for every input method, mouse/drag/
+         keyboard/typed/voice alike, and voice can still answer it too (see
+         resolvePending()) — this is an addition, not a replacement. -->
+    <div class="promotion-picker" id="promotionPicker" role="listbox" aria-label="Choose promotion piece" hidden>
+      <button type="button" class="promo-choice" data-piece="q" aria-label="Queen"></button>
+      <button type="button" class="promo-choice" data-piece="r" aria-label="Rook"></button>
+      <button type="button" class="promo-choice" data-piece="b" aria-label="Bishop"></button>
+      <button type="button" class="promo-choice" data-piece="n" aria-label="Knight"></button>
     </div>
   </div>
 
@@ -633,7 +675,6 @@
           <option value="off">Off</option>
         </select>
       </div>
-      <button class="btn" id="newGameBtn" type="button">New game</button>
     </div>
   </details>
 
@@ -881,6 +922,7 @@
   let lastNarration = '';
   let speechGeneration = 0;
   let pendingAction = null;
+  let promotionPickerShown = false; // guards the picker's one-time autofocus (OUR-99) — see positionPromotionPicker()
   // Per-speaker voice calibration — a stored map of canonical token (file
   // letter, digit, or piece word) to the raw phrases THIS speaker was
   // actually heard saying for it, consulted alongside (never instead of)
@@ -961,6 +1003,7 @@
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
+        promotionPicker=$('promotionPicker'), promoChoices=[...document.querySelectorAll('.promo-choice')],
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
         boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'),
@@ -2040,6 +2083,7 @@
     turnPill.textContent=gameOver?'Game over':t+' to move';
     renderClock();
     rematchBtn.style.display=(mode==='online'&&onlineState&&!onlineState.spectating&&gameOver)?'':'none';
+    positionPromotionPicker();
   }
   function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
@@ -3215,7 +3259,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r90 (chat above the board, Lichess panel under Game settings)';
+  const BUILD='v2-r91 (New game moved to header; a real mouse/keyboard promotion picker)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -4521,6 +4565,52 @@
     warn('Promote to what — queen, rook, bishop, or knight?');
     updateStatus();
   }
+  // OUR-99: the one place both the visual picker (clicks/keys, below) and
+  // the existing voice/typed answer (resolvePending()'s 'promotion' branch)
+  // funnel into — exactly one way a promotion actually gets applied,
+  // regardless of which input method answered it.
+  function resolvePromotion(piece){
+    if(!pendingAction||pendingAction.type!=='promotion') return;
+    const from=pendingAction.from,to=pendingAction.to;
+    pendingAction=null; updateStatus();
+    applyMove({from,to,promotion:piece});
+  }
+  function cancelPromotion(){
+    if(!pendingAction||pendingAction.type!=='promotion') return;
+    pendingAction=null; updateStatus();
+    warnSilent('Okay — promotion cancelled.');
+  }
+  // Bug found in real play (OUR-99): askPromotion() only ever had a spoken/
+  // typed answer, so a mouse/drag player who'd never touched the mic had no
+  // working way to answer it — muted or not, this was never actually gated
+  // on voiceOn, it simply had no visual affordance at all. Positioned from
+  // the destination square's live rect rather than fixed board coordinates,
+  // so it tracks correctly across board sizes (r78-r82), themes, and a
+  // flipped board without needing to special-case any of them. Runs from
+  // updateStatus() — already the one place every pendingAction mutation in
+  // this file converges on — rather than being called ad hoc from each of
+  // askPromotion()/resolvePromotion()/cancelPromotion() individually.
+  function positionPromotionPicker(){
+    const active=pendingAction&&pendingAction.type==='promotion';
+    if(!active){ promotionPicker.hidden=true; promotionPickerShown=false; return; }
+    const color=game.turn(); // the promoting side — askPromotion() runs before game.move(), so this is still them
+    promoChoices.forEach(btn=>{
+      btn.textContent=SOLID[btn.dataset.piece];
+      btn.classList.toggle('white-piece',color==='w');
+      btn.classList.toggle('black-piece',color==='b');
+    });
+    promotionPicker.hidden=false;
+    const sqEl=boardGrid.querySelector('.sq[data-square="'+pendingAction.to+'"]');
+    const anchor=(sqEl||document.querySelector('.boardpanel')).getBoundingClientRect();
+    const pw=promotionPicker.offsetWidth||240, ph=promotionPicker.offsetHeight||68;
+    let left=anchor.left+anchor.width/2-pw/2, top=anchor.top-ph-8;
+    if(top<8) top=anchor.bottom+8; // flip below if opening above would go off-screen
+    left=Math.max(8,Math.min(left,window.innerWidth-pw-8));
+    promotionPicker.style.left=left+'px';
+    promotionPicker.style.top=top+'px';
+    if(!promotionPickerShown){ promotionPickerShown=true; promoChoices[0].focus(); }
+  }
+  promoChoices.forEach(btn=>btn.addEventListener('click',()=>resolvePromotion(btn.dataset.piece)));
   function askCastleSide(){ pendingAction={type:'castle'}; warn('Kingside or queenside?'); updateStatus(); }
 
   // "castle kingside" degrades badly and in ways no word list can enumerate:
@@ -4624,7 +4714,10 @@
       if(pa.type==='promotion'){
         let L=null;
         t.split(' ').forEach(w=>{ const x=PIECE_WORDS[w]; if(x&&x!=='p'&&x!=='k') L=x; });
-        if(L){ const from=pa.from,to=pa.to; pendingAction=null; updateStatus(); applyMove({from,to,promotion:L}); return true; }
+        // resolvePromotion() (OUR-99) is the same apply path the visual
+        // picker's clicks/keys use — voice/typed and mouse/keyboard answers
+        // both fund into one place rather than two copies of this logic.
+        if(L){ resolvePromotion(L); return true; }
       }
       if(pa.type==='castle'){
         if(/kingside|short/.test(t)){ pendingAction=null; updateStatus(); execPlan(planFor('castle kingside')); return true; }
@@ -5799,7 +5892,31 @@
   // for the voice route to be trustworthy (OUR-58 was reported on exactly
   // such a setup).
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape') cancelSpeech('escape key');
+    if(e.key==='Escape'){
+      // Escape's other job — cancel a keyboard promotion — checked first:
+      // a promotion prompt open means there's no in-flight narration to
+      // barge in on anyway, so this is never a real either/or.
+      if(pendingAction&&pendingAction.type==='promotion'){ cancelPromotion(); return; }
+      cancelSpeech('escape key');
+      return;
+    }
+    // OUR-99: keyboard promotion answer, independent of voice/mic entirely.
+    // Ignored while a text field has focus so it can't steal a 'q'/'r'/'b'/'n'
+    // out of something the player is actually typing (a chat message, a
+    // typed move) — the promo-choice buttons themselves are real <button>
+    // elements, so Tab/Enter/Space already reach them without this.
+    if(pendingAction&&pendingAction.type==='promotion'){
+      const tag=(document.activeElement&&document.activeElement.tagName)||'';
+      if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+      const L=e.key.toLowerCase();
+      if(L==='q'||L==='r'||L==='b'||L==='n'){ e.preventDefault(); resolvePromotion(L); return; }
+      if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+        e.preventDefault();
+        const idx=promoChoices.indexOf(document.activeElement);
+        const dir=e.key==='ArrowLeft'?-1:1;
+        promoChoices[(idx<0?0:idx+dir+promoChoices.length)%promoChoices.length].focus();
+      }
+    }
   });
   textInput.addEventListener('input',()=>{ cancelSpeech('typing'); });
 
