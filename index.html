@@ -80,7 +80,7 @@
      custom property already being set on every slider input, so raising
      or lowering it recomputes .app's width the same tick .board-grid's
      own max-width does. */
-  .app{width:100%;max-width:max(720px,calc(var(--board-max,780px) + 52px + (clamp(10px,2.7vw,25px) * 2)));display:flex;flex-direction:column;gap:16px}
+  .app{width:100%;max-width:max(720px,calc(var(--board-max,750px) + 52px + (clamp(10px,2.7vw,25px) * 2)));display:flex;flex-direction:column;gap:16px}
 
   /* banner */
   .banner{
@@ -166,7 +166,11 @@
   .textrow input[type=text]::placeholder{color:var(--text-dim)}
 
   .boardpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:relative}
-  .board-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  /* Only child now that the "BOARD" label is gone (removed to reclaim the
+     row's leftmost space) — justify-content is moot with one item, kept
+     simple rather than left implying a two-item layout that no longer
+     exists. */
+  .board-head{display:flex;align-items:center;margin-bottom:10px}
   .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
   /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
      enough that a drag felt "chunky" independent of anything r72/r77 fixed,
@@ -187,7 +191,6 @@
      hits the 240px cap at any viewport ≳480px, and actually shrinks on
      something as narrow as a phone. */
   .board-size-field input[type=range]{width:min(240px,50vw)}
-  .board-head h2{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0;font-weight:500}
   .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
   .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
   .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
@@ -200,7 +203,7 @@
      height-driven (aspect-ratio off a flex:1 row, see below) and can render
      far narrower than the column around it, so pieces shrank well below
      their normal fill ratio — same shape of bug as r63's .files width. */
-  .board-grid{container-type:inline-size;width:100%;max-width:var(--board-max,780px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
+  .board-grid{container-type:inline-size;width:100%;max-width:var(--board-max,750px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
   /* Fullscreen — a first cut sized the board against a fixed vh fraction,
      then a hand-tuned calc() guess at everything else's height, and both
      were fragile: correct only at the one viewport size they were measured
@@ -235,7 +238,6 @@
      those keep running exactly as they do outside fullscreen, whether or
      not their button is on screen. */
   .app.fullscreen-active>*{display:none}
-  .app.fullscreen-active .board-head h2,
   .app.fullscreen-active .board-head #flipBoardBtn,
   .app.fullscreen-active .board-head #fullscreenBtn,
   .app.fullscreen-active .board-head #boardToggleBtn,
@@ -396,14 +398,13 @@
 
   <div class="boardpanel">
     <div class="board-head">
-      <h2>Board</h2>
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
         <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
         <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
         <div class="board-size-field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
-          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="780" />
+          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
         </div>
         <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
@@ -1946,15 +1947,18 @@
   // having to save and reapply anything itself.
   // ===============================================================
   const BOARD_SIZE_KEY='mind-chess-v2-board-size';
-  // 780, not the original 680: at anything below ~774px the .board-head
-  // row (BOARD label, clock/turn status, Flip/Fullscreen, the size field,
-  // Hide board) doesn't fit on one line and wraps — confirmed by measuring
-  // the actual wrap point directly, not guessed — so a smaller default
-  // left Hide board stranded on its own line every time someone loaded
-  // the page fresh or hit Reset. 780 clears that with a small margin and
-  // is itself an exact step from min (see below), so it doesn't drift on
-  // assignment the way 680 used to.
-  const BOARD_SIZE_DEFAULT=780;
+  // 750, not the original 680: below some threshold the .board-head row
+  // (clock/turn status, Flip/Fullscreen, the size field, Hide board)
+  // doesn't fit on one line and wraps — confirmed by measuring the actual
+  // wrap point directly, not guessed — so a smaller default left Hide
+  // board stranded on its own line every time someone loaded the page
+  // fresh or hit Reset. That threshold was 774px with a "BOARD" label
+  // sitting in this row; removing the label (it was purely decorative —
+  // the h2 in this row, not the app's own <h1> title) dropped it to 732px.
+  // 750 clears the new threshold with a small margin and is itself an
+  // exact step from min (see below), so it doesn't drift on assignment
+  // the way 680 used to.
+  const BOARD_SIZE_DEFAULT=750;
   // A dragged range input fires 'input' far more often than the display can
   // even show — every mousemove tick, easily 60-100+/sec, versus a keyboard
   // press which fires once per discrete step (never more than one per
@@ -2024,8 +2028,8 @@
     applyBoardSize(snapped);
   });
   boardSizeResetBtn.addEventListener('click',()=>{
-    // Assigning .value snaps to the nearest valid step SILENTLY — 780 is
-    // itself an exact step from min (360/30=12), so this particular
+    // Assigning .value snaps to the nearest valid step SILENTLY — 750 is
+    // itself an exact step from min (330/30=11), so this particular
     // default doesn't actually drift the way 680 used to. Still reading
     // .value back rather than trusting the constant directly: cheap
     // insurance against the same class of bug if BOARD_SIZE_DEFAULT or
@@ -2895,7 +2899,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r81 (reset no longer strands Hide board on its own line)';
+  const BUILD='v2-r82 (dropped the BOARD label, lowered the default back down)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that

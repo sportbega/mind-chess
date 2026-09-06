@@ -6040,3 +6040,43 @@ line.
 
 Build `BUILD='v2-r81 (reset no longer strands Hide board on its own
 line)'`. Published to `/v2/`.
+
+## 2026-09-06 (r82): dropped the BOARD label, lowered the default back down
+
+Adni's follow-up to r81: drop the "BOARD" label from the left edge of
+`.board-head` — purely decorative (the app's own title is the `<h1>` up
+in the header; this was a second, smaller label repeating the obvious) —
+as an additional way to free up room in the row that was wrapping at
+Reset. Removed the `<h2>Board</h2>` entirely, its now-dead CSS rule, the
+fullscreen-hide rule that only existed for it, and simplified
+`.board-head`'s now-single-child layout from `justify-content:space-between`
+to nothing (moot with one child).
+
+Re-measured the wrap threshold the same way as r81 (force `flex-wrap:
+nowrap`, binary-search `--board-max` against the real wrap condition) —
+dropped from 774px to exactly 732px with the label gone. Since r81's 780
+default was now carrying much more margin than it needed, lowered
+`BOARD_SIZE_DEFAULT` back down to 750 (still an exact step under r79's
+step-30 grid — 330/30=11 — so Reset doesn't drift the way the original
+680 did), updating the slider's initial `value=` and both CSS
+`var(--board-max,…)` fallbacks to match.
+
+One thing worth recording precisely, since it briefly looked like a real
+regression while re-measuring: after `localStorage.clear()` + reload,
+`#clockSelect` still read "custom" and `#clockLine` still showed a
+running countdown, even though every app-level storage key was gone. Not
+app state surviving — a browser-level quirk where `<select>`/form control
+values get restored across a plain reload independent of the page's own
+JS or `localStorage`. Confirmed by explicitly forcing `clockSelect.value=
+'0'` and dispatching `change` before re-measuring, which is when the
+threshold numbers above became reproducible; worth remembering next time
+a "fresh" test session doesn't look as fresh as expected.
+
+Verified: default load and post-Reset (after first shrinking to the
+420px minimum) both land at 750 with the row unwrapped, confirmed against
+a genuinely clock-off state; a screenshot shows the full row — Flip
+board, Fullscreen, the size slider, Reset, Hide board — on one line, with
+no "BOARD" label taking up the leftmost slot anymore.
+
+Build `BUILD='v2-r82 (dropped the BOARD label, lowered the default back
+down)'`. Published to `/v2/`.
