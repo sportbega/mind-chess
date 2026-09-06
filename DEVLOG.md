@@ -6353,3 +6353,52 @@ regression.
 
 Build `BUILD='v2-r87 (dropped the redundant status line, centered placeholder, matched button heights)'`.
 Published to `/v2/`.
+
+## 2026-09-06 (r88): a visual check/checkmate alert when narration is muted
+
+When narration is muted (r84/OUR-92's speaker toggle, `voiceOn=false`),
+check and checkmate went silent along with everything else — correct for
+narration, but a check or checkmate is too important a state change to
+disappear entirely while muted.
+
+Reused the exact detection narration already uses rather than
+reimplementing it: `endSuffix()` is the one function that calls
+`game.in_checkmate()`/`game.in_check()` to build the spoken suffix
+(" Checkmate — White wins."/" Check."), and all three places that
+narrate an applied move — `applyMove()`, `loadOnlinePgn()`,
+`applyLichessMoves()` — already route through it. Added a single
+`if(!voiceOn) flashCheckAlert(kind)` inside each of `endSuffix()`'s
+checkmate and check branches, so the new visual fires from the same
+one place for every move source, muted or not.
+
+The visual is a small pill (`#checkAlert`), fixed at the top of the
+viewport rather than anywhere near the board, because the board is
+hidden by default in this app (blindfold mode) — an indicator tied to
+the board or a king-square highlight (the existing `.sq.checked` box-
+shadow, which already exists and is unconditional) would be invisible
+exactly when it matters most. "Check" and "Checkmate" get distinct
+colors (`var(--accent)` vs `var(--danger)`) as well as distinct text.
+`pointer-events:none` throughout so it can never intercept the
+OUR-91 board hover, and it needs no dismissal — a 2.2s timeout fades
+it via a `.show` class toggle, whether or not another move arrives
+first.
+
+Deliberately muted-only: when `voiceOn` is true the spoken
+"Check."/"Checkmate — ..." already covers it, so `endSuffix()` doesn't
+call `flashCheckAlert()` in that branch — stacking a banner on top of
+narration that already says the same thing would be redundant, not
+extra safety.
+
+Verified live (two-player mode, moves driven through the existing
+text-input path so `applyMove()`/`describeMove()`/`endSuffix()` run
+unmodified): muted, Scholar's Mate's `Qxf7#` shows `#checkAlert` with
+text "Checkmate" and class `checkmate`, with zero
+`speechSynthesis.speak()` calls; muted, a non-mating `Qe5+` shows text
+"Check" and class `check` — visibly distinct from checkmate; unmuted,
+the same `Qe5+` leaves `speechSynthesis.speaking` true (spoken
+narration fires as before) and `#checkAlert` never gains the `.show`
+class — no doubled-up visual on top of narration. Confirmed
+`getComputedStyle(#checkAlert).pointerEvents === 'none'` throughout.
+
+Build `BUILD='v2-r88 (a visual check/checkmate alert when narration is muted)'`.
+Published to `/v2/`.
