@@ -5994,3 +5994,49 @@ once after the move.
 
 Build `BUILD='v2-r80 (Appearance moved above Game settings)'`. Published
 to `/v2/`.
+
+## 2026-09-06 (r81): reset no longer strands Hide board on its own line
+
+Adni: hitting the board-size Reset button left "Hide board" wrapped onto
+its own line, separated from Flip board/Fullscreen/Reset — wanted the
+board sized big enough on reset that the whole `.board-head` row stays on
+one line.
+
+Measured the actual wrap point directly rather than guessing a bigger
+number: forced `.board-head`'s inner row to `flex-wrap:nowrap` to read its
+true content width, then binary-searched `--board-max` values against the
+real wrap condition (`Flip board` and `Hide board` no longer sharing a
+`top`). In the app's own default state (no clock — `Clock: No clock` is
+already the Game-settings default), the row stops wrapping at exactly
+`board-max` 774px; picked **780** — an exact step from `min` (360/30=12,
+so it doesn't drift on assignment the way 680 used to) with a small
+margin above the measured threshold.
+
+One real complication surfaced during measurement, not assumed away: an
+active clock adds "White 1:29 · Black 15:00" or similar to `#clockLine`,
+which pushes the wrap threshold as high as ~950 — nearly the slider's own
+max. Chasing that case would mean defaulting the board to near-maximum
+size for everyone, a poor trade for a feature most games aren't played
+with (clock defaults to off). Sized for the app's own common case instead
+and is calling that out explicitly here: a Reset with a clock actively
+running can still wrap the row. Not fixed, by choice, not by oversight.
+
+`BOARD_SIZE_DEFAULT` went from 680 to 780, changing both the slider's
+initial `value=` (so a fresh page load starts unwrapped too, not just
+post-Reset) and the two CSS `var(--board-max,680px)` fallbacks that only
+ever mattered if the custom property were somehow unset. Reset's own
+`.value` assignment no longer drifts under r79's step-30 grid the way 680
+used to (260/30 wasn't a whole number; 360/30 is) — updated that comment
+to say so rather than leaving a stale explanation of a problem that no
+longer exists at this particular default.
+
+Verified: cleared all state for a genuine fresh game (clock off,
+confirmed via `#clockLine` reading empty) — default load lands at 780
+with the row already unwrapped; shrank to 420 (confirmed wrapped, as
+expected at the minimum) then hit Reset and confirmed the row returned to
+780 with `Flip board` and `Hide board` back on the same `top` — a real
+before/after screenshot of the reset state shows the whole row on one
+line.
+
+Build `BUILD='v2-r81 (reset no longer strands Hide board on its own
+line)'`. Published to `/v2/`.

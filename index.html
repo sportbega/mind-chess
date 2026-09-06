@@ -80,7 +80,7 @@
      custom property already being set on every slider input, so raising
      or lowering it recomputes .app's width the same tick .board-grid's
      own max-width does. */
-  .app{width:100%;max-width:max(720px,calc(var(--board-max,680px) + 52px + (clamp(10px,2.7vw,25px) * 2)));display:flex;flex-direction:column;gap:16px}
+  .app{width:100%;max-width:max(720px,calc(var(--board-max,780px) + 52px + (clamp(10px,2.7vw,25px) * 2)));display:flex;flex-direction:column;gap:16px}
 
   /* banner */
   .banner{
@@ -200,7 +200,7 @@
      height-driven (aspect-ratio off a flex:1 row, see below) and can render
      far narrower than the column around it, so pieces shrank well below
      their normal fill ratio — same shape of bug as r63's .files width. */
-  .board-grid{container-type:inline-size;width:100%;max-width:var(--board-max,680px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
+  .board-grid{container-type:inline-size;width:100%;max-width:var(--board-max,780px);aspect-ratio:1/1;margin:auto;display:grid;grid-template:repeat(8,minmax(0,1fr))/repeat(8,minmax(0,1fr));overflow:hidden;border:4px solid var(--wood);border-radius:3px}
   /* Fullscreen — a first cut sized the board against a fixed vh fraction,
      then a hand-tuned calc() guess at everything else's height, and both
      were fragile: correct only at the one viewport size they were measured
@@ -403,7 +403,7 @@
         <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
         <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
         <div class="board-size-field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
-          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="680" />
+          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="780" />
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
         </div>
         <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
@@ -1946,7 +1946,15 @@
   // having to save and reapply anything itself.
   // ===============================================================
   const BOARD_SIZE_KEY='mind-chess-v2-board-size';
-  const BOARD_SIZE_DEFAULT=680;
+  // 780, not the original 680: at anything below ~774px the .board-head
+  // row (BOARD label, clock/turn status, Flip/Fullscreen, the size field,
+  // Hide board) doesn't fit on one line and wraps — confirmed by measuring
+  // the actual wrap point directly, not guessed — so a smaller default
+  // left Hide board stranded on its own line every time someone loaded
+  // the page fresh or hit Reset. 780 clears that with a small margin and
+  // is itself an exact step from min (see below), so it doesn't drift on
+  // assignment the way 680 used to.
+  const BOARD_SIZE_DEFAULT=780;
   // A dragged range input fires 'input' far more often than the display can
   // even show — every mousemove tick, easily 60-100+/sec, versus a keyboard
   // press which fires once per discrete step (never more than one per
@@ -2016,14 +2024,13 @@
     applyBoardSize(snapped);
   });
   boardSizeResetBtn.addEventListener('click',()=>{
-    // Assigning .value snaps to the nearest valid step SILENTLY — 260px
-    // above min isn't a whole multiple of 30, so 680 itself was never a
-    // reachable step value (nearest are 420+8*30=660 and 420+9*30=690;
-    // 680 is 10px closer to 690, so that's where the browser moves the
-    // thumb the moment this line runs). Reading .value back afterward,
-    // rather than trusting the BOARD_SIZE_DEFAULT constant we just
-    // assigned, is what keeps the visible thumb and the actual applied
-    // board size from disagreeing.
+    // Assigning .value snaps to the nearest valid step SILENTLY — 780 is
+    // itself an exact step from min (360/30=12), so this particular
+    // default doesn't actually drift the way 680 used to. Still reading
+    // .value back rather than trusting the constant directly: cheap
+    // insurance against the same class of bug if BOARD_SIZE_DEFAULT or
+    // step ever change independently again without both being re-checked
+    // against each other.
     boardSizeRange.value=BOARD_SIZE_DEFAULT;
     const snapped=+boardSizeRange.value;
     boardSizeLastApplied=snapped;
@@ -2888,7 +2895,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r80 (Appearance moved above Game settings)';
+  const BUILD='v2-r81 (reset no longer strands Hide board on its own line)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
