@@ -4162,7 +4162,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r110 (fix: Calibration answers no longer swallowed as echo of their own prompt)';
+  const BUILD='v2-r111 (fix: Calibration retries a true-silent mic session instead of hanging)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6477,6 +6477,13 @@
           // reply is a sample or a yes/no, never a move attempt, and it must
           // never accidentally play one.
           if(calibrationState){
+            // Mark resolved BEFORE stop(): a browser (real or the fake
+            // recognizer both) can fire onend synchronously from inside
+            // stop(), which would otherwise reach the true-silence retry in
+            // onend while this listen attempt's result is still unprocessed
+            // — a race that raced ahead of handleCalibrationResult() below
+            // and mangled a real "no" answer into a phantom retry.
+            calibrationState.resolved=true;
             try{ recognition.stop(); }catch(e){}
             handleCalibrationResult(alts);
             continue;
@@ -6581,6 +6588,26 @@
       // That trust ends the moment speechEndTrusted does \u2014 see
       // speakingBlocksMic() above.
       if(speakingBlocksMic()) return;
+      // Calibration deliberately runs with wantLoop=false (see startCalibration())
+      // so the generic continuous-listening restart below can't race its own
+      // turn-by-turn one \u2014 but that left true silence (a session that closes
+      // with no final result ever reaching handleCalibrationResult, e.g. a
+      // real no-speech timeout) with no restart at all: every OTHER dead end
+      // \u2014 a "no", an unrecognized answer, an empty-but-delivered result \u2014
+      // already runs through calibrationRetryOrSkip() and gets retried, this
+      // one alone just hung (OUR-118). Scoped entirely to calibration, and
+      // never touches wantLoop: `resolved` (set by handleCalibrationResult()
+      // for a real result, or by the Skip button for a manual one) says
+      // whether calibration's own logic already owns this session's outcome.
+      // If not, nothing else ever will, so retry here \u2014 same 2-retry-then-
+      // skip budget a garbled answer already spends.
+      if(calibrationState){
+        if(!calibrationState.resolved){
+          calibrationState.awaitingConfirm=null;
+          calibrationRetryOrSkip();
+        }
+        return;
+      }
       if(wantLoop&&handsFree) scheduleRestart();
     };
   }
@@ -6731,7 +6758,7 @@
     wantLoopBeforeCalibration=wantLoop;
     wantLoop=false;
     if(listening){ try{ recognition.stop(); }catch(e){} }
-    calibrationState={queue:voiceProfileWordList(),index:0,samples:{},awaitingConfirm:null,retries:0};
+    calibrationState={queue:voiceProfileWordList(),index:0,samples:{},awaitingConfirm:null,retries:0,resolved:false};
     calibPanel.classList.add('show');
     calibPanel.scrollIntoView({block:'nearest'});
     calibrationNextWord();
@@ -6753,12 +6780,23 @@
     whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000,true);
   }
   async function calibrationListen(){
-    if(!calibrationState) return;
+    const cs=calibrationState;
+    if(!cs) return;
+    // Cleared per listen attempt, not per word: a retry after a bad answer
+    // gets its own fresh listen, and its own fresh chance to be resolved.
+    // recognition.onend reads this after the session closes to tell true
+    // silence (nothing ever resolved it) from a session that closed because
+    // calibration logic already dealt with it — see the onend comment.
+    cs.resolved=false;
     await startListening();
   }
   function handleCalibrationResult(alts){
     const cs=calibrationState;
     if(!cs) return;
+    // A final result reached us — whatever handling follows (accept, retry,
+    // skip) owns this listen attempt's outcome, so onend must not also act
+    // on it once the session it belongs to closes.
+    cs.resolved=true;
     const heard=(alts[0]||'').trim();
     if(cs.awaitingConfirm){
       const t=normalize(heard);
@@ -6800,8 +6838,12 @@
   }
   function cancelCalibration(){
     if(!calibrationState) return;
-    try{ recognition.stop(); }catch(e){}
+    // Null calibrationState BEFORE stop(), same reason as the two spots
+    // above: stop() can fire onend synchronously, and onend's true-silence
+    // retry checks calibrationState first — it has to already be gone or a
+    // cancel can get raced by a retry that reopens the mic right behind it.
     calibrationState=null;
+    try{ recognition.stop(); }catch(e){}
     calibPanel.classList.remove('show');
     wantLoop=wantLoopBeforeCalibration;
     log('System','Voice calibration cancelled.');
@@ -6827,8 +6869,13 @@
   calibrateBtn.addEventListener('click',startCalibration);
   calibSkipBtn.addEventListener('click',()=>{
     if(!calibrationState) return;
-    try{ recognition.stop(); }catch(e){}
     calibrationState.awaitingConfirm=null;
+    // Set BEFORE stop(), same reasoning as the onresult calibration branch
+    // above: stop() can fire onend synchronously, and resolved has to
+    // already be true by then or onend's true-silence retry fires on the
+    // session this click is closing, racing calibrationSkipWord() below.
+    calibrationState.resolved=true;
+    try{ recognition.stop(); }catch(e){}
     calibrationSkipWord();
   });
   calibCancelBtn.addEventListener('click',cancelCalibration);
