@@ -1884,8 +1884,8 @@
   // already handle that) for the alternative, which is a mic that never
   // opens again for the rest of the game.
   function speakingBlocksMic(){ return speaking&&speechEndTrusted; }
-  function whenSpeechIdle(fn,maxWaitMs){
-    if(!speaking||!voiceOn||!speechEndTrusted){ fn(); return; }
+  function whenSpeechIdle(fn,maxWaitMs,force){
+    if(!speaking||(!voiceOn&&!force)||!speechEndTrusted){ fn(); return; }
     const entry={done:false};
     entry.fire=(why)=>{
       if(entry.done) return;
@@ -1951,8 +1951,14 @@
     return true;
   }
 
-  function say(text){
-    if(!voiceOn || !('speechSynthesis' in window)) return;
+  // force: speak regardless of voiceOn/mute. Only the voice-calibration flow
+  // (OUR-78) uses this — calibration's spoken prompts/confirms are active
+  // two-way setup, not passive narration, so muting the game shouldn't be
+  // able to silently strand it the way it did before (see the empty-profile
+  // bug this fixed). Every other caller leaves force unset and stays
+  // mute-respecting exactly as before.
+  function say(text,force){
+    if((!voiceOn&&!force) || !('speechSynthesis' in window)) return;
     try{
       const myGeneration=++speechGeneration;
       stopAudio();
@@ -1974,7 +1980,7 @@
       // starting narration; without this small gap the first words can clip.
       setTimeout(()=>{
         if(myGeneration!==speechGeneration) return;   // superseded; that call owns the gate
-        if(!voiceOn){ endSpeaking(); return; }
+        if(!voiceOn&&!force){ endSpeaking(); return; }
         speakNextChunk(myGeneration);
       },120);
     }catch(e){ endSpeaking(); }
@@ -4156,7 +4162,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r108 (fix: Statistics table column alignment)';
+  const BUILD='v2-r109 (fix: Voice calibration speaks regardless of narration mute)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6711,6 +6717,7 @@
   function startCalibration(){
     if(calibrationState||speaking) return;
     if(!recognition){ warn('Voice recognition is not available in this browser.'); return; }
+    if(!voiceOn) log('System','Calibration speaks its prompts aloud even while narration is muted — this is a two-way setup step, not game narration.');
     wantLoopBeforeCalibration=wantLoop;
     wantLoop=false;
     if(listening){ try{ recognition.stop(); }catch(e){} }
@@ -6732,8 +6739,8 @@
     const token=cs.queue[cs.index];
     calibStatus.innerHTML='<b>Voice calibration</b> — word '+(cs.index+1)+' of '+cs.queue.length
       +': say '+calibPromptFor(token)+'.';
-    say('Say '+calibPromptFor(token)+'.');
-    whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000);
+    say('Say '+calibPromptFor(token)+'.',true);
+    whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000,true);
   }
   async function calibrationListen(){
     if(!calibrationState) return;
@@ -6764,8 +6771,8 @@
     if(!heard){ calibrationRetryOrSkip(); return; }
     cs.awaitingConfirm={token,heard};
     calibStatus.innerHTML='<b>Voice calibration</b> — heard “'+heard+'” for '+calibPromptFor(token)+'. Yes or no?';
-    say('I heard '+heard+'. Is that right?');
-    whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000);
+    say('I heard '+heard+'. Is that right?',true);
+    whenSpeechIdle(()=>{ if(calibrationState===cs) calibrationListen(); },6000,true);
   }
   function calibrationRetryOrSkip(){
     const cs=calibrationState;
