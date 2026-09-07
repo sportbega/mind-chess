@@ -2829,7 +2829,13 @@
   function stopClock(){ if(clockTimer){ clearInterval(clockTimer); clockTimer=null; } }
   function startClock(){
     stopClock();
-    if(!clockPreset||gameOver||mode==='online'||mode==='lichess') return;
+    // No move yet means nobody has started thinking on the clock's time —
+    // resetClock() (new game), takeBack() (undoing back to the start) and
+    // loadState()'s restore (reloading a game that was never played into)
+    // all call this unconditionally and rely on this guard alone to keep
+    // the clock frozen until applyMove() calls startClock() again after
+    // the game's actual first move.
+    if(!clockPreset||gameOver||mode==='online'||mode==='lichess'||!game.history().length) return;
     let last=Date.now();
     clockTimer=setInterval(()=>{
       const now=Date.now(), dt=now-last; last=now;
@@ -3689,6 +3695,15 @@
     if(clockPreset&&clockIncrement&&mode!=='online'&&mode!=='lichess'){
       if(applied.color==='w') whiteMs+=clockIncrement*1000; else blackMs+=clockIncrement*1000;
     }
+    // The player shouldn't lose clock time just thinking about an opening
+    // move — resetClock()/takeBack()/loadState() all call startClock()
+    // unconditionally, but it now refuses to actually start until a move
+    // exists (see its own guard). This is the other half: the game's real
+    // first move is what finally lets it run. Harmless to call again on
+    // every later move too — it's the same restart resetClock() already
+    // relied on, self-guarded, and mode!=='online'/'lichess' inside it
+    // means this is a no-op for those two anyway.
+    startClock();
     // Tips go last, after the nudge, and like the nudge they are excluded from
     // predictNarration() — both mutate "what have I already said" state, and
     // predicting would spend the tip on a sentence nobody hears. Both append a
@@ -4162,7 +4177,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r116 (Voice calibration status drops the word count)';
+  const BUILD='v2-r117 (Clocks wait for the first move — computer, two-player, online, Lichess vs AI)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7026,7 +7041,12 @@
   // a rematch) touch the row.
   function computeOnlineMs(){
     if(!onlineState) return {w:0,b:0};
-    const running=(!gameOver&&!onlineState.waiting)?game.turn():null;
+    // game.history().length: neither side is "on the clock" until the
+    // game's first move actually lands, same reasoning as the local
+    // clock's startClock() guard — a fresh game's lastMoveAt is set at
+    // creation, and without this a player thinking about their opening
+    // move would watch their own clock tick down before they'd moved at all.
+    const running=(!gameOver&&!onlineState.waiting&&game.history().length)?game.turn():null;
     const elapsed=running?Date.now()-onlineState.lastMoveAt:0;
     return{
       w:Math.max(0,onlineState.whiteMs-(running==='w'?elapsed:0)),
@@ -7078,7 +7098,13 @@
       // here, the same moment applyMove() credits it for a local game —
       // standard clock behavior, added once per move, not on every tick.
       const nowMs=Date.now();
-      const elapsed=Math.max(0,nowMs-onlineState.lastMoveAt);
+      // The game's first move charges nobody for the time between the row
+      // being created and that move landing — computeOnlineMs() shows a
+      // frozen clock for that same stretch (see its own game.history().length
+      // guard), so deducting real elapsed time here would silently undo it
+      // the moment the move saves, charging the opener for thinking time
+      // the display never even showed ticking.
+      const elapsed=game.history().length===1?0:Math.max(0,nowMs-onlineState.lastMoveAt);
       const incMs=(onlineState.clockIncrement||0)*1000;
       const mover=game.turn()==='w'?'b':'w';
       let w=onlineState.whiteMs, b=onlineState.blackMs;
@@ -7520,7 +7546,16 @@
   // a real timed game.
   function computeLichessMs(){
     if(!lichessState) return {w:0,b:0};
-    const running=(!gameOver&&lichessState.status==='started')?game.turn():null;
+    // A real opponent's clock stays exactly what it's always been here —
+    // Lichess alone decides when it starts, untouched. playLichessAI()
+    // games are a local-clock concern the same way computer mode is (see
+    // startClock()'s own history().length guard): the player shouldn't
+    // watch White's clock tick down locally while still thinking about the
+    // opening move, so vsAI games additionally wait for game.history().length
+    // before this local between-events interpolation runs at all. This
+    // never touches the actual wtime/btime numbers Lichess sends — only
+    // whether this function adds local ticking on top of them.
+    const running=(!gameOver&&lichessState.status==='started'&&(!lichessState.vsAI||game.history().length))?game.turn():null;
     const elapsed=running?Date.now()-lichessState.lastEventAt:0;
     return{
       w:Math.max(0,(lichessState.wtime||0)-(running==='w'?elapsed:0)),
@@ -7591,6 +7626,13 @@
       }
       lichessState.color=evt.white&&evt.white.id===lichessUsername?'w':'b';
       humanColor=lichessState.color;
+      // An AI opponent's player object carries aiLevel instead of id/name
+      // (see describeLichessPlayer()) — the one signal that distinguishes
+      // playLichessAI()'s games from a real human opponent's, needed below
+      // so computeLichessMs() can apply the "clock waits for the first
+      // move" treatment only to the local vs-AI case, never to a real
+      // opponent's Lichess-authoritative clock.
+      lichessState.vsAI=!!((evt.white&&evt.white.aiLevel)||(evt.black&&evt.black.aiLevel));
       const opponent=describeLichessPlayer(lichessState.color==='w'?evt.black:evt.white);
       lichessNote('Playing '+describeLichessPlayer(evt.white)+' vs '+describeLichessPlayer(evt.black)+'.');
       log('Board',reconnecting?'Reconnected to your Lichess game.'
