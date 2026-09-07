@@ -4162,7 +4162,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r109 (fix: Voice calibration speaks regardless of narration mute)';
+  const BUILD='v2-r110 (fix: Calibration answers no longer swallowed as echo of their own prompt)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6449,7 +6449,17 @@
         // routinely lands after `speaking` goes false, and without this it
         // reaches route() as though the player had said it — which is how the
         // app ended up answering its own reading of a puzzle.
-        if(res.isFinal&&isTrailingEcho(res[0]?res[0].transcript:'')) continue;
+        //
+        // Calibration is exempt: its own prompts are worded to CONTAIN the
+        // expected answer ("Say the letter A." -> "a"), so the correct reply,
+        // given promptly, is by construction a 100%-overlap single-word
+        // trailing echo of what was just force-spoken (see say()'s `force`
+        // param). Filtering it here silently ate every on-time answer — found
+        // via voice-harness.js once calibration actually started speaking.
+        // Nothing unsafe about skipping the filter: handleCalibrationResult()
+        // never plays a move, and a genuine misfire just gets a "no" and a
+        // retry, same as any other misheard calibration sample.
+        if(res.isFinal&&!calibrationState&&isTrailingEcho(res[0]?res[0].transcript:'')) continue;
         if(res.isFinal){
           lostInterim='';
           // A session that produced a result was healthy, whatever happened
