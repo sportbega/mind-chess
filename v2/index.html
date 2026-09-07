@@ -1009,7 +1009,7 @@
         <label for="sttSelect">Hearing</label>
         <select id="sttSelect">
           <option value="system" selected>Browser</option>
-          <option value="local">On-device — 247 MB once</option>
+          <option value="local">On-device (iOS/iPhone only) — 247 MB once</option>
         </select>
       </div>
       <div class="field" id="voiceProfileField">
@@ -4162,7 +4162,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r112 (fix: Calibration settles unstable single-word answers instead of retrying every word)';
+  const BUILD='v2-r113 (On-device Hearing option labeled iOS/iPhone only)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
