@@ -4162,7 +4162,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r113 (On-device Hearing option labeled iOS/iPhone only)';
+  const BUILD='v2-r114 (On-device Hearing auto-selected for iOS on a fresh session)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6381,6 +6381,18 @@
     return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.AudioWorkletNode);
   }
 
+  // iPhone/iPod report plainly in the UA. iPadOS 13+ deliberately masquerades
+  // as desktop Safari (navigator.platform=='MacIntel') to get desktop sites —
+  // maxTouchPoints is what tells an iPad apart from an actual Mac, since a
+  // real Mac reports 0. Shared: OUR-121's boot-time On-device default (below)
+  // and setupRecognition()'s own "voice needs https" messaging both need the
+  // exact same check, and a second copy of this regex is how they'd quietly
+  // drift apart.
+  function isIOSDevice(){
+    return /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  }
+
   function setupRecognition(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 
@@ -6405,8 +6417,7 @@
       recognition=new SR();
     } else {
       micBtn.disabled=true;
-      const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-      note(isIOS
+      note(isIOSDevice()
         ? 'Voice needs a secure (https) page on iOS. Open the https link, or use the text box below.'
         : 'Speech recognition needs Chrome or Edge, or switch Hearing to On-device. Use the text box.','err');
       return;
@@ -8799,6 +8810,23 @@
   }else if(spectateMatch){
     spectateOnline(spectateMatch[1]);
   }else if(!loadState()){
+    // OUR-121 follow-up: same "only the true no-save branch" reasoning as
+    // OUR-101's boardHidden default just below — Browser (native
+    // SpeechRecognition) doesn't exist at all on iOS, so leaving Hearing at
+    // its factory default would leave a first-time iOS visitor's voice
+    // silently broken until they happened to discover the other option
+    // themselves. A returning player's saved sttEngine (Browser OR
+    // On-device) is read and respected entirely inside loadState() above —
+    // this line is never reached once any save exists.
+    //
+    // Set BEFORE startNewGame(), not after: startNewGame() calls
+    // renderAll(), which calls saveState() — the very first save this
+    // browser ever writes. Setting sttEngine afterward would leave that
+    // first save on disk claiming 'system' regardless of what's live in
+    // memory, so a plain reload (no other setting ever touched) would read
+    // that stale 'system' back on the *second* visit and silently undo the
+    // default that was supposedly just applied.
+    if(isIOSDevice()&&localSttPossible()){ sttEngine='local'; sttSelect.value='local'; }
     startNewGame();
     // OUR-101: factory default flipped to visible — but ONLY reachable here,
     // the one branch that means "no saved state exists at all" (loadState()
