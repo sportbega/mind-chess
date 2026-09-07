@@ -4162,7 +4162,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r111 (fix: Calibration retries a true-silent mic session instead of hanging)';
+  const BUILD='v2-r112 (fix: Calibration settles unstable single-word answers instead of retrying every word)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -6477,14 +6477,22 @@
           // reply is a sample or a yes/no, never a move attempt, and it must
           // never accidentally play one.
           if(calibrationState){
-            // Mark resolved BEFORE stop(): a browser (real or the fake
-            // recognizer both) can fire onend synchronously from inside
-            // stop(), which would otherwise reach the true-silence retry in
-            // onend while this listen attempt's result is still unprocessed
-            // — a race that raced ahead of handleCalibrationResult() below
-            // and mangled a real "no" answer into a phantom retry.
+            // Mark resolved (still needed even without an explicit stop()
+            // below: if the session happens to close on its own right after
+            // this, onend's true-silence retry must see this turn as already
+            // handled, not unresolved).
             calibrationState.resolved=true;
-            try{ recognition.stop(); }catch(e){}
+            calibrationClearSettle();
+            // Deliberately NOT stopping the session: continuous=true already
+            // lets Chrome deliver a fresh result for the confirm question (or
+            // the next word) on the SAME open session, and with "Talk over
+            // it" on (the common case) beginSpeaking() leaves it open anyway
+            // — every stop()/restart pays a real ~4-6s Chrome cold-start tax
+            // before recognition activity resumes (report id 28's repeated
+            // "session opened (Nms deaf)" lines), and calibration was paying
+            // it twice per word (once for the word, once for the confirm)
+            // versus gameplay's one long-lived session. See CALIB_SETTLE_MS
+            // above for the other half of report id 28's diagnosis.
             handleCalibrationResult(alts);
             continue;
           }
@@ -6530,6 +6538,13 @@
           if(kind==='supersede') flushLostInterim('a different utterance began');
           lostInterim=it;
           note('\u201C'+res[0].transcript.trim()+'\u201D');
+          // See CALIB_SETTLE_MS above: a single letter/digit may never reach
+          // isFinal at all, so calibration doesn't wait for it \u2014 every fresh
+          // interim (start, extend, or supersede \u2014 any of them means Chrome
+          // is still actively revising) pushes the settle deadline out by
+          // CALIB_SETTLE_MS again, and whichever text is standing when
+          // nothing new arrives for that long gets treated as the answer.
+          if(calibrationState) calibrationScheduleSettle(calibrationState,it);
         }
       }
     };
@@ -6603,6 +6618,14 @@
       // skip budget a garbled answer already spends.
       if(calibrationState){
         if(!calibrationState.resolved){
+          // A pending settle timer (see CALIB_SETTLE_MS) belongs to THIS
+          // closing session's interim burst — if it outlives the retry
+          // calibrationRetryOrSkip() is about to start, it fires against
+          // whatever is current by then (calibrationState==cs still holds:
+          // it's the same object for the life of one calibration run, not a
+          // fresh one per word) and injects a stale guess into a listen
+          // attempt that hasn't even started yet. Clear it before retrying.
+          calibrationClearSettle();
           calibrationState.awaitingConfirm=null;
           calibrationRetryOrSkip();
         }
@@ -6716,6 +6739,38 @@
     return ['a','b','c','d','e','f','g','h','1','2','3','4','5','6','7','8',
             'pawn','knight','bishop','rook','queen','king'];
   }
+  // A single letter or digit gives Chrome's recognizer very little acoustic
+  // signal to lock onto — the exact non-prefix-stable interim fragmentation
+  // OUR-80 root-caused for gameplay's "pawn to e5" ("to"->"E5"->"to E5"->"at",
+  // none an extension of the last) but never shipped a fix for, because
+  // accepting an unsettled guess there risks actually playing the wrong move.
+  // Calibration has no such risk — a wrong guess just costs a "no" and a
+  // retry — so it can afford the mitigation OUR-80 couldn't: stop waiting for
+  // Chrome's own isFinal, which real captures show may never arrive at all
+  // (report id 28, build r111: zero "final:" lines in a 135s session — every
+  // advance came from the true-silence retry path finding no real answer and
+  // giving up, not from an accepted one), and instead treat the interim
+  // stream itself as done once it goes quiet for CALIB_SETTLE_MS with no new
+  // revision. calibrationSettleTimer/calibrationScheduleSettle/
+  // calibrationClearSettle below implement this, scoped entirely to
+  // calibrationState — gameplay's route() path never sees it.
+  const CALIB_SETTLE_MS=900;
+  let calibrationSettleTimer=null;
+  function calibrationClearSettle(){
+    if(calibrationSettleTimer){ clearTimeout(calibrationSettleTimer); calibrationSettleTimer=null; }
+  }
+  function calibrationScheduleSettle(cs,text){
+    calibrationClearSettle();
+    calibrationSettleTimer=setTimeout(()=>{
+      calibrationSettleTimer=null;
+      // The word may have already been resolved or abandoned by the time
+      // this fires (a real final arrived, the user hit Skip/Cancel, or a
+      // fresh listen for a later word already started) — cs staying the
+      // CURRENT calibrationState is what says this settle still applies.
+      if(calibrationState!==cs||cs.resolved) return;
+      handleCalibrationResult([text]);
+    },CALIB_SETTLE_MS);
+  }
   function calibPromptFor(token){
     if(/^[a-h]$/.test(token)) return 'the letter '+token.toUpperCase();
     if(/^[1-8]$/.test(token)) return 'the number '+token;
@@ -6788,11 +6843,13 @@
     // silence (nothing ever resolved it) from a session that closed because
     // calibration logic already dealt with it — see the onend comment.
     cs.resolved=false;
+    calibrationClearSettle();
     await startListening();
   }
   function handleCalibrationResult(alts){
     const cs=calibrationState;
     if(!cs) return;
+    calibrationClearSettle();
     // A final result reached us — whatever handling follows (accept, retry,
     // skip) owns this listen attempt's outcome, so onend must not also act
     // on it once the session it belongs to closes.
@@ -6838,6 +6895,7 @@
   }
   function cancelCalibration(){
     if(!calibrationState) return;
+    calibrationClearSettle();
     // Null calibrationState BEFORE stop(), same reason as the two spots
     // above: stop() can fire onend synchronously, and onend's true-silence
     // retry checks calibrationState first — it has to already be gone or a
@@ -6869,6 +6927,7 @@
   calibrateBtn.addEventListener('click',startCalibration);
   calibSkipBtn.addEventListener('click',()=>{
     if(!calibrationState) return;
+    calibrationClearSettle();
     calibrationState.awaitingConfirm=null;
     // Set BEFORE stop(), same reasoning as the onresult calibration branch
     // above: stop() can fire onend synchronously, and resolved has to
