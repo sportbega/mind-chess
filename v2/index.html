@@ -4386,7 +4386,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r124 (OUR-130: Forgot password flow)';
+  const BUILD='v2-r125 (OUR-131: Lichess sign-in also connects gameplay)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7483,10 +7483,13 @@
     // principle OUR-126 already established for email/password), so a
     // single ambiguous top-level Lichess button would have quietly
     // undone that. The note under each button exists because this app
-    // already has a completely separate Lichess integration (OUR-76
-    // onward: a pasted personal API token, used for gameplay, further
-    // down the settings page) -- without it, "sign in with Lichess" here
-    // could easily be mistaken for the same thing.
+    // already has a separate, older Lichess integration (OUR-76 onward:
+    // a pasted personal API token, used for gameplay, further down the
+    // settings page) -- as of OUR-131 this sign-in also supplies THAT
+    // same kind of token automatically (see captureLichessGameplayToken()
+    // below), so the note is there to say so honestly up front rather
+    // than let a player discover it as a surprise, not to draw a line
+    // between two unrelated things anymore.
     let dropdown='';
     if(accountUiMode==='signup'){
       dropdown=(accountPendingEmail
@@ -7498,7 +7501,7 @@
           +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
           +'<p class="auth-or">or</p>'
           +'<button class="btn" id="accountLichessClaimBtn" type="button">Continue with Lichess</button>'
-          +'<p class="auth-lichess-note">Signs this profile in with your Lichess account — separate from the Lichess game token used to play games, further down the page.</p>')
+          +'<p class="auth-lichess-note">Signs this profile in with your Lichess account and connects it for playing games too — no separate token needed. (The manual token option further down the page still works if you’d rather use that instead.)</p>')
         +'<p class="online-status" id="accountError"></p>';
     }else if(accountUiMode==='login'){
       dropdown='<p>Signing in switches to a <b>different</b> account’s history. To keep this Guest’s history and just add a password, use “Sign Up” instead.</p>'
@@ -7508,7 +7511,7 @@
         +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
         +'<p class="auth-or">or</p>'
         +'<button class="btn" id="accountLichessSigninBtn" type="button">Continue with Lichess</button>'
-        +'<p class="auth-lichess-note">Signs in to whichever account is linked to your Lichess login — separate from the Lichess game token used to play games, further down the page.</p>'
+        +'<p class="auth-lichess-note">Signs in to whichever account is linked to your Lichess login, and connects it for playing games too. (The manual token option further down still works if you’d rather use that instead.)</p>'
         +'<p class="online-status" id="accountError"></p>';
     }else if(accountUiMode==='reset'){
       dropdown=(passwordResetSentTo
@@ -7638,20 +7641,45 @@
   // here directly; the actual session update happens on redirect back,
   // picked up by the onAuthStateChange listener below like any other
   // auth event.
+  // OUR-131: one Lichess sign-in now also grants gameplay permission --
+  // Adni's call, no separate identity-only vs. connect-for-play buttons.
+  // scopes:'board:play' is passed the same way for both linkIdentity()
+  // and signInWithOAuth() (both funnel into gotrue-js's shared internal
+  // _getUrlForProvider(), confirmed directly in its source: it reads
+  // options.scopes off whichever call reached it -- there's no separate
+  // shape for the two methods). Confirmed via GoTrue's own source that
+  // custom providers honor a per-call scopes override with no platform
+  // restriction (loadCustomProvider(): "Use provider scopes if not
+  // overridden").
+  const LICHESS_OAUTH_SCOPES='board:play';
   async function handleLichessClaim(){
     try{
       await onlineUser();   // ensures SOME session exists to attach Lichess to
       const redirectTo=location.origin+location.pathname;
-      const r=await db.auth.linkIdentity({provider:'custom:lichess',options:{redirectTo}});
+      const r=await db.auth.linkIdentity({provider:'custom:lichess',options:{redirectTo,scopes:LICHESS_OAUTH_SCOPES}});
       if(r.error) throw r.error;
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not start Lichess sign-in.')); }
   }
   async function handleLichessSignIn(){
     try{
       const redirectTo=location.origin+location.pathname;
-      const r=await db.auth.signInWithOAuth({provider:'custom:lichess',options:{redirectTo}});
+      const r=await db.auth.signInWithOAuth({provider:'custom:lichess',options:{redirectTo,scopes:LICHESS_OAUTH_SCOPES}});
       if(r.error) throw r.error;
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not start Lichess sign-in.')); }
+  }
+  // Stores a gameplay token the exact same way the manual-paste flow
+  // does (see lichessSaveTokenBtn's own handler further down) -- same
+  // three effects (in-memory var, localStorage, username cache reset)
+  // so the existing OUR-76 gameplay code (seek/AI games/chat/abort/
+  // resign) can't tell the difference between a pasted token and one
+  // captured from this OAuth sign-in. Kept as its own function rather
+  // than merged with that handler since the two have different UI
+  // surfaces (a form field there, an auth event here) and different
+  // status copy to show.
+  function captureLichessGameplayToken(token){
+    if(!token) return;
+    lichessToken=token; lichessUsername=null;
+    try{ localStorage.setItem(LICHESS_TOKEN_KEY,token); }catch(e){}
   }
   // OUR-130: standard "forgot password" flow for existing email/password
   // accounts (OUR-126 had none at all). Supabase's own resetPasswordForEmail()
@@ -7717,9 +7745,18 @@
   // so currentAccountStatus() offers the new-password form instead of
   // silently dropping the player onto their normal signed-in view with no
   // way to actually finish the reset.
+  //
+  // OUR-131: session.provider_token -- the raw Lichess access token this
+  // sign-in just obtained -- is only ever emitted once, right here, on
+  // the event that lands the completed OAuth redirect (confirmed in
+  // gotrue-js: its own doc comment says the client library emits it
+  // "only once immediately after the user signs in"). getSession() later
+  // will not have it. So it has to be captured on this exact callback or
+  // not at all -- there's no second chance to fetch it afterward.
   if(db){
-    db.auth.onAuthStateChange((event)=>{
+    db.auth.onAuthStateChange((event,session)=>{
       if(event==='PASSWORD_RECOVERY') passwordRecoveryActive=true;
+      if(session&&session.provider_token) captureLichessGameplayToken(session.provider_token);
       renderAccount();
     });
   }
