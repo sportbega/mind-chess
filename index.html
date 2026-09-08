@@ -173,6 +173,21 @@
   .btn.primary{background:var(--accent);border-color:var(--accent);color:#1b140a}
   .btn:disabled{opacity:.4;cursor:not-allowed}
 
+  /* OUR-128: persistent Sign In/Sign Up bar, top of page (see the HTML
+     comment above <header>). .auth-bar's own position:relative is what
+     lets .auth-dropdown anchor to it with position:absolute rather than
+     the page, and right-aligns the row the same way a Lichess-style
+     top-corner control does. */
+  .auth-bar{position:relative;display:flex;justify-content:flex-end;margin-bottom:-4px}
+  .auth-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim)}
+  .auth-row .btn{padding:5px 14px;font-size:12px}
+  .auth-row .acct-email{color:var(--text);font-weight:500}
+  .auth-dropdown{position:absolute;top:100%;right:0;margin-top:8px;z-index:40;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 16px;width:min(300px,90vw);display:flex;flex-direction:column;gap:10px}
+  .auth-dropdown p{margin:0;font-size:13px;color:var(--text-dim)}
+  .auth-dropdown .field-grid{margin-top:0}
+
   .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
   .movestrip .num{color:var(--accent-2);margin-right:2px}
   .movestrip .san{color:var(--text);margin-right:14px}
@@ -531,6 +546,20 @@
     </div>
   </div>
 
+  <!-- OUR-128 Phase D groundwork: persistent Sign In/Sign Up entry point,
+       replacing OUR-126's collapsible Account panel that used to sit
+       buried in the settings section below — a new visitor would never
+       find that without opening it first, defeating the whole point of
+       having accounts. Same #accountBody id and the exact same
+       renderAccount()/currentAccountStatus()/handleAccountSignupStart()/
+       handleSetPassword()/handleAccountLogin()/handleAccountLogout()/
+       friendlyAuthErrorMessage() functions underneath, untouched — this
+       is a container/presentation change only. Sits above <header> rather
+       than inside its five-control row (OUR-93's own row already has a
+       precise order this shouldn't disturb), matching the "small bar at
+       the very top" pattern most sites use for auth. -->
+  <div class="auth-bar"><div id="accountBody"><p class="empty">Loading…</p></div></div>
+
   <header>
     <div>
       <p class="eyebrow">Voice / blindfold mode</p>
@@ -808,18 +837,6 @@
   <details class="help" id="statsDetails">
     <summary>Statistics</summary>
     <div id="statsBody"><p class="empty">Loading…</p></div>
-  </details>
-
-  <!-- OUR-126 Phase B: same collapsible-panel, JS-fills-the-body
-       convention as Statistics just above (renderAccount() below fills
-       #accountBody the first time this opens and on every toggle after —
-       matches statsDetails' own "don't pay for a round trip you never
-       asked for" reasoning). Deliberately minimal per Phase B's own
-       scoping: status line + whichever form is active. Full polish is
-       Phase D's job, not this one's. -->
-  <details class="help" id="accountDetails">
-    <summary>Account</summary>
-    <div id="accountBody"><p class="empty">Loading…</p></div>
   </details>
 
   <details class="help" id="gameSettingsDetails" open>
@@ -1328,7 +1345,7 @@
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         statsDetails=$('statsDetails'), statsBody=$('statsBody'),
-        accountDetails=$('accountDetails'), accountBody=$('accountBody'),
+        accountBody=$('accountBody'),
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
@@ -3567,12 +3584,6 @@
     });
   }
   statsDetails.addEventListener('toggle',()=>{ if(statsDetails.open) renderStats(); });
-  // renderAccount() itself lives near onlineUser()/db further down (it's
-  // fundamentally about that identity, not about stats) — a hoisted
-  // function declaration, so referencing it here from an earlier point in
-  // the file is fine; only the call site needs it to exist, not this
-  // registration.
-  accountDetails.addEventListener('toggle',()=>{ if(accountDetails.open) renderAccount(); });
 
   // ===============================================================
   // OUR-116: Game review — Stockfish-driven post-game analysis.
@@ -4372,7 +4383,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r121 (clearer message for Supabase’s default email rate limit)';
+  const BUILD='v2-r122 (OUR-128: persistent Sign In/Sign Up bar)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7359,6 +7370,17 @@
     return '<div class="field"><label for="'+id+'">'+label+'</label>'
       +'<input type="'+type+'" id="'+id+'" autocomplete="'+(type==='email'?'email':'new-password')+'"></div>';
   }
+  // OUR-128 Phase D groundwork: accountBody is now a permanently-visible
+  // bar (see the HTML comment above <header>), not a <details> a player
+  // opens on demand -- so every branch below renders a compact one-line
+  // ".auth-row" (identity/status + the one or two buttons that state
+  // offers) and, only while a form is actually needed, a ".auth-dropdown"
+  // beneath it. Guest state shows "Sign In" and "Sign Up" as two distinct
+  // buttons rather than one menu, on purpose: signing up claims the
+  // current guest's own history, signing in can switch to a completely
+  // different pre-existing account (see handleAccountLogin's own comment) --
+  // collapsing them into one control would blur exactly the distinction
+  // OUR-126 was careful to keep visible.
   async function renderAccount(){
     if(!accountBody) return;
     if(!db){
@@ -7368,17 +7390,22 @@
     const status=await currentAccountStatus();
     if(status.kind==='signed-in'){
       accountUiMode='idle';
-      accountBody.innerHTML='<p>Signed in as <b class="acct-email"></b>.</p>'
-        +'<button class="btn" id="accountLogoutBtn" type="button">Log out</button>';
+      accountBody.innerHTML='<div class="auth-row"><span>Signed in as <b class="acct-email"></b></span>'
+        +'<button class="btn" id="accountLogoutBtn" type="button">Log out</button></div>';
       accountBody.querySelector('.acct-email').textContent=status.user.email;
       accountBody.querySelector('#accountLogoutBtn').addEventListener('click',handleAccountLogout);
       return;
     }
     if(status.kind==='needs-password'){
-      accountBody.innerHTML='<p>Email confirmed for <b class="acct-email"></b> — set a password to finish creating your account:</p>'
+      // Urgent follow-up, not a click-to-open state -- the dropdown shows
+      // itself immediately, same "don't strand them mid-claim" reasoning
+      // the old accountDetails.open=true auto-reveal used to cover.
+      accountBody.innerHTML='<div class="auth-row"><span>Confirmed as <b class="acct-email"></b> — set a password to finish:</span></div>'
+        +'<div class="auth-dropdown">'
         +'<div class="field-grid">'+accountField('Password','accountNewPassword','password')+'</div>'
-        +'<button class="btn" id="accountSetPasswordBtn" type="button">Set password</button>'
-        +'<p class="online-status" id="accountError"></p>';
+        +'<button class="btn primary" id="accountSetPasswordBtn" type="button">Set password</button>'
+        +'<p class="online-status" id="accountError"></p>'
+        +'</div>';
       accountBody.querySelector('.acct-email').textContent=status.user.email;
       accountBody.querySelector('#accountSetPasswordBtn').addEventListener('click',()=>{
         const pw=accountBody.querySelector('#accountNewPassword').value;
@@ -7388,16 +7415,41 @@
     }
     // Guest — status.user may exist (an anonymous session already) or not
     // (nothing has touched Supabase yet); either way the buttons offered
-    // are the same.
+    // are the same. Sign In/Sign Up stay visible even while their own
+    // dropdown is open, so switching between them (or re-clicking to
+    // close) doesn't need a separate Cancel click first.
+    let dropdown='';
     if(accountUiMode==='signup'){
-      accountBody.innerHTML=(accountPendingEmail
-        ?'<p>Confirmation email sent to <b class="acct-email"></b> — click the link in it, then come back here to set a password. (Checked automatically; re-open this panel after clicking it if it doesn’t update on its own.)</p>'
+      dropdown=(accountPendingEmail
+        ?'<p>Confirmation email sent to <b class="acct-email"></b> — click the link in it, then come back here to set a password.</p>'
           +'<button class="btn" id="accountCancelBtn" type="button">Start over</button>'
         :'<p>Create an account to keep your progress across browsers and devices — playing as Guest still works exactly the same either way.</p>'
           +'<div class="field-grid">'+accountField('Email','accountSignupEmail','email')+'</div>'
-          +'<button class="btn" id="accountSignupBtn" type="button">Send confirmation email</button>'
+          +'<button class="btn primary" id="accountSignupBtn" type="button">Send confirmation email</button>'
           +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>')
         +'<p class="online-status" id="accountError"></p>';
+    }else if(accountUiMode==='login'){
+      dropdown='<p>Signing in switches to a <b>different</b> account’s history. To keep this Guest’s history and just add a password, use “Sign Up” instead.</p>'
+        +'<div class="field-grid">'+accountField('Email','accountLoginEmail','email')+accountField('Password','accountLoginPassword','password')+'</div>'
+        +'<button class="btn primary" id="accountLoginBtn" type="button">Sign in</button>'
+        +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
+        +'<p class="online-status" id="accountError"></p>';
+    }
+    accountBody.innerHTML='<div class="auth-row">'
+      +'<button class="btn" id="accountLoginOpenBtn" type="button">Sign In</button>'
+      +'<button class="btn primary" id="accountSignupOpenBtn" type="button">Sign Up</button>'
+      +'</div>'
+      +(dropdown?'<div class="auth-dropdown">'+dropdown+'</div>':'');
+    accountBody.querySelector('#accountSignupOpenBtn').addEventListener('click',()=>{
+      accountUiMode=(accountUiMode==='signup')?'idle':'signup';
+      accountPendingEmail=null;
+      renderAccount();
+    });
+    accountBody.querySelector('#accountLoginOpenBtn').addEventListener('click',()=>{
+      accountUiMode=(accountUiMode==='login')?'idle':'login';
+      renderAccount();
+    });
+    if(accountUiMode==='signup'){
       if(accountPendingEmail) accountBody.querySelector('.acct-email').textContent=accountPendingEmail;
       const signupBtn=accountBody.querySelector('#accountSignupBtn');
       if(signupBtn) signupBtn.addEventListener('click',()=>{
@@ -7407,14 +7459,7 @@
       accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
         accountUiMode='idle'; accountPendingEmail=null; renderAccount();
       });
-      return;
-    }
-    if(accountUiMode==='login'){
-      accountBody.innerHTML='<p>Logging in switches to a <b>different</b> account’s history. If you want to keep playing as this Guest and just add a password, use “Create account” instead.</p>'
-        +'<div class="field-grid">'+accountField('Email','accountLoginEmail','email')+accountField('Password','accountLoginPassword','password')+'</div>'
-        +'<button class="btn" id="accountLoginBtn" type="button">Log in</button>'
-        +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
-        +'<p class="online-status" id="accountError"></p>';
+    }else if(accountUiMode==='login'){
       accountBody.querySelector('#accountLoginBtn').addEventListener('click',()=>{
         const email=accountBody.querySelector('#accountLoginEmail').value.trim();
         const password=accountBody.querySelector('#accountLoginPassword').value;
@@ -7423,17 +7468,7 @@
       accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
         accountUiMode='idle'; renderAccount();
       });
-      return;
     }
-    accountBody.innerHTML='<p>Playing as Guest.</p>'
-      +'<button class="btn" id="accountSignupOpenBtn" type="button">Create account</button>'
-      +'<button class="btn" id="accountLoginOpenBtn" type="button">Log in</button>';
-    accountBody.querySelector('#accountSignupOpenBtn').addEventListener('click',()=>{
-      accountUiMode='signup'; accountPendingEmail=null; renderAccount();
-    });
-    accountBody.querySelector('#accountLoginOpenBtn').addEventListener('click',()=>{
-      accountUiMode='login'; renderAccount();
-    });
   }
   function accountError(msg){
     const el=accountBody.querySelector('#accountError');
@@ -7508,20 +7543,13 @@
   // Catches the cross-tab case: clicking the confirmation link opens (or
   // reuses) a tab that's a fresh load of this same page, where supabase-js
   // parses the email-change tokens from the URL on its own and fires
-  // SIGNED_IN — this app never has to touch the URL itself. If that
-  // lands the session in the "confirmed, no password yet" state, the
-  // Account panel opens itself rather than leaving the player to find it,
-  // since the whole point of this flow is not stranding them mid-claim.
+  // SIGNED_IN — this app never has to touch the URL itself. The auth bar
+  // is unconditionally visible now (OUR-128), so there's no panel left to
+  // open — just re-render it; currentAccountStatus() (via the RPC/pending-
+  // claim marker) already lands on 'needs-password' correctly when that's
+  // the state this event just produced.
   if(db){
-    db.auth.onAuthStateChange((event,session)=>{
-      // is_anonymous is already false by the time email_confirmed_at is
-      // set (see currentAccountStatus() above) -- the pending-claim marker
-      // is what actually still means "confirmed, no password yet" here.
-      if(session&&session.user&&session.user.email&&getPendingClaim()===session.user.id){
-        accountDetails.open=true;
-      }
-      if(accountDetails.open) renderAccount();
-    });
+    db.auth.onAuthStateChange(()=>{ renderAccount(); });
   }
 
   async function saveOnline(){
@@ -9326,6 +9354,11 @@
   // micLog from the start and the panel renders them when it appears.
   resetTips();
   warmEngine();
+  // OUR-128: the auth bar is unconditionally visible now (not a <details>
+  // a player has to open first, per OUR-126), so it needs its first render
+  // kicked off here at boot rather than waiting for a toggle event that no
+  // longer exists.
+  renderAccount();
   initDiagnostics();
   setupDebug();
 })();
