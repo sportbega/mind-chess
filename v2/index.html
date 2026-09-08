@@ -810,6 +810,18 @@
     <div id="statsBody"><p class="empty">Loading…</p></div>
   </details>
 
+  <!-- OUR-126 Phase B: same collapsible-panel, JS-fills-the-body
+       convention as Statistics just above (renderAccount() below fills
+       #accountBody the first time this opens and on every toggle after —
+       matches statsDetails' own "don't pay for a round trip you never
+       asked for" reasoning). Deliberately minimal per Phase B's own
+       scoping: status line + whichever form is active. Full polish is
+       Phase D's job, not this one's. -->
+  <details class="help" id="accountDetails">
+    <summary>Account</summary>
+    <div id="accountBody"><p class="empty">Loading…</p></div>
+  </details>
+
   <details class="help" id="gameSettingsDetails" open>
     <summary>Game settings</summary>
     <div class="field-grid">
@@ -1316,6 +1328,7 @@
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         statsDetails=$('statsDetails'), statsBody=$('statsBody'),
+        accountDetails=$('accountDetails'), accountBody=$('accountBody'),
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
@@ -3217,29 +3230,47 @@
         mode:e.mode, level:e.level||null, color, result, pgn:e.pgn||'',
         eco:e.eco||null, opening_name:(e.opening_name!==undefined?e.opening_name:e.openingName)||null,
         accuracy:(accuracy!=null?accuracy:null), endedAt,
-        client_key:computeClientKey(e.mode,endedAt,e.pgn||''), synced:false
+        client_key:computeClientKey(e.mode,endedAt,e.pgn||''), synced:false, logged_under:null
       };
     });
     if(changed) saveGamesLog(out);
     return out;
   }
-  function markLocalEntrySynced(client_key){
+  // OUR-126 Phase B: logging into a DIFFERENT existing account (not
+  // claiming the current guest one) is now possible, and that exposed a
+  // real gap in Phase A's backfill — it just synced "whatever's unsynced"
+  // to "whoever's currently signed in", which was fine when the only way
+  // to gain a session was claiming your own anonymous identity, but would
+  // silently mix a guest's local history into an unrelated pre-existing
+  // account the moment someone logs into one instead. logged_under records
+  // which identity a local entry actually belongs to once that's known —
+  // null until then (never synced, or synced before this field existed) —
+  // and every reader/writer below treats "null or matches the current
+  // user" as eligible, "belongs to someone else" as untouchable.
+  function stampLocalEntry(client_key,userId,synced){
     const log=loadGamesLog();
     let changed=false;
-    for(const e of log){ if(e.client_key===client_key&&!e.synced){ e.synced=true; changed=true; } }
+    for(const e of log){
+      if(e.client_key===client_key){
+        if(userId&&e.logged_under!==userId){ e.logged_under=userId; changed=true; }
+        if(synced&&!e.synced){ e.synced=true; changed=true; }
+        break;
+      }
+    }
     if(changed) saveGamesLog(log);
   }
-  // Uploads every not-yet-synced local entry, keyed by the SAME
-  // (user_id, client_key) uniqueness the live per-game sync relies on —
-  // running this twice (two browsers backfilling the same claimed account,
-  // a repeat call within one session) can't double-count, the database
-  // rejects the repeat insert rather than this function needing to get its
-  // own bookkeeping right. Only ever called with a user that already has a
-  // real session (see callers) — never what creates one.
+  // Uploads every not-yet-synced local entry that belongs to THIS user (or
+  // to no one yet), keyed by the SAME (user_id, client_key) uniqueness the
+  // live per-game sync relies on — running this twice (two browsers
+  // backfilling the same claimed account, a repeat call within one
+  // session) can't double-count, the database rejects the repeat insert
+  // rather than this function needing to get its own bookkeeping right.
+  // Only ever called with a user that already has a real session (see
+  // callers) — never what creates one.
   let backfillAttempted=false;
   async function backfillLocalStats(user){
     if(!db||!user||backfillAttempted) return;
-    const pending=normalizedGamesLog().filter(e=>!e.synced);
+    const pending=normalizedGamesLog().filter(e=>!e.synced&&(e.logged_under==null||e.logged_under===user.id));
     if(!pending.length) return;
     backfillAttempted=true;
     const rows=pending.map(e=>({
@@ -3249,7 +3280,7 @@
     }));
     try{
       const r=await db.from('mind_chess_results').upsert(rows,{onConflict:'user_id,client_key',ignoreDuplicates:true});
-      if(!r.error){ for(const e of pending) markLocalEntrySynced(e.client_key); }
+      if(!r.error){ for(const e of pending) stampLocalEntry(e.client_key,user.id,true); }
     }catch(e){ backfillAttempted=false; }
   }
 
@@ -3335,7 +3366,7 @@
     // who's never been online still has an offline-readable history, and
     // one who has can see it immediately without waiting on a round trip.
     logCompletedGame({mode, level, color, result, pgn, eco, opening_name,
-      accuracy:null, endedAt, client_key, synced:false});
+      accuracy:null, endedAt, client_key, synced:false, logged_under:null});
     // Then an opportunistic remote sync — never forces a session into
     // existence just to log a stat (see tryGetExistingUser()), so a purely
     // offline game triggers exactly the same zero network calls it always
@@ -3345,13 +3376,18 @@
     // even if onGameEnd() somehow ran twice for the same game.
     if(db){
       tryGetExistingUser().then(user=>{
-        if(!user) return null;
+        if(!user) return {user,r:null};
         return db.from('mind_chess_results').upsert({
           user_id:user.id, mode, color, result, level, pgn, eco,
           opening_name, client_key
-        },{onConflict:'user_id,client_key',ignoreDuplicates:true});
-      }).then(r=>{
-        if(r&&!r.error) markLocalEntrySynced(client_key);
+        },{onConflict:'user_id,client_key',ignoreDuplicates:true}).then(r=>({user,r}));
+      }).then(({user,r})=>{
+        // Stamps who this game actually happened under the moment that's
+        // known, whether or not the upload itself succeeded this time —
+        // a transient failure shouldn't cost this entry its attribution
+        // for a later retry, only the sync flag itself needs the upload
+        // to have actually landed.
+        if(user) stampLocalEntry(client_key,user.id,!!(r&&!r.error));
       }).catch(()=>{});
     }
     // OUR-116: remembered so "Review game" doesn't have to re-derive which
@@ -3482,15 +3518,28 @@
     // local-stats backfill on this too, so opening Stats is itself one of
     // the "opportunistic" moments a first sync can happen.
     const remoteFetch=(db?onlineUser().then(user=>db.from('mind_chess_results').select('*').eq('user_id',user.id)
-      .order('created_at',{ascending:false}).limit(500)).then(r=>r.data||null).catch(()=>null):Promise.resolve(null));
-    remoteFetch.then(remote=>{
+      .order('created_at',{ascending:false}).limit(500).then(r=>({userId:user.id,remote:r.data||null})))
+      .catch(()=>({userId:null,remote:null})):Promise.resolve({userId:null,remote:null}));
+    remoteFetch.then(({userId,remote})=>{
       // One unified list (OUR-124 Phase A): trust the live remote view for
       // whatever it already has, and add only the local entries NOT yet
       // synced — a synced local entry has a remote twin already in
       // `remote`, so including it too would double-count. Offline, or no
       // session yet, falls back to the full local log, synced or not
       // (nothing to double against).
-      const all=remote?remote.concat(localAll.filter(e=>!e.synced)):localAll;
+      //
+      // OUR-126 Phase B: when there IS a remote view to merge into, a local
+      // entry already attributed to a DIFFERENT identity (logged_under
+      // set, doesn't match this session) is excluded from the merge too —
+      // it belongs to whichever account it was actually logged under, not
+      // to whoever happens to be signed in when Statistics gets opened
+      // next. See stampLocalEntry() above. No remote to merge into (offline,
+      // no session, a failed fetch) falls back to the full local log
+      // exactly as before Phase B — there's no risk of attributing it to
+      // the wrong account when there's no account view to contaminate.
+      const all=remote
+        ?remote.concat(localAll.filter(e=>!e.synced&&(e.logged_under==null||e.logged_under===userId)))
+        :localAll;
       const personalized=all.filter(e=>e.mode!=='two-player');
       const totalPlayed=all.length;
       const wins=personalized.filter(e=>e.result==='win').length;
@@ -3518,6 +3567,12 @@
     });
   }
   statsDetails.addEventListener('toggle',()=>{ if(statsDetails.open) renderStats(); });
+  // renderAccount() itself lives near onlineUser()/db further down (it's
+  // fundamentally about that identity, not about stats) — a hoisted
+  // function declaration, so referencing it here from an earlier point in
+  // the file is fine; only the call site needs it to exist, not this
+  // registration.
+  accountDetails.addEventListener('toggle',()=>{ if(accountDetails.open) renderAccount(); });
 
   // ===============================================================
   // OUR-116: Game review — Stockfish-driven post-game analysis.
@@ -4317,7 +4372,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r118 (Phase A: unified stats storage, own Supabase project split from Giga Chess)';
+  const BUILD='v2-r119 (Phase B: email/password accounts, anonymous-to-permanent linking — OUR-126)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7237,6 +7292,192 @@
     // whatever actually called onlineUser().
     backfillLocalStats(user).catch(()=>{});
     return user;
+  }
+
+  // ===============================================================
+  // OUR-126 Phase B: email/password accounts, with anonymous-to-permanent
+  // linking. Deliberately minimal UI (a status line + whichever one form
+  // is active) — Phase D's job is polish, this one's job is the actual
+  // mechanics working. Google/Lichess OAuth are separately parked
+  // (OUR-125); this covers email/password only.
+  //
+  // The claim flow is two Supabase calls, not one, and that's not
+  // optional: updateUser({email}) on an anonymous session starts an
+  // email-change-style confirmation (Supabase reuses that flow for
+  // "give an anonymous user their first email" — there's no separate
+  // "add email" endpoint), and a password can't be set until that email
+  // is verified — "insecure to link an unverified address" is Supabase's
+  // own reasoning, and it applies here even though nothing is being
+  // *changed*. So: send the confirmation email now, and the actual
+  // account only finishes existing once the player comes back (this tab
+  // or a fresh one from clicking the email link) and sets a password.
+  //
+  // No API/MCP path confirms this ahead of time, so it's stated here
+  // rather than assumed: the confirmation email's redirect has to land
+  // back on a URL this project's Auth settings actually allow (Additional
+  // Redirect URLs) — emailRedirectTo below always points at wherever this
+  // page is actually being served from, but if that exact origin+path
+  // isn't allowlisted in the dashboard, Supabase will refuse the redirect
+  // or bounce it to a default that isn't this app. Flagging this now
+  // rather than after Adni hits it blind, same as the anon-signin toggle
+  // from Phase A.
+  let accountUiMode='idle';   // 'idle' | 'signup' | 'login'
+  let accountPendingEmail=null;
+  async function currentAccountStatus(){
+    if(!db) return {kind:'unavailable'};
+    try{
+      const {data:{session}}=await db.auth.getSession();
+      if(!session) return {kind:'guest',user:null};
+      const user=session.user;
+      if(!user.is_anonymous&&user.email) return {kind:'signed-in',user};
+      if(user.is_anonymous&&user.email_confirmed_at) return {kind:'needs-password',user};
+      return {kind:'guest',user};
+    }catch(e){ return {kind:'unavailable'}; }
+  }
+  function accountField(label,id,type){
+    return '<div class="field"><label for="'+id+'">'+label+'</label>'
+      +'<input type="'+type+'" id="'+id+'" autocomplete="'+(type==='email'?'email':'new-password')+'"></div>';
+  }
+  async function renderAccount(){
+    if(!accountBody) return;
+    if(!db){
+      accountBody.innerHTML='<p class="empty">Accounts need Supabase configured — see supabase-config.js.</p>';
+      return;
+    }
+    const status=await currentAccountStatus();
+    if(status.kind==='signed-in'){
+      accountUiMode='idle';
+      accountBody.innerHTML='<p>Signed in as <b class="acct-email"></b>.</p>'
+        +'<button class="btn" id="accountLogoutBtn" type="button">Log out</button>';
+      accountBody.querySelector('.acct-email').textContent=status.user.email;
+      accountBody.querySelector('#accountLogoutBtn').addEventListener('click',handleAccountLogout);
+      return;
+    }
+    if(status.kind==='needs-password'){
+      accountBody.innerHTML='<p>Email confirmed for <b class="acct-email"></b> — set a password to finish creating your account:</p>'
+        +'<div class="field-grid">'+accountField('Password','accountNewPassword','password')+'</div>'
+        +'<button class="btn" id="accountSetPasswordBtn" type="button">Set password</button>'
+        +'<p class="online-status" id="accountError"></p>';
+      accountBody.querySelector('.acct-email').textContent=status.user.email;
+      accountBody.querySelector('#accountSetPasswordBtn').addEventListener('click',()=>{
+        const pw=accountBody.querySelector('#accountNewPassword').value;
+        handleSetPassword(pw);
+      });
+      return;
+    }
+    // Guest — status.user may exist (an anonymous session already) or not
+    // (nothing has touched Supabase yet); either way the buttons offered
+    // are the same.
+    if(accountUiMode==='signup'){
+      accountBody.innerHTML=(accountPendingEmail
+        ?'<p>Confirmation email sent to <b class="acct-email"></b> — click the link in it, then come back here to set a password. (Checked automatically; re-open this panel after clicking it if it doesn’t update on its own.)</p>'
+          +'<button class="btn" id="accountCancelBtn" type="button">Start over</button>'
+        :'<p>Create an account to keep your progress across browsers and devices — playing as Guest still works exactly the same either way.</p>'
+          +'<div class="field-grid">'+accountField('Email','accountSignupEmail','email')+'</div>'
+          +'<button class="btn" id="accountSignupBtn" type="button">Send confirmation email</button>'
+          +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>')
+        +'<p class="online-status" id="accountError"></p>';
+      if(accountPendingEmail) accountBody.querySelector('.acct-email').textContent=accountPendingEmail;
+      const signupBtn=accountBody.querySelector('#accountSignupBtn');
+      if(signupBtn) signupBtn.addEventListener('click',()=>{
+        const email=accountBody.querySelector('#accountSignupEmail').value.trim();
+        handleAccountSignupStart(email);
+      });
+      accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
+        accountUiMode='idle'; accountPendingEmail=null; renderAccount();
+      });
+      return;
+    }
+    if(accountUiMode==='login'){
+      accountBody.innerHTML='<p>Logging in switches to a <b>different</b> account’s history. If you want to keep playing as this Guest and just add a password, use “Create account” instead.</p>'
+        +'<div class="field-grid">'+accountField('Email','accountLoginEmail','email')+accountField('Password','accountLoginPassword','password')+'</div>'
+        +'<button class="btn" id="accountLoginBtn" type="button">Log in</button>'
+        +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
+        +'<p class="online-status" id="accountError"></p>';
+      accountBody.querySelector('#accountLoginBtn').addEventListener('click',()=>{
+        const email=accountBody.querySelector('#accountLoginEmail').value.trim();
+        const password=accountBody.querySelector('#accountLoginPassword').value;
+        handleAccountLogin(email,password);
+      });
+      accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
+        accountUiMode='idle'; renderAccount();
+      });
+      return;
+    }
+    accountBody.innerHTML='<p>Playing as Guest.</p>'
+      +'<button class="btn" id="accountSignupOpenBtn" type="button">Create account</button>'
+      +'<button class="btn" id="accountLoginOpenBtn" type="button">Log in</button>';
+    accountBody.querySelector('#accountSignupOpenBtn').addEventListener('click',()=>{
+      accountUiMode='signup'; accountPendingEmail=null; renderAccount();
+    });
+    accountBody.querySelector('#accountLoginOpenBtn').addEventListener('click',()=>{
+      accountUiMode='login'; renderAccount();
+    });
+  }
+  function accountError(msg){
+    const el=accountBody.querySelector('#accountError');
+    if(el) el.textContent=msg;
+  }
+  async function handleAccountSignupStart(email){
+    if(!email){ accountError('Enter an email address.'); return; }
+    try{
+      await onlineUser();   // ensures SOME session exists to attach email to
+      const redirectTo=location.origin+location.pathname;
+      const r=await db.auth.updateUser({email},{emailRedirectTo:redirectTo});
+      if(r.error) throw r.error;
+      accountPendingEmail=email;
+      renderAccount();
+    }catch(e){ accountError(e.message||'Could not start sign-up.'); }
+  }
+  async function handleSetPassword(password){
+    if(!password){ accountError('Enter a password.'); return; }
+    try{
+      const r=await db.auth.updateUser({password});
+      if(r.error) throw r.error;
+      backfillAttempted=false;   // a real credential now exists -- worth
+                                  // retrying local stats under this identity.
+      accountPendingEmail=null;
+      renderAccount();
+      if(statsDetails.open) renderStats();
+    }catch(e){ accountError(e.message||'Could not set password.'); }
+  }
+  async function handleAccountLogin(email,password){
+    if(!email||!password){ accountError('Enter both email and password.'); return; }
+    try{
+      const r=await db.auth.signInWithPassword({email,password});
+      if(r.error) throw r.error;
+      backfillAttempted=false;
+      accountUiMode='idle';
+      renderAccount();
+      if(statsDetails.open) renderStats();
+    }catch(e){ accountError(e.message||'Could not log in.'); }
+  }
+  async function handleAccountLogout(){
+    try{ await db.auth.signOut(); }catch(e){}
+    // Deliberately not re-establishing a session here — logging out just
+    // means "no session" again, the exact same state a brand new visitor
+    // starts from. Computer/two-player play needed no session before this
+    // and needs none now; online/Lichess/Statistics will create a fresh
+    // anonymous one on demand the next time any of them is actually used,
+    // same as always.
+    accountUiMode='idle';
+    renderAccount();
+    if(statsDetails.open) renderStats();
+  }
+  // Catches the cross-tab case: clicking the confirmation link opens (or
+  // reuses) a tab that's a fresh load of this same page, where supabase-js
+  // parses the email-change tokens from the URL on its own and fires
+  // SIGNED_IN — this app never has to touch the URL itself. If that
+  // lands the session in the "confirmed, no password yet" state, the
+  // Account panel opens itself rather than leaving the player to find it,
+  // since the whole point of this flow is not stranding them mid-claim.
+  if(db){
+    db.auth.onAuthStateChange((event,session)=>{
+      if(session&&session.user&&session.user.is_anonymous&&session.user.email_confirmed_at){
+        accountDetails.open=true;
+      }
+      if(accountDetails.open) renderAccount();
+    });
   }
 
   async function saveOnline(){
