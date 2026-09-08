@@ -188,6 +188,7 @@
   .auth-dropdown p{margin:0;font-size:13px;color:var(--text-dim)}
   .auth-or{text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);opacity:.7}
   .auth-lichess-note{font-size:11px;opacity:.75}
+  .auth-link{background:none;border:none;padding:0;font-size:12px;color:var(--accent-2);text-decoration:underline;cursor:pointer;align-self:flex-start}
   .auth-dropdown .field-grid{margin-top:0}
 
   .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
@@ -4385,7 +4386,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r123 (OUR-129: Sign in with Lichess)';
+  const BUILD='v2-r124 (OUR-130: Forgot password flow)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7334,8 +7335,17 @@
   // or bounce it to a default that isn't this app. Flagging this now
   // rather than after Adni hits it blind, same as the anon-signin toggle
   // from Phase A.
-  let accountUiMode='idle';   // 'idle' | 'signup' | 'login'
+  let accountUiMode='idle';   // 'idle' | 'signup' | 'login' | 'reset'
   let accountPendingEmail=null;
+  let passwordResetSentTo=null;
+  // Set only by the PASSWORD_RECOVERY auth event (see the onAuthStateChange
+  // listener below) -- this is a genuinely different situation from
+  // needs-password above: that one is an anonymous session mid-claim,
+  // this one is an EXISTING real account that arrived via a recovery link
+  // and is not anonymous at all, so currentAccountStatus()'s is_anonymous
+  // check would otherwise land it on plain 'signed-in' and never offer a
+  // way to actually set the new password.
+  let passwordRecoveryActive=false;
   const PENDING_CLAIM_KEY='mind-chess-v2-pending-claim';
   function setPendingClaim(userId){ try{ localStorage.setItem(PENDING_CLAIM_KEY,userId); }catch(e){} }
   function clearPendingClaim(){ try{ localStorage.removeItem(PENDING_CLAIM_KEY); }catch(e){} }
@@ -7358,6 +7368,7 @@
       const {data:{session}}=await db.auth.getSession();
       if(!session) return {kind:'guest',user:null};
       const user=session.user;
+      if(passwordRecoveryActive) return {kind:'password-recovery',user};
       // OUR-129: a non-anonymous session is fully signed in regardless of
       // provider. This has to come before any email check now -- Lichess
       // accounts never carry an email at all (confirmed against Lichess's
@@ -7442,6 +7453,25 @@
       });
       return;
     }
+    if(status.kind==='password-recovery'){
+      // Arrived via a real recovery-link click (PASSWORD_RECOVERY event,
+      // see the onAuthStateChange listener) -- an existing account, not
+      // an anonymous claim, so this reuses needs-password's look but not
+      // its handler: handleSetNewPasswordFromRecovery() clears the
+      // recovery flag afterward instead of the pending-claim marker.
+      accountBody.innerHTML='<div class="auth-row"><span>Choose a new password for <b class="acct-email"></b>:</span></div>'
+        +'<div class="auth-dropdown">'
+        +'<div class="field-grid">'+accountField('Password','accountRecoveryPassword','password')+'</div>'
+        +'<button class="btn primary" id="accountRecoverySetBtn" type="button">Set new password</button>'
+        +'<p class="online-status" id="accountError"></p>'
+        +'</div>';
+      accountBody.querySelector('.acct-email').textContent=accountDisplayName(status.user);
+      accountBody.querySelector('#accountRecoverySetBtn').addEventListener('click',()=>{
+        const pw=accountBody.querySelector('#accountRecoveryPassword').value;
+        handleSetNewPasswordFromRecovery(pw);
+      });
+      return;
+    }
     // Guest — status.user may exist (an anonymous session already) or not
     // (nothing has touched Supabase yet); either way the buttons offered
     // are the same. Sign In/Sign Up stay visible even while their own
@@ -7473,11 +7503,21 @@
     }else if(accountUiMode==='login'){
       dropdown='<p>Signing in switches to a <b>different</b> account’s history. To keep this Guest’s history and just add a password, use “Sign Up” instead.</p>'
         +'<div class="field-grid">'+accountField('Email','accountLoginEmail','email')+accountField('Password','accountLoginPassword','password')+'</div>'
+        +'<button class="auth-link" id="accountForgotBtn" type="button">Forgot password?</button>'
         +'<button class="btn primary" id="accountLoginBtn" type="button">Sign in</button>'
         +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
         +'<p class="auth-or">or</p>'
         +'<button class="btn" id="accountLichessSigninBtn" type="button">Continue with Lichess</button>'
         +'<p class="auth-lichess-note">Signs in to whichever account is linked to your Lichess login — separate from the Lichess game token used to play games, further down the page.</p>'
+        +'<p class="online-status" id="accountError"></p>';
+    }else if(accountUiMode==='reset'){
+      dropdown=(passwordResetSentTo
+        ?'<p>If <b class="acct-email"></b> has an account, a reset link was just sent to it — click the link, then come back here to set a new password.</p>'
+          +'<button class="btn" id="accountCancelBtn" type="button">Start over</button>'
+        :'<p>Enter your account email and we’ll send a link to reset your password.</p>'
+          +'<div class="field-grid">'+accountField('Email','accountResetEmail','email')+'</div>'
+          +'<button class="btn primary" id="accountResetSendBtn" type="button">Send reset link</button>'
+          +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>')
         +'<p class="online-status" id="accountError"></p>';
     }
     accountBody.innerHTML='<div class="auth-row">'
@@ -7513,8 +7553,21 @@
         handleAccountLogin(email,password);
       });
       accountBody.querySelector('#accountLichessSigninBtn').addEventListener('click',handleLichessSignIn);
+      accountBody.querySelector('#accountForgotBtn').addEventListener('click',()=>{
+        accountUiMode='reset'; passwordResetSentTo=null; renderAccount();
+      });
       accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
         accountUiMode='idle'; renderAccount();
+      });
+    }else if(accountUiMode==='reset'){
+      if(passwordResetSentTo) accountBody.querySelector('.acct-email').textContent=passwordResetSentTo;
+      const sendBtn=accountBody.querySelector('#accountResetSendBtn');
+      if(sendBtn) sendBtn.addEventListener('click',()=>{
+        const email=accountBody.querySelector('#accountResetEmail').value.trim();
+        handlePasswordResetRequest(email);
+      });
+      accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
+        accountUiMode='idle'; passwordResetSentTo=null; renderAccount();
       });
     }
   }
@@ -7600,9 +7653,46 @@
       if(r.error) throw r.error;
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not start Lichess sign-in.')); }
   }
+  // OUR-130: standard "forgot password" flow for existing email/password
+  // accounts (OUR-126 had none at all). Supabase's own resetPasswordForEmail()
+  // always resolves with error:null regardless of whether the address is
+  // actually registered -- confirmed directly against the shipped
+  // gotrue-js source (its own documented example response is
+  // unconditionally `{data:{}, error:null}`) -- specifically to prevent
+  // account-enumeration by trying random emails here. So the confirmation
+  // message below is deliberately non-committal ("if this email has an
+  // account...") rather than a definite "email sent", matching Supabase's
+  // own security posture instead of contradicting it with a more specific
+  // UI message. A genuine failure (rate limit, malformed address) still
+  // surfaces via friendlyAuthErrorMessage -- only account-existence is
+  // deliberately never revealed.
+  async function handlePasswordResetRequest(email){
+    if(!email){ accountError('Enter an email address.'); return; }
+    try{
+      const redirectTo=location.origin+location.pathname;
+      const r=await db.auth.resetPasswordForEmail(email,{redirectTo});
+      if(r.error) throw r.error;
+      passwordResetSentTo=email;
+      renderAccount();
+    }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not send reset link.')); }
+  }
+  async function handleSetNewPasswordFromRecovery(password){
+    if(!password){ accountError('Enter a password.'); return; }
+    try{
+      const r=await db.auth.updateUser({password});
+      if(r.error) throw r.error;
+      passwordRecoveryActive=false;
+      accountUiMode='idle';
+      passwordResetSentTo=null;
+      backfillAttempted=false;
+      renderAccount();
+      if(statsDetails.open) renderStats();
+    }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not set new password.')); }
+  }
   async function handleAccountLogout(){
     try{ await db.auth.signOut(); }catch(e){}
     clearPendingClaim();
+    passwordRecoveryActive=false;
     // Deliberately not re-establishing a session here — logging out just
     // means "no session" again, the exact same state a brand new visitor
     // starts from. Computer/two-player play needed no session before this
@@ -7621,8 +7711,17 @@
   // open — just re-render it; currentAccountStatus() (via the RPC/pending-
   // claim marker) already lands on 'needs-password' correctly when that's
   // the state this event just produced.
+  //
+  // OUR-130: PASSWORD_RECOVERY fires when a real recovery-link click lands
+  // back here (a separate event from SIGNED_IN, per gotrue-js) -- flag it
+  // so currentAccountStatus() offers the new-password form instead of
+  // silently dropping the player onto their normal signed-in view with no
+  // way to actually finish the reset.
   if(db){
-    db.auth.onAuthStateChange(()=>{ renderAccount(); });
+    db.auth.onAuthStateChange((event)=>{
+      if(event==='PASSWORD_RECOVERY') passwordRecoveryActive=true;
+      renderAccount();
+    });
   }
 
   async function saveOnline(){
