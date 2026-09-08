@@ -200,6 +200,12 @@
   .online-panel.show{display:flex}
   .online-status{margin:0;font-size:13px;color:var(--text-dim)}
   .online-actions{display:flex;gap:8px;flex-wrap:wrap}
+  /* OUR-132: gives "Play a real opponent" and "Play the Lichess computer"
+     their own visually separate boxes so a player can't mistake one
+     option's controls for the other's -- same border/radius language as
+     the app's other card-style panels. */
+  .lichess-option{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+  .lichess-option-label{margin:0;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 
   .lobby-panel{display:none;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
   .lobby-panel.show{display:flex}
@@ -945,83 +951,113 @@
        everything else; only its position in the page moved. -->
   <div class="online-panel" id="lichessPanel">
     <p class="online-status" id="lichessStatus">Paste a Lichess personal access token with the <code>board:play</code> scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.</p>
-    <div class="online-actions">
+    <!-- OUR-132: hidden whenever a working token already exists via
+         Lichess OAuth sign-in (OUR-131) -- see updateLichessTokenRowVisibility(),
+         called from renderAccount() since that's the one place that
+         already knows both "signed in via Lichess" and has just computed
+         it fresh. Still shown for anyone not connected that way (no
+         account, a different sign-in method, or OAuth sign-in itself
+         unavailable) -- OUR-131 was explicit that the manual path stays
+         available, just not redundantly alongside a connection that
+         already works. -->
+    <div class="online-actions" id="lichessTokenRow">
       <input type="password" id="lichessTokenInput" placeholder="Lichess API token" autocomplete="off" style="flex:1;min-width:160px" />
       <button class="btn" id="lichessSaveTokenBtn" type="button">Save token</button>
     </div>
-    <!-- OUR-108: full Lichess "Quick Pairing" list plus Correspondence and
-         Custom, grouped the same way Lichess's own lobby groups them.
-         Option values are "minutes-seconds" — parseTimeControlValue()
-         reads them straight into the seek's own time/increment params
-         (minutes and seconds respectively, per Lichess's real
-         POST /api/board/seek parameters — checked, not assumed: time is
-         minutes, increment is seconds, confirmed against the endpoint's
-         own spec).
-         OUR-107 (follow-up): Lichess's own API spec documents that Board
-         accounts can only SEEK Rapid, Classical and Correspondence —
-         Bullet/Blitz are permitted for direct challenges and AI games,
-         just never this endpoint. Confirmed by testing (Bullet/Blitz
-         seeks never paired; Rapid/Classical did) and by the spec's own
-         "Board" tag restrictions text. So Bullet/Blitz are gone from
-         THIS select — not because they don't work by voice (that
-         reasoning still applies and is folded into this select's title
-         below), but because Lichess itself won't pair them here. They
-         still work fine for "Play the Lichess computer" just below,
-         which uses its own separate, full-range select — the API's own
-         documented exception for AI games. -->
+    <!-- OUR-132: split into two clearly labeled, equally-weighted
+         sub-sections -- Adni reported that "play a real opponent" kept
+         landing on the Lichess computer instead. Investigated first:
+         seekLichessGame() (POST /api/board/seek) and playLichessAI()
+         (POST /api/challenge/ai) were already both correctly wired to
+         their own distinct endpoints -- not a functional bug. The real
+         problem was layout: every control for both options sat in one
+         unlabeled, wrapping row, with only one of the two actions styled
+         as primary. Splitting them into their own boxed sections with a
+         heading each (and matching .btn.primary on both actions) is the
+         actual fix -- nothing below changed which button does what. -->
+    <div class="lichess-option">
+      <p class="lichess-option-label">Play a real opponent</p>
+      <!-- OUR-108: full Lichess "Quick Pairing" list plus Correspondence and
+           Custom, grouped the same way Lichess's own lobby groups them.
+           Option values are "minutes-seconds" — parseTimeControlValue()
+           reads them straight into the seek's own time/increment params
+           (minutes and seconds respectively, per Lichess's real
+           POST /api/board/seek parameters — checked, not assumed: time is
+           minutes, increment is seconds, confirmed against the endpoint's
+           own spec).
+           OUR-107 (follow-up): Lichess's own API spec documents that Board
+           accounts can only SEEK Rapid, Classical and Correspondence —
+           Bullet/Blitz are permitted for direct challenges and AI games,
+           just never this endpoint. Confirmed by testing (Bullet/Blitz
+           seeks never paired; Rapid/Classical did) and by the spec's own
+           "Board" tag restrictions text. So Bullet/Blitz are gone from
+           THIS select — not because they don't work by voice (that
+           reasoning still applies and is folded into this select's title
+           below), but because Lichess itself won't pair them here. They
+           still work fine for the Lichess-computer section below, which
+           uses its own separate, full-range select — the API's own
+           documented exception for AI games. -->
+      <div class="online-actions">
+        <select id="lichessTimeSelect" title="Only Rapid, Classical and Correspondence can be sought here — Lichess's Board API doesn't pair Bullet/Blitz seeks. Play the Lichess computer below for those.">
+          <optgroup label="Rapid">
+            <option value="10-0">10+0 Rapid</option>
+            <option value="10-5" selected>10+5 Rapid</option>
+            <option value="15-10">15+10 Rapid</option>
+          </optgroup>
+          <optgroup label="Classical">
+            <option value="30-0">30+0 Classical</option>
+            <option value="30-20">30+20 Classical</option>
+          </optgroup>
+          <option value="corr">Correspondence (3 days/move)</option>
+          <option value="custom">Custom…</option>
+        </select>
+        <!-- Floor of 10 minutes: a Custom value faster than Rapid would hit
+             the exact same wall the presets above were just removed for. -->
+        <span class="stepper" id="lichessCustomRow" style="display:none">
+          <input type="number" id="lichessCustomMinutes" min="10" max="180" value="10" style="width:52px" title="Minutes per side (10 minimum — faster than Rapid isn't seekable via this endpoint)" /> min +
+          <input type="number" id="lichessCustomIncrement" min="0" max="180" value="0" style="width:52px" title="Increment in seconds" /> sec
+        </span>
+        <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
+        <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
+      </div>
+    </div>
+    <div class="lichess-option">
+      <p class="lichess-option-label">Play the Lichess computer</p>
+      <div class="online-actions">
+        <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
+          <option value="1">AI level 1</option><option value="2">AI level 2</option>
+          <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
+          <option value="5">AI level 5</option><option value="6">AI level 6</option>
+          <option value="7">AI level 7</option><option value="8">AI level 8</option>
+        </select>
+        <!-- OUR-107 (follow-up): its own select, full range including Bullet/
+             Blitz — /api/challenge/ai is the API's documented exception,
+             unaffected by the seek-only restriction above. -->
+        <select id="lichessAiTimeSelect" title="Bullet and blitz move fast — a voice move may not keep up. Rapid or slower plays best by voice.">
+          <optgroup label="Bullet">
+            <option value="1-0">1+0 Bullet</option>
+            <option value="2-1">2+1 Bullet</option>
+          </optgroup>
+          <optgroup label="Blitz">
+            <option value="3-0">3+0 Blitz</option>
+            <option value="3-2">3+2 Blitz</option>
+            <option value="5-0">5+0 Blitz</option>
+            <option value="5-3">5+3 Blitz</option>
+          </optgroup>
+          <optgroup label="Rapid">
+            <option value="10-0">10+0 Rapid</option>
+            <option value="10-5" selected>10+5 Rapid</option>
+            <option value="15-10">15+10 Rapid</option>
+          </optgroup>
+          <optgroup label="Classical">
+            <option value="30-0">30+0 Classical</option>
+            <option value="30-20">30+20 Classical</option>
+          </optgroup>
+        </select>
+        <button class="btn primary" id="lichessAiBtn" type="button">Play the Lichess computer</button>
+      </div>
+    </div>
     <div class="online-actions">
-      <select id="lichessTimeSelect" title="Only Rapid, Classical and Correspondence can be sought here — Lichess's Board API doesn't pair Bullet/Blitz seeks. Play the Lichess computer below for those.">
-        <optgroup label="Rapid">
-          <option value="10-0">10+0 Rapid</option>
-          <option value="10-5" selected>10+5 Rapid</option>
-          <option value="15-10">15+10 Rapid</option>
-        </optgroup>
-        <optgroup label="Classical">
-          <option value="30-0">30+0 Classical</option>
-          <option value="30-20">30+20 Classical</option>
-        </optgroup>
-        <option value="corr">Correspondence (3 days/move)</option>
-        <option value="custom">Custom…</option>
-      </select>
-      <!-- Floor of 10 minutes: a Custom value faster than Rapid would hit
-           the exact same wall the presets above were just removed for. -->
-      <span class="stepper" id="lichessCustomRow" style="display:none">
-        <input type="number" id="lichessCustomMinutes" min="10" max="180" value="10" style="width:52px" title="Minutes per side (10 minimum — faster than Rapid isn't seekable via this endpoint)" /> min +
-        <input type="number" id="lichessCustomIncrement" min="0" max="180" value="0" style="width:52px" title="Increment in seconds" /> sec
-      </span>
-      <button class="btn primary" id="lichessSeekBtn" type="button">Seek an opponent</button>
-      <button class="btn" id="lichessCancelSeekBtn" type="button" style="display:none">Cancel seek</button>
-      <select id="lichessAiLevelSelect" title="Lichess's own Stockfish, levels 1 (weakest) to 8 (strongest).">
-        <option value="1">AI level 1</option><option value="2">AI level 2</option>
-        <option value="3" selected>AI level 3</option><option value="4">AI level 4</option>
-        <option value="5">AI level 5</option><option value="6">AI level 6</option>
-        <option value="7">AI level 7</option><option value="8">AI level 8</option>
-      </select>
-      <!-- OUR-107 (follow-up): its own select, full range including Bullet/
-           Blitz — /api/challenge/ai is the API's documented exception,
-           unaffected by the seek-only restriction above. -->
-      <select id="lichessAiTimeSelect" title="Bullet and blitz move fast — a voice move may not keep up. Rapid or slower plays best by voice.">
-        <optgroup label="Bullet">
-          <option value="1-0">1+0 Bullet</option>
-          <option value="2-1">2+1 Bullet</option>
-        </optgroup>
-        <optgroup label="Blitz">
-          <option value="3-0">3+0 Blitz</option>
-          <option value="3-2">3+2 Blitz</option>
-          <option value="5-0">5+0 Blitz</option>
-          <option value="5-3">5+3 Blitz</option>
-        </optgroup>
-        <optgroup label="Rapid">
-          <option value="10-0">10+0 Rapid</option>
-          <option value="10-5" selected>10+5 Rapid</option>
-          <option value="15-10">15+10 Rapid</option>
-        </optgroup>
-        <optgroup label="Classical">
-          <option value="30-0">30+0 Classical</option>
-          <option value="30-20">30+20 Classical</option>
-        </optgroup>
-      </select>
-      <button class="btn" id="lichessAiBtn" type="button">Play the Lichess computer</button>
       <button class="btn" id="lichessWatchBtn" type="button">Resume my current game</button>
       <button class="btn" id="lichessStopBtn" type="button" style="display:none">Disconnect</button>
     </div>
@@ -1365,6 +1401,7 @@
         stopSpectateBtn=$('stopSpectateBtn'), lobbyPanel=$('lobbyPanel'), lobbyList=$('lobbyList'),
         closeLobbyBtn=$('closeLobbyBtn'),
         lichessPanel=$('lichessPanel'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
+        lichessTokenRow=$('lichessTokenRow'),
         lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
         lichessCustomRow=$('lichessCustomRow'), lichessCustomMinutes=$('lichessCustomMinutes'), lichessCustomIncrement=$('lichessCustomIncrement'),
@@ -4386,7 +4423,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r125 (OUR-131: Lichess sign-in also connects gameplay)';
+  const BUILD='v2-r126 (OUR-132: clearer real-opponent vs computer, hide token row)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7429,6 +7466,7 @@
       accountUiMode='idle';
       const viaLichess=status.user.app_metadata?.provider==='custom:lichess'
         ||(status.user.identities||[]).some(i=>i.provider==='custom:lichess');
+      updateLichessTokenRowVisibility(viaLichess&&!!lichessToken);
       accountBody.innerHTML='<div class="auth-row"><span>'+(viaLichess?'Signed in via Lichess as ':'Signed in as ')
         +'<b class="acct-email"></b></span>'
         +'<button class="btn" id="accountLogoutBtn" type="button">Log out</button></div>';
@@ -7436,6 +7474,7 @@
       accountBody.querySelector('#accountLogoutBtn').addEventListener('click',handleAccountLogout);
       return;
     }
+    updateLichessTokenRowVisibility(false);
     if(status.kind==='needs-password'){
       // Urgent follow-up, not a click-to-open state -- the dropdown shows
       // itself immediately, same "don't strand them mid-claim" reasoning
@@ -7680,6 +7719,26 @@
     if(!token) return;
     lichessToken=token; lichessUsername=null;
     try{ localStorage.setItem(LICHESS_TOKEN_KEY,token); }catch(e){}
+  }
+  const LICHESS_PASTE_TOKEN_DEFAULT_NOTE='Paste a Lichess personal access token with the board:play scope to play a real game. The token stays in this browser only — never saved with a game, never sent in a bug report.';
+  // OUR-132: the manual paste row is redundant once a working token
+  // already exists via Lichess OAuth sign-in -- called from renderAccount()
+  // below, the one place that already freshly knows both "signed in via
+  // Lichess" and has a session object to check it against. Deliberately
+  // NOT hidden just because *any* lichessToken exists (a manually pasted
+  // token with no OAuth session behind it should still show its own
+  // paste row, in case the player wants to replace it) -- only when the
+  // token came from an active Lichess-linked sign-in. Also swaps the
+  // status line's own still-default "Paste a token..." instruction, which
+  // would otherwise point at a field that's no longer there -- but only
+  // while it's still showing that untouched default, never once a real
+  // game/connection note has replaced it (lichessNote() below, called
+  // from seek/AI/resume/etc.).
+  function updateLichessTokenRowVisibility(hideRow){
+    if(lichessTokenRow) lichessTokenRow.style.display=hideRow?'none':'';
+    if(hideRow&&lichessStatusEl&&lichessStatusEl.textContent===LICHESS_PASTE_TOKEN_DEFAULT_NOTE){
+      lichessStatusEl.textContent='Connected via Lichess sign-in — seek a real opponent or play the computer below.';
+    }
   }
   // OUR-130: standard "forgot password" flow for existing email/password
   // accounts (OUR-126 had none at all). Supabase's own resetPasswordForEmail()
