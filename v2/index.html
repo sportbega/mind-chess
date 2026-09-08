@@ -186,6 +186,8 @@
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
     padding:14px 16px;width:min(300px,90vw);display:flex;flex-direction:column;gap:10px}
   .auth-dropdown p{margin:0;font-size:13px;color:var(--text-dim)}
+  .auth-or{text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);opacity:.7}
+  .auth-lichess-note{font-size:11px;opacity:.75}
   .auth-dropdown .field-grid{margin-top:0}
 
   .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
@@ -4383,7 +4385,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r122 (OUR-128: persistent Sign In/Sign Up bar)';
+  const BUILD='v2-r123 (OUR-129: Sign in with Lichess)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7356,15 +7358,39 @@
       const {data:{session}}=await db.auth.getSession();
       if(!session) return {kind:'guest',user:null};
       const user=session.user;
+      // OUR-129: a non-anonymous session is fully signed in regardless of
+      // provider. This has to come before any email check now -- Lichess
+      // accounts never carry an email at all (confirmed against Lichess's
+      // own API spec: no email field anywhere in its userinfo response),
+      // so "no email" can no longer mean "not signed in". OAuth linking is
+      // also a single hop with no password step, so there's no equivalent
+      // needs-password state for Lichess to land in -- only the email/
+      // password claim flow below still needs that nuance, and it only
+      // applies while the session is still anonymous.
+      if(!user.is_anonymous) return {kind:'signed-in',user};
       if(!user.email) return {kind:'guest',user};
       try{
         const {data:needsPw,error}=await db.rpc('mind_chess_needs_password');
         if(!error) return needsPw?{kind:'needs-password',user}:{kind:'signed-in',user};
       }catch(e){}
       if(getPendingClaim()===user.id) return {kind:'needs-password',user};
-      if(user.is_anonymous&&user.email_confirmed_at) return {kind:'needs-password',user};
-      return user.is_anonymous?{kind:'guest',user}:{kind:'signed-in',user};
+      if(user.email_confirmed_at) return {kind:'needs-password',user};
+      return {kind:'guest',user};
     }catch(e){ return {kind:'unavailable'}; }
+  }
+  // Lichess never returns an email (see above), so the signed-in display
+  // needs a non-email identity to fall back to. user_metadata's exact
+  // shape for a custom OAuth2 provider with no explicit attribute_mapping
+  // is the one thing the Phase C spike couldn't confirm without a real
+  // completed login -- this tries the field names Lichess's own /api/
+  // account response actually uses (username, then id) before giving up
+  // to a generic label, and is deliberately written so it degrades
+  // gracefully rather than showing "undefined" if the real shape turns
+  // out to be something else.
+  function accountDisplayName(user){
+    return user.email||user.user_metadata?.username||user.user_metadata?.name
+      ||user.user_metadata?.preferred_username||user.user_metadata?.id
+      ||'your account';
   }
   function accountField(label,id,type){
     return '<div class="field"><label for="'+id+'">'+label+'</label>'
@@ -7390,9 +7416,12 @@
     const status=await currentAccountStatus();
     if(status.kind==='signed-in'){
       accountUiMode='idle';
-      accountBody.innerHTML='<div class="auth-row"><span>Signed in as <b class="acct-email"></b></span>'
+      const viaLichess=status.user.app_metadata?.provider==='custom:lichess'
+        ||(status.user.identities||[]).some(i=>i.provider==='custom:lichess');
+      accountBody.innerHTML='<div class="auth-row"><span>'+(viaLichess?'Signed in via Lichess as ':'Signed in as ')
+        +'<b class="acct-email"></b></span>'
         +'<button class="btn" id="accountLogoutBtn" type="button">Log out</button></div>';
-      accountBody.querySelector('.acct-email').textContent=status.user.email;
+      accountBody.querySelector('.acct-email').textContent=accountDisplayName(status.user);
       accountBody.querySelector('#accountLogoutBtn').addEventListener('click',handleAccountLogout);
       return;
     }
@@ -7418,6 +7447,16 @@
     // are the same. Sign In/Sign Up stay visible even while their own
     // dropdown is open, so switching between them (or re-clicking to
     // close) doesn't need a separate Cancel click first.
+    // OUR-129: "Continue with Lichess" lives inside each of these two
+    // dropdowns rather than as a third top-level bar button, on purpose --
+    // which dropdown it's in IS the claim-vs-switch distinction (same
+    // principle OUR-126 already established for email/password), so a
+    // single ambiguous top-level Lichess button would have quietly
+    // undone that. The note under each button exists because this app
+    // already has a completely separate Lichess integration (OUR-76
+    // onward: a pasted personal API token, used for gameplay, further
+    // down the settings page) -- without it, "sign in with Lichess" here
+    // could easily be mistaken for the same thing.
     let dropdown='';
     if(accountUiMode==='signup'){
       dropdown=(accountPendingEmail
@@ -7426,13 +7465,19 @@
         :'<p>Create an account to keep your progress across browsers and devices — playing as Guest still works exactly the same either way.</p>'
           +'<div class="field-grid">'+accountField('Email','accountSignupEmail','email')+'</div>'
           +'<button class="btn primary" id="accountSignupBtn" type="button">Send confirmation email</button>'
-          +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>')
+          +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
+          +'<p class="auth-or">or</p>'
+          +'<button class="btn" id="accountLichessClaimBtn" type="button">Continue with Lichess</button>'
+          +'<p class="auth-lichess-note">Signs this profile in with your Lichess account — separate from the Lichess game token used to play games, further down the page.</p>')
         +'<p class="online-status" id="accountError"></p>';
     }else if(accountUiMode==='login'){
       dropdown='<p>Signing in switches to a <b>different</b> account’s history. To keep this Guest’s history and just add a password, use “Sign Up” instead.</p>'
         +'<div class="field-grid">'+accountField('Email','accountLoginEmail','email')+accountField('Password','accountLoginPassword','password')+'</div>'
         +'<button class="btn primary" id="accountLoginBtn" type="button">Sign in</button>'
         +'<button class="btn" id="accountCancelBtn" type="button">Cancel</button>'
+        +'<p class="auth-or">or</p>'
+        +'<button class="btn" id="accountLichessSigninBtn" type="button">Continue with Lichess</button>'
+        +'<p class="auth-lichess-note">Signs in to whichever account is linked to your Lichess login — separate from the Lichess game token used to play games, further down the page.</p>'
         +'<p class="online-status" id="accountError"></p>';
     }
     accountBody.innerHTML='<div class="auth-row">'
@@ -7456,6 +7501,8 @@
         const email=accountBody.querySelector('#accountSignupEmail').value.trim();
         handleAccountSignupStart(email);
       });
+      const lichessClaimBtn=accountBody.querySelector('#accountLichessClaimBtn');
+      if(lichessClaimBtn) lichessClaimBtn.addEventListener('click',handleLichessClaim);
       accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
         accountUiMode='idle'; accountPendingEmail=null; renderAccount();
       });
@@ -7465,6 +7512,7 @@
         const password=accountBody.querySelector('#accountLoginPassword').value;
         handleAccountLogin(email,password);
       });
+      accountBody.querySelector('#accountLichessSigninBtn').addEventListener('click',handleLichessSignIn);
       accountBody.querySelector('#accountCancelBtn').addEventListener('click',()=>{
         accountUiMode='idle'; renderAccount();
       });
@@ -7526,6 +7574,31 @@
       renderAccount();
       if(statsDetails.open) renderStats();
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not log in.')); }
+  }
+  // OUR-129 Phase C: Lichess OAuth, reusing the same claim-vs-switch split
+  // as email/password (OUR-126) -- linkIdentity() attaches Lichess to the
+  // CURRENT session (claims this guest's own history), signInWithOAuth()
+  // is a plain sign-in that may land in a different, already-linked
+  // account if this Lichess login was used before (correct, expected
+  // behavior -- same principle as logging into a different email). Both
+  // navigate the browser away to Lichess on success and never return
+  // here directly; the actual session update happens on redirect back,
+  // picked up by the onAuthStateChange listener below like any other
+  // auth event.
+  async function handleLichessClaim(){
+    try{
+      await onlineUser();   // ensures SOME session exists to attach Lichess to
+      const redirectTo=location.origin+location.pathname;
+      const r=await db.auth.linkIdentity({provider:'custom:lichess',options:{redirectTo}});
+      if(r.error) throw r.error;
+    }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not start Lichess sign-in.')); }
+  }
+  async function handleLichessSignIn(){
+    try{
+      const redirectTo=location.origin+location.pathname;
+      const r=await db.auth.signInWithOAuth({provider:'custom:lichess',options:{redirectTo}});
+      if(r.error) throw r.error;
+    }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not start Lichess sign-in.')); }
   }
   async function handleAccountLogout(){
     try{ await db.auth.signOut(); }catch(e){}
