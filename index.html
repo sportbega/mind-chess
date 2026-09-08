@@ -609,12 +609,24 @@
         </svg>
       </button>
       <!-- OUR-100: moved here from Game settings, between speaker mute and
-           Hide board as asked. Plain .btn with no override, same as Hide
-           board — both fall back to .btn's own 33.5px height (r87), so
-           this matches it exactly with no new CSS needed. Same id, same
-           click handler (see newGameBtn.addEventListener below); only the
-           position moved. -->
-      <button class="btn" id="newGameBtn" type="button">New game</button>
+           Hide board as asked. Same id, same click handler (see
+           newGameBtn.addEventListener below) — only the visual treatment
+           has changed since.
+           OUR-138: restyled as a round 48px icon button (.icon-btn.mic-size,
+           the exact same class already shared by #speakerToggleBtn/#micBtn)
+           with a plain "+" glyph instead of text, since "New game" is a
+           single fixed action with no dynamic label to carry — unlike
+           Hide board (toggles its own text between Hide/Reveal) or Send
+           (a real form submit), which is why THOSE stay exactly as OUR-95
+           left them (33.5px text pills) rather than also converting to
+           icons here: a static icon would have cost Hide board's toggle
+           its only way of showing which state a click leads to, for no
+           benefit New game actually needed. -->
+      <button class="icon-btn mic-size" id="newGameBtn" type="button" aria-label="New game" title="New game">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
       <!-- Moved here from .board-head (OUR-90): the button that reveals a
            hidden board used to live inside the row that's part of what's
            hidden, reachable only by scrolling to (and half-seeing) the
@@ -4431,7 +4443,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r129 (drop stale "(real opponent)" qualifier from Lichess mode label)';
+  const BUILD='v2-r130 (OUR-138: New game as a round 48px + icon button)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
