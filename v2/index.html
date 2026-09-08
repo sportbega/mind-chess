@@ -3130,21 +3130,37 @@
   }
 
   // ===============================================================
-  // OUR-115: Statistics — completed-game logging and opening detection.
+  // OUR-115/OUR-124 Phase A: Statistics — completed-game logging and
+  // opening detection.
   //
-  // Local modes (computer/two-player) log entirely to localStorage,
-  // matching every other per-browser setting this app already has
-  // (boardHidden, appearance, puzzle progress). Online/Lichess mirror to
-  // Supabase's mind_chess_results table instead of (or as well as)
-  // localStorage — flagged and chosen deliberately, not the simpler
-  // unified-local option: those two modes already have a stable identity
-  // the anonymous session onlineUser() creates, that a local-only log
-  // can't offer anything over, and mirroring means the stats survive a
-  // cleared localStorage the same way a Lichess player's own game history
-  // already does on lichess.org itself. Puzzles keep their own existing
-  // solved/attempted counter (PUZZLE_KEY) rather than being forced into a
-  // win/loss/draw shape that doesn't really fit them.
-  // ===============================================================
+  // Every mode now writes to the same mind_chess_results shape (Supabase),
+  // computer/two-player included — the old split (local-only for
+  // computer/two-player, Supabase-only for online/Lichess) meant a
+  // player's own history lived in two places that never talked to each
+  // other, and neither survived a cleared browser on its own (a fresh
+  // anonymous identity can't find its predecessor's rows either). But
+  // localStorage stays the durable write target for every mode, not a
+  // migration away from it — matching this project's own established
+  // pattern of every enhancement (Stockfish, Kokoro, Moonshine) working
+  // fully offline first and only getting better with a connection.
+  // logCompletedGame() below always writes locally; a Supabase sync is
+  // always a best-effort add-on, gated on a session that *already exists*
+  // rather than one force-created just to log a stat (see
+  // tryGetExistingUser() and onGameEnd() below) — playing offline stays
+  // exactly as free of network activity as it always was. Puzzles keep
+  // their own existing solved/attempted counter (PUZZLE_KEY) rather than
+  // being forced into a win/loss/draw shape that doesn't really fit them.
+  //
+  // Two-player has no personal seat to score a win/loss against — pass-
+  // and-play on one device. Rather than give it a second, differently-
+  // shaped vocabulary (the old local-only version stored the raw winning
+  // side, 'white'/'black'/'draw', with color left null), it's recorded
+  // under a fixed convention that fits the *same* {color,result} shape
+  // every other mode already uses: color is always 'w', and result means
+  // "did White win" — 'win' if White won, 'loss' if Black won, 'draw' for
+  // a draw. renderStatsTable() already renders mode='two-player' as
+  // White/Black wins instead of Won/Lost, so this is the write side
+  // finally matching a read side that already existed.
   const GAMES_LOG_KEY='mind-chess-v2-games';
   const GAMES_LOG_MAX=500;
   function loadGamesLog(){
@@ -3157,6 +3173,84 @@
     const log=loadGamesLog();
     log.push(entry);
     saveGamesLog(log);
+  }
+  // Deterministic id for a completed game, independent of when/how many
+  // times it's ever inserted — the whole point being that inserting it
+  // twice (a genuine retry, a second browser backfilling the same claimed
+  // account, a bug that re-runs the backfill sweep) lands on the same
+  // (user_id, client_key) pair mind_chess_results' unique index rejects
+  // rather than a duplicate row. endedAt already carries millisecond
+  // precision and pgn disambiguates further, so two real games colliding
+  // here isn't a realistic concern for one browser's own local log.
+  function computeClientKey(mode,endedAt,pgn){ return mode+'|'+endedAt+'|'+pgn; }
+  // Never creates a session — playing offline must never trigger a network
+  // call on its own. Only reports a user if one *already* exists in this
+  // browser (from a prior online/Lichess session, or a claimed account).
+  async function tryGetExistingUser(){
+    if(!db) return null;
+    try{ const {data:{session}}=await db.auth.getSession(); return session?session.user:null; }
+    catch(e){ return null; }
+  }
+  // Old local entries (pre-Phase-A) used a different shape: no client_key,
+  // no synced flag, camelCase openingName, per-color accuracyWhite/
+  // accuracyBlack instead of one personal `accuracy`, and two-player's own
+  // 'white'/'black'/'draw' result vocabulary with color left null. Rewrites
+  // the log in place, once, into the shape every mode now shares — after
+  // this, every reader (summarizeEntries, the backfill sweep, etc.) can
+  // assume one consistent shape instead of re-deriving it per caller.
+  function normalizedGamesLog(){
+    const log=loadGamesLog();
+    let changed=false;
+    const out=log.map(e=>{
+      if(e.client_key) return e;
+      changed=true;
+      let color=e.color, result=e.result;
+      if(e.mode==='two-player'){
+        color='w';
+        result=e.result==='white'?'win':e.result==='black'?'loss':'draw';
+      }
+      const accuracy=(e.mode!=='two-player'&&e.color)
+        ?(e.color==='w'?e.accuracyWhite:e.accuracyBlack)
+        :null;
+      const endedAt=e.endedAt||new Date(0).toISOString();
+      return {
+        mode:e.mode, level:e.level||null, color, result, pgn:e.pgn||'',
+        eco:e.eco||null, opening_name:(e.opening_name!==undefined?e.opening_name:e.openingName)||null,
+        accuracy:(accuracy!=null?accuracy:null), endedAt,
+        client_key:computeClientKey(e.mode,endedAt,e.pgn||''), synced:false
+      };
+    });
+    if(changed) saveGamesLog(out);
+    return out;
+  }
+  function markLocalEntrySynced(client_key){
+    const log=loadGamesLog();
+    let changed=false;
+    for(const e of log){ if(e.client_key===client_key&&!e.synced){ e.synced=true; changed=true; } }
+    if(changed) saveGamesLog(log);
+  }
+  // Uploads every not-yet-synced local entry, keyed by the SAME
+  // (user_id, client_key) uniqueness the live per-game sync relies on —
+  // running this twice (two browsers backfilling the same claimed account,
+  // a repeat call within one session) can't double-count, the database
+  // rejects the repeat insert rather than this function needing to get its
+  // own bookkeeping right. Only ever called with a user that already has a
+  // real session (see callers) — never what creates one.
+  let backfillAttempted=false;
+  async function backfillLocalStats(user){
+    if(!db||!user||backfillAttempted) return;
+    const pending=normalizedGamesLog().filter(e=>!e.synced);
+    if(!pending.length) return;
+    backfillAttempted=true;
+    const rows=pending.map(e=>({
+      user_id:user.id, mode:e.mode, color:e.color, result:e.result, level:e.level,
+      pgn:e.pgn, eco:e.eco, opening_name:e.opening_name, accuracy:e.accuracy,
+      client_key:e.client_key
+    }));
+    try{
+      const r=await db.from('mind_chess_results').upsert(rows,{onConflict:'user_id,client_key',ignoreDuplicates:true});
+      if(!r.error){ for(const e of pending) markLocalEntrySynced(e.client_key); }
+    }catch(e){ backfillAttempted=false; }
   }
 
   // openings.json is lichess-org/chess-openings (CC0-1.0, public domain),
@@ -3217,32 +3311,55 @@
     if(mode==='puzzle') return;
     if(winnerColor===undefined) winnerColor=game.in_checkmate()?(game.turn()==='w'?'b':'w'):null;
     // Two-player is pass-and-play on one device — there's no single "you"
-    // to score a win or loss against, so the raw winning color is stored
-    // instead of a personalized result. Every other mode has a real seat
-    // (humanColor) to score against.
-    const result=(mode==='two-player')
-      ? (winnerColor==='w'?'white':winnerColor==='b'?'black':'draw')
-      : (winnerColor===null?'draw':(winnerColor===humanColor?'win':'loss'));
-    const opening=identifyOpening(game.history());
-    const eco=opening?opening[0]:null, openingName=opening?opening[1]:null;
-    const pgn=game.pgn();
-    if(mode==='online'||mode==='lichess'){
-      if(!db) return;
-      onlineUser().then(user=>db.from('mind_chess_results').insert({
-        user_id:user.id, mode, color:humanColor,
-        result:(result==='draw'?'draw':result), pgn, eco, opening_name:openingName
-      })).then(()=>{},()=>{});
+    // to score a win or loss against, so it's recorded under White's own
+    // perspective always (see the big comment above GAMES_LOG_KEY): color
+    // 'w', result meaning "did White win". Every other mode scores against
+    // a real seat (humanColor).
+    let color, result;
+    if(mode==='two-player'){
+      color='w';
+      result=winnerColor==='w'?'win':winnerColor==='b'?'loss':'draw';
     }else{
-      logCompletedGame({mode, level:(mode==='computer'?levelKey:null),
-        color:(mode==='two-player'?null:humanColor), result, pgn,
-        eco, openingName, endedAt:new Date().toISOString()});
+      color=humanColor;
+      result=winnerColor===null?'draw':(winnerColor===humanColor?'win':'loss');
+    }
+    const opening=identifyOpening(game.history());
+    const eco=opening?opening[0]:null, opening_name=opening?opening[1]:null;
+    const pgn=game.pgn();
+    const endedAt=new Date().toISOString();
+    const level=(mode==='computer')?levelKey:null;
+    const client_key=computeClientKey(mode,endedAt,pgn);
+    // Always local first — the durable write, unconditionally, regardless
+    // of mode or network state. Every mode used to skip this for online/
+    // lichess entirely; now every mode gets a local copy too, so a player
+    // who's never been online still has an offline-readable history, and
+    // one who has can see it immediately without waiting on a round trip.
+    logCompletedGame({mode, level, color, result, pgn, eco, opening_name,
+      accuracy:null, endedAt, client_key, synced:false});
+    // Then an opportunistic remote sync — never forces a session into
+    // existence just to log a stat (see tryGetExistingUser()), so a purely
+    // offline game triggers exactly the same zero network calls it always
+    // did. If a session already exists (this browser has played online/
+    // Lichess before, or claimed an account), the upsert's own
+    // (user_id, client_key) uniqueness means this can never double-count
+    // even if onGameEnd() somehow ran twice for the same game.
+    if(db){
+      tryGetExistingUser().then(user=>{
+        if(!user) return null;
+        return db.from('mind_chess_results').upsert({
+          user_id:user.id, mode, color, result, level, pgn, eco,
+          opening_name, client_key
+        },{onConflict:'user_id,client_key',ignoreDuplicates:true});
+      }).then(r=>{
+        if(r&&!r.error) markLocalEntrySynced(client_key);
+      }).catch(()=>{});
     }
     // OUR-116: remembered so "Review game" doesn't have to re-derive which
     // finished game it's reviewing from whatever `mode`/`game` happen to
     // hold at click time — both are safe to read immediately after a real
     // completion, but a player could in principle poke the mode selector
     // before clicking Review, and this way that can't matter.
-    lastCompletedGame={mode, pgn, humanColor, level:(mode==='computer'?levelKey:null)};
+    lastCompletedGame={mode, pgn, humanColor, level, client_key};
     updateReviewButtonVisibility();
     if(statsDetails.open) renderStats();
   }
@@ -3257,18 +3374,20 @@
   // ---------------------------------------------------------------
   const MODE_LABEL={computer:'Vs. computer','two-player':'Two-player',online:'Online',lichess:'Lichess'};
   function summarizeEntries(entries){
-    // entries: {mode, result} where result is 'win'/'loss'/'draw' for
-    // every personalized mode, or 'white'/'black'/'draw' for two-player.
+    // entries: {mode, color, result} — result is always 'win'/'loss'/'draw'
+    // now, one shared vocabulary across every mode (OUR-124 Phase A).
+    // two-player has no personal seat, so it's recorded under a fixed
+    // convention instead of a second vocabulary: color is always 'w' and
+    // result means "did White win" — read back out here as whiteWins/
+    // blackWins for its own row shape below, same as it always rendered.
     const byMode={};
     for(const e of entries){
       const m=byMode[e.mode]||(byMode[e.mode]={played:0,win:0,loss:0,draw:0,whiteWins:0,blackWins:0,byLevel:{}});
       m.played++;
       if(e.mode==='two-player'){
-        // No single "you" to score a personal win/loss against — tracked
-        // as which color won instead, rendered as its own row shape below.
         if(e.result==='draw') m.draw++;
-        else if(e.result==='white') m.whiteWins++;
-        else if(e.result==='black') m.blackWins++;
+        else if(e.result==='win') m.whiteWins++;
+        else if(e.result==='loss') m.blackWins++;
       }else{
         m[e.result]++;
       }
@@ -3297,7 +3416,7 @@
   }
   function topOpenings(entries,n){
     const counts={};
-    for(const e of entries){ if(e.openingName||e.opening_name) counts[e.openingName||e.opening_name]=(counts[e.openingName||e.opening_name]||0)+1; }
+    for(const e of entries){ if(e.opening_name) counts[e.opening_name]=(counts[e.opening_name]||0)+1; }
     return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,n);
   }
   function renderStatsTable(byMode){
@@ -3333,14 +3452,12 @@
   // background-analysis pass), so the trend only ever includes games
   // that were reviewed, which is stated in the empty-state text rather
   // than left implicit.
-  function accuracyTrendPoints(local,remote){
+  function accuracyTrendPoints(entries){
     const points=[];
-    for(const e of local){
-      if(e.mode==='two-player'||!e.color) continue;
-      const acc=e.color==='w'?e.accuracyWhite:e.accuracyBlack;
-      if(acc!=null) points.push({t:e.endedAt,acc});
+    for(const e of entries){
+      if(e.mode==='two-player') continue;
+      if(e.accuracy!=null) points.push({t:e.endedAt||e.created_at,acc:e.accuracy});
     }
-    for(const r of remote){ if(r.accuracy!=null) points.push({t:r.created_at,acc:r.accuracy}); }
     points.sort((a,b)=>new Date(a.t)-new Date(b.t));
     return points.slice(-20);
   }
@@ -3356,12 +3473,24 @@
       +'<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" style="display:block"><path d="'+path+'" fill="none" stroke="var(--accent-2)" stroke-width="1.5"/>'+dots+'</svg>';
   }
   function renderStats(){
-    const local=loadGamesLog();
+    const localAll=normalizedGamesLog();
     statsBody.innerHTML='<p class="empty">Loading…</p>';
-    const online=(db?onlineUser().then(user=>db.from('mind_chess_results').select('*').eq('user_id',user.id)
-      .order('created_at',{ascending:false}).limit(500)).then(r=>r.data||[]).catch(()=>[]):Promise.resolve([]));
-    online.then(remote=>{
-      const all=local.concat(remote);
+    // Opening Stats is an explicit action, same as it always was — this
+    // still creates a session on demand if none exists yet (unlike
+    // onGameEnd()'s own opportunistic sync, which never does), and that's
+    // pre-existing behavior, not new here. onlineUser() piggybacks the
+    // local-stats backfill on this too, so opening Stats is itself one of
+    // the "opportunistic" moments a first sync can happen.
+    const remoteFetch=(db?onlineUser().then(user=>db.from('mind_chess_results').select('*').eq('user_id',user.id)
+      .order('created_at',{ascending:false}).limit(500)).then(r=>r.data||null).catch(()=>null):Promise.resolve(null));
+    remoteFetch.then(remote=>{
+      // One unified list (OUR-124 Phase A): trust the live remote view for
+      // whatever it already has, and add only the local entries NOT yet
+      // synced — a synced local entry has a remote twin already in
+      // `remote`, so including it too would double-count. Offline, or no
+      // session yet, falls back to the full local log, synced or not
+      // (nothing to double against).
+      const all=remote?remote.concat(localAll.filter(e=>!e.synced)):localAll;
       const personalized=all.filter(e=>e.mode!=='two-player');
       const totalPlayed=all.length;
       const wins=personalized.filter(e=>e.result==='win').length;
@@ -3384,7 +3513,7 @@
         for(const [name,count] of openings) html+='<li><span>'+name+'</span><span>'+count+'</span></li>';
         html+='</ul>';
       }
-      html+=renderAccuracyTrend(accuracyTrendPoints(local,remote));
+      html+=renderAccuracyTrend(accuracyTrendPoints(all));
       statsBody.innerHTML=html;
     });
   }
@@ -3547,22 +3676,33 @@
   // accuracy (two-player has no single "you"); the Supabase row's
   // `accuracy` column is always the human's own, since that table only
   // ever holds this player's own games.
+  // OUR-124 Phase A: one path for every mode now, keyed on client_key
+  // (exact — unlike the old pgn match, which could in principle land on
+  // the wrong entry if two games in the log ever shared an identical move
+  // sequence) rather than branching by mode. Two-player has no personal
+  // seat, so it never had a real accuracy figure to store — skipped
+  // outright, same as accuracyTrendPoints() already skips it on the way
+  // out.
   function updateGameAccuracy(descriptor,accWhite,accBlack){
-    if(descriptor.mode==='online'||descriptor.mode==='lichess'){
-      if(!db) return;
-      const humanAcc=descriptor.humanColor==='w'?accWhite:accBlack;
-      onlineUser().then(user=>db.from('mind_chess_results').update({accuracy:humanAcc})
-        .eq('user_id',user.id).eq('mode',descriptor.mode).eq('pgn',descriptor.pgn))
-        .then(()=>{ if(statsDetails.open) renderStats(); },()=>{});
-    }else{
-      const log=loadGamesLog();
-      for(let i=log.length-1;i>=0;i--){
-        if(log[i].mode===descriptor.mode&&log[i].pgn===descriptor.pgn){
-          log[i].accuracyWhite=accWhite; log[i].accuracyBlack=accBlack; break;
-        }
-      }
-      saveGamesLog(log);
-      if(statsDetails.open) renderStats();
+    const humanAcc=(descriptor.mode==='two-player')?null:(descriptor.humanColor==='w'?accWhite:accBlack);
+    const log=loadGamesLog();
+    for(let i=log.length-1;i>=0;i--){
+      if(log[i].client_key===descriptor.client_key){ log[i].accuracy=humanAcc; break; }
+    }
+    saveGamesLog(log);
+    // Remote patch-back never forces a session into existence — same
+    // "don't add a network dependency offline play never had" reasoning
+    // as onGameEnd()'s own sync. If a session already exists, patch it;
+    // otherwise the local write above is what Statistics reads until the
+    // next opportunistic sync carries this game's accuracy over too.
+    if(humanAcc!=null&&db){
+      tryGetExistingUser().then(user=>{
+        if(!user) return null;
+        return db.from('mind_chess_results').update({accuracy:humanAcc})
+          .eq('user_id',user.id).eq('client_key',descriptor.client_key);
+      }).then(()=>{ if(statsDetails.open) renderStats(); }).catch(()=>{});
+    }else if(statsDetails.open){
+      renderStats();
     }
   }
 
@@ -4177,7 +4317,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r117 (Clocks wait for the first move — computer, two-player, online, Lichess vs AI)';
+  const BUILD='v2-r118 (Phase A: unified stats storage, own Supabase project split from Giga Chess)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7081,10 +7221,22 @@
 
   async function onlineUser(){
     const {data:{session}}=await db.auth.getSession();
-    if(session) return session.user;
-    const r=await db.auth.signInAnonymously();
-    if(r.error) throw r.error;
-    return r.data.session.user;
+    let user;
+    if(session){
+      user=session.user;
+    }else{
+      const r=await db.auth.signInAnonymously();
+      if(r.error) throw r.error;
+      user=r.data.session.user;
+    }
+    // OUR-124 Phase A: this is the one place a real session is guaranteed
+    // to exist for a genuine reason (starting/joining an online game,
+    // playing Lichess, opening Statistics) — piggyback the one-time local
+    // stats backfill here rather than adding a new trigger point of its
+    // own. Fire-and-forget: a slow or failed backfill must never delay
+    // whatever actually called onlineUser().
+    backfillLocalStats(user).catch(()=>{});
+    return user;
   }
 
   async function saveOnline(){
