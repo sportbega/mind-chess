@@ -4372,7 +4372,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r119 (Phase B: email/password accounts, anonymous-to-permanent linking — OUR-126)';
+  const BUILD='v2-r120 (OUR-126 fix: needs-password state was unreachable)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7323,15 +7323,36 @@
   // from Phase A.
   let accountUiMode='idle';   // 'idle' | 'signup' | 'login'
   let accountPendingEmail=null;
+  const PENDING_CLAIM_KEY='mind-chess-v2-pending-claim';
+  function setPendingClaim(userId){ try{ localStorage.setItem(PENDING_CLAIM_KEY,userId); }catch(e){} }
+  function clearPendingClaim(){ try{ localStorage.removeItem(PENDING_CLAIM_KEY); }catch(e){} }
+  function getPendingClaim(){ try{ return localStorage.getItem(PENDING_CLAIM_KEY); }catch(e){ return null; } }
+  // Live-tested finding: Supabase flips is_anonymous to false the instant
+  // the email identity confirms -- BEFORE any password exists (confirmed
+  // directly against auth.users.encrypted_password during Phase B
+  // verification). So is_anonymous can never signal "still needs a
+  // password" -- by the time email_confirmed_at is set, is_anonymous is
+  // already false. The client has no visibility into auth.users itself,
+  // so mind_chess_needs_password() (a security-definer RPC) answers this
+  // from the database directly -- this also covers clicking the
+  // confirmation link on a different device than the one that started the
+  // claim. If that RPC is unreachable (offline), fall back to this
+  // device's own claim marker, then to the original (device-local-only)
+  // heuristic as a last resort.
   async function currentAccountStatus(){
     if(!db) return {kind:'unavailable'};
     try{
       const {data:{session}}=await db.auth.getSession();
       if(!session) return {kind:'guest',user:null};
       const user=session.user;
-      if(!user.is_anonymous&&user.email) return {kind:'signed-in',user};
+      if(!user.email) return {kind:'guest',user};
+      try{
+        const {data:needsPw,error}=await db.rpc('mind_chess_needs_password');
+        if(!error) return needsPw?{kind:'needs-password',user}:{kind:'signed-in',user};
+      }catch(e){}
+      if(getPendingClaim()===user.id) return {kind:'needs-password',user};
       if(user.is_anonymous&&user.email_confirmed_at) return {kind:'needs-password',user};
-      return {kind:'guest',user};
+      return user.is_anonymous?{kind:'guest',user}:{kind:'signed-in',user};
     }catch(e){ return {kind:'unavailable'}; }
   }
   function accountField(label,id,type){
@@ -7421,10 +7442,11 @@
   async function handleAccountSignupStart(email){
     if(!email){ accountError('Enter an email address.'); return; }
     try{
-      await onlineUser();   // ensures SOME session exists to attach email to
+      const user=await onlineUser();   // ensures SOME session exists to attach email to
       const redirectTo=location.origin+location.pathname;
       const r=await db.auth.updateUser({email},{emailRedirectTo:redirectTo});
       if(r.error) throw r.error;
+      setPendingClaim(user.id);
       accountPendingEmail=email;
       renderAccount();
     }catch(e){ accountError(e.message||'Could not start sign-up.'); }
@@ -7434,6 +7456,7 @@
     try{
       const r=await db.auth.updateUser({password});
       if(r.error) throw r.error;
+      clearPendingClaim();
       backfillAttempted=false;   // a real credential now exists -- worth
                                   // retrying local stats under this identity.
       accountPendingEmail=null;
@@ -7446,6 +7469,8 @@
     try{
       const r=await db.auth.signInWithPassword({email,password});
       if(r.error) throw r.error;
+      clearPendingClaim();   // any pending claim belonged to the anon
+                              // identity just left behind, not this one
       backfillAttempted=false;
       accountUiMode='idle';
       renderAccount();
@@ -7454,6 +7479,7 @@
   }
   async function handleAccountLogout(){
     try{ await db.auth.signOut(); }catch(e){}
+    clearPendingClaim();
     // Deliberately not re-establishing a session here — logging out just
     // means "no session" again, the exact same state a brand new visitor
     // starts from. Computer/two-player play needed no session before this
@@ -7473,7 +7499,10 @@
   // since the whole point of this flow is not stranding them mid-claim.
   if(db){
     db.auth.onAuthStateChange((event,session)=>{
-      if(session&&session.user&&session.user.is_anonymous&&session.user.email_confirmed_at){
+      // is_anonymous is already false by the time email_confirmed_at is
+      // set (see currentAccountStatus() above) -- the pending-claim marker
+      // is what actually still means "confirmed, no password yet" here.
+      if(session&&session.user&&session.user.email&&getPendingClaim()===session.user.id){
         accountDetails.open=true;
       }
       if(accountDetails.open) renderAccount();
