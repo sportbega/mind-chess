@@ -4423,7 +4423,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r126 (OUR-132: clearer real-opponent vs computer, hide token row)';
+  const BUILD='v2-r127 (OUR-134: seek no longer grabs a stale unfinished game)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -8172,12 +8172,30 @@
     // disabled control tells the player the setting can't do anything here,
     // rather than looking live while every answer it would trigger is muted.
     coachSelect.disabled=true; tipsSelect.disabled=true;
+    warnAboutStaleLichessGames();
   }
   function hideLichessPanel(){
     lichessPanel.classList.remove('show');
     coachSelect.disabled=false; tipsSelect.disabled=false;
   }
   function lichessNote(text){ lichessStatusEl.textContent=text; }
+  // OUR-134: surfaces any already-unfinished games the moment this panel
+  // opens, rather than letting a player discover them only as an
+  // unexplained wrong-opponent connection later (see seekLichessGame()'s
+  // own fix above for the actual bug this caused). Read-only -- doesn't
+  // block Seek/AI, which now correctly wait for a genuinely new match
+  // regardless of what's already open; this is purely so a pile of old
+  // test games doesn't sit invisible on the account.
+  async function warnAboutStaleLichessGames(){
+    if(!lichessToken||lichessState) return;
+    try{
+      const playing=await (await lichessFetch('/api/account/playing')).json();
+      const games=playing.nowPlaying||[];
+      if(!games.length) return;
+      const label=games.length===1?'an unfinished game':games.length+' unfinished games';
+      lichessNote('You have '+label+' waiting on Lichess — press Resume to continue one, or finish/abort them on lichess.org before seeking a fresh opponent.');
+    }catch(e){}
+  }
 
   // An AI opponent's player object carries aiLevel instead of id/name/rating
   // (Board API shape, not a bug in what we read) — everything else is a
@@ -8617,6 +8635,20 @@
     const cfg=currentLichessTimeConfig();
     try{ await ensureLichessUsername(); }
     catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
+    // OUR-134 fix: a real bug, confirmed live -- any unfinished game already
+    // sitting in /api/account/playing (an old AI game from a previous
+    // session, say) used to get grabbed by the very first poll below,
+    // since it just took nowPlaying[0] unconditionally. That's correct for
+    // watchLichessGame()'s "resume whatever's in progress" (any game IS
+    // the right answer there), but wrong here -- a seek has to wait for a
+    // genuinely NEW match, not silently reconnect to something already
+    // open before this seek even started. Snapshotting which game IDs
+    // already exist right now lets the poll tell the two apart.
+    let existingGameIds=new Set();
+    try{
+      const playingBefore=await (await lichessFetch('/api/account/playing')).json();
+      existingGameIds=new Set((playingBefore.nowPlaying||[]).map(g=>g.gameId));
+    }catch(e){}
     const body=new URLSearchParams({rated:'false'});
     if(cfg.days) body.set('days',String(cfg.days));
     else{ body.set('time',String(cfg.time)); body.set('increment',String(cfg.increment)); }
@@ -8648,7 +8680,7 @@
     lichessSeekPollTimer=setInterval(async()=>{
       try{
         const playing=await (await lichessFetch('/api/account/playing')).json();
-        const current=(playing.nowPlaying||[])[0];
+        const current=(playing.nowPlaying||[]).find(g=>!existingGameIds.has(g.gameId));
         if(current){
           cancelLichessSeek(false);
           lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
