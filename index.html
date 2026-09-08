@@ -206,6 +206,7 @@
      the app's other card-style panels. */
   .lichess-option{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
   .lichess-option-label{margin:0;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .lichess-option-hint{margin:0;font-size:11px;color:var(--text-dim);opacity:.75}
 
   .lobby-panel{display:none;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
   .lobby-panel.show{display:flex}
@@ -977,6 +978,13 @@
          actual fix -- nothing below changed which button does what. -->
     <div class="lichess-option">
       <p class="lichess-option-label">Play a real opponent</p>
+      <!-- OUR-135: set upfront rather than only discovered after a seek
+           expires unmatched (see seekLichessGame()'s own fix) -- checked
+           live, not guessed: 10+0/10+5 Rapid reliably found someone,
+           15+10 Rapid, 30+0/30+20 Classical and Correspondence often
+           didn't, consistent with fewer people willing to sit an open
+           unrated seek for a slower format. -->
+      <p class="lichess-option-hint">10+0 and 10+5 Rapid tend to find someone fastest — slower formats and Correspondence have fewer people waiting, and may not match at all.</p>
       <!-- OUR-108: full Lichess "Quick Pairing" list plus Correspondence and
            Custom, grouped the same way Lichess's own lobby groups them.
            Option values are "minutes-seconds" — parseTimeControlValue()
@@ -4423,7 +4431,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r127 (OUR-134: seek no longer grabs a stale unfinished game)';
+  const BUILD='v2-r128 (OUR-135: seek now reports when Lichess gives up unmatched)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -8667,6 +8675,35 @@
       .then(async res=>{
         const reader=res.body.getReader();
         while(true){ const r=await reader.read(); if(r.done) break; }
+        // OUR-135: Lichess closes this exact connection the same way
+        // whether the seek was just accepted or simply expired unmatched
+        // — its own docs are explicit that the stream "doesn't contain
+        // any information" either way. Before this, stream-end did
+        // nothing at all: the poll below kept running forever with no
+        // signal that Lichess had already given up, so an expired seek
+        // for a less-liquid time control (15+10, 30+20, Correspondence —
+        // confirmed via testing to fail far more often than 10+0/10+5)
+        // left the UI stuck on "Looking for an opponent…" indefinitely,
+        // looking identical to a genuine hang. One last live check here
+        // tells an actual match (which the poll may not have caught yet)
+        // apart from a real expiry, and only reports "gave up" once
+        // that's actually confirmed.
+        if(lichessSeekController!==controller) return;
+        let matched=null;
+        try{
+          const playing=await (await lichessFetch('/api/account/playing')).json();
+          matched=(playing.nowPlaying||[]).find(g=>!existingGameIds.has(g.gameId));
+        }catch(e){}
+        if(lichessSeekController!==controller) return;
+        if(matched){
+          cancelLichessSeek(false);
+          lichessWatchBtn.style.display='none'; lichessStopBtn.style.display='';
+          lichessResignBtn.style.display='';
+          openLichessStream(matched.gameId);
+        }else{
+          cancelLichessSeek(false);
+          lichessNote('No '+cfg.label+' opponent found — Lichess gave up waiting. Faster time controls tend to have more players available; try again or pick a shorter one.');
+        }
       }).catch(err=>{
         // A rejected seek POST (bad scope, rate limit, whatever) used to be
         // swallowed here entirely — the UI just sat on "Looking for an
