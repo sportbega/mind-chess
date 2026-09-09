@@ -119,10 +119,20 @@
 
   /* OUR-116: game review overlay. Fixed, dim backdrop, centered card —
      same weight of treatment as the promotion picker's own fixed
-     positioning below, just full-screen instead of anchored to a square. */
-  .review-overlay{position:fixed;inset:0;z-index:90;background:#000c;display:flex;align-items:center;justify-content:center;padding:16px}
-  .review-overlay[hidden]{display:none}
-  .review-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;max-width:920px;width:100%;max-height:92vh;overflow:auto}
+     positioning below, just full-screen instead of anchored to a square.
+     OUR-168: shared with .modal-overlay/.modal-card below -- Report a
+     problem and Voice commands both needed more room than the
+     .popover-panel used by Game settings/Appearance/Voice settings (a
+     260px-tall textarea and a long reference list don't fit a ~220px
+     anchored popover), so they reuse this exact overlay treatment instead
+     of a new one. .review-card keeps its own wider max-width (920px, sized
+     for a board + move list); .modal-card gets a narrower one below, sized
+     for form/text content instead. */
+  .review-overlay,.modal-overlay{position:fixed;inset:0;z-index:90;background:#000c;display:flex;align-items:center;justify-content:center;padding:16px}
+  .review-overlay[hidden],.modal-overlay[hidden]{display:none}
+  .review-card,.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;width:100%;max-height:92vh;overflow:auto}
+  .review-card{max-width:920px}
+  .modal-card{max-width:640px}
   .review-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
   .review-head h3{margin:0;font-size:16px;font-weight:600}
   .review-progress{font-size:13px;color:var(--text-dim)}
@@ -562,8 +572,12 @@
   .field-grid .field{min-width:120px}
   .field-grid input[type=range]{width:100%}
   details.help summary{cursor:pointer;font-size:13px;color:var(--accent-2);font-weight:500}
-  details.help ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
-  details.help code{font-family:'IBM Plex Mono',monospace;color:var(--text);background:var(--panel-2);padding:1px 6px;border-radius:4px}
+  /* OUR-168: .modal-card added to both selectors -- Voice commands' list
+     carried its exact content into a modal card (see the HTML above),
+     and needs this same styling since it's no longer inside
+     details.help. */
+  details.help ul,.modal-card ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--text-dim);line-height:1.7}
+  details.help code,.modal-card code{font-family:'IBM Plex Mono',monospace;color:var(--text);background:var(--panel-2);padding:1px 6px;border-radius:4px}
   /* OUR-115: Statistics panel — a small table (mode/played/W/L/D) plus a
      summary line and an openings list, not raw numbers in a <ul> the way
      Voice settings' help text is. Reuses .field-grid's color tokens rather
@@ -1107,6 +1121,39 @@
           </div>
         </div>
       </div>
+      <!-- OUR-168: Report a problem, restyled from a standalone text
+           button into a round icon (bug glyph) grouped with the other
+           settings/utility icons rather than sitting on its own further
+           down the page. Opens the same #reportPanel as a modal now (see
+           its own comment above the modal markup) instead of an inline
+           block -- openReport()/sendReport() etc. are otherwise
+           unchanged, only reportPanel's own show/hide switched from a
+           .show class toggle to the hidden attribute the modal pattern
+           uses, see the JS below. -->
+      <button class="icon-btn mic-size" id="reportBtn" type="button" aria-label="Report a problem" title="Report a problem — copy a diagnostic report you can paste into a bug report.">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 9V7a3 3 0 1 1 6 0v2"/>
+          <rect x="7" y="9" width="10" height="10" rx="5"/>
+          <path d="M12 9v10"/>
+          <path d="M4 12h3"/><path d="M17 12h3"/>
+          <path d="M4 17l3-2"/><path d="M17 15l3 2"/>
+          <path d="M4 8l3 2"/><path d="M17 10l3-2"/>
+        </svg>
+      </button>
+      <!-- OUR-168: Voice commands, restyled from a <details> section into
+           a round icon (a head profile with small sound-wave lines at the
+           mouth -- the same concentric-arc language #speakerToggleBtn
+           already uses for "sound", applied here to mean "a person
+           talking" rather than redrawing an unrelated speech-bubble
+           convention this app has never used elsewhere). Opens the same
+           list content as a modal, see its own comment above. -->
+      <button class="icon-btn mic-size" id="voiceCommandsBtn" type="button" aria-label="Voice commands" title="Voice commands">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 3a5 5 0 0 1 5 5c0 1.1-.3 1.9-.3 1.9s1.3.3 1.3 1.6c0 1.1-.9 2-2 2 0 2 1 3.5 1 3.5H9v2a1 1 0 0 1-1 1H6v-3.3C4.2 15.8 3 13.9 3 11.5V8a5 5 0 0 1 4-5Z"/>
+          <path d="M15.5 9a3.2 3.2 0 0 1 0 4.4"/>
+          <path d="M17.7 7a6.2 6.2 0 0 1 0 8.4"/>
+        </svg>
+      </button>
       <!-- OUR-162: Log out relocated from the auth bar (where its identity
            text used to sit next to it) into this row, directly after
            Appearance as asked -- grouped with the other settings-style
@@ -1479,12 +1526,10 @@
     <div class="transcript" id="transcript" aria-live="polite"></div>
   </details>
 
-  <!-- Doesn't cleanly belong to either Game or Voice settings — a
-       diagnostic/support action, not a game or voice preference — so it
-       stays standalone rather than being force-fit into one group. Placed
-       here, next to the transcript, since the report it copies is built
-       from the same session data (moves, settings, mic timeline). -->
-  <button class="btn" id="reportBtn" type="button" title="Copy a diagnostic report you can paste into a bug report.">Report a problem</button>
+  <!-- OUR-168: #reportBtn moved to the header (round icon, bug glyph) --
+       see there. This standalone spot is gone; the report it opens is
+       still built from the same session data (moves, settings, mic
+       timeline), that part is unchanged. -->
 
   <div class="report-panel" id="calibPanel">
     <div class="report-head">
@@ -1497,56 +1542,83 @@
       it never replaces the app's normal listening, only helps it recognise you specifically.</p>
   </div>
 
-  <div class="report-panel" id="reportPanel">
-    <div class="report-head">
-      <p class="online-status" style="margin:0"><b>Diagnostic report</b> — paste this to whoever gave you the link.</p>
-      <button class="btn" id="reportSendBtn" type="button">Send</button>
-      <button class="btn" id="reportCopyBtn" type="button">Copy</button>
-      <button class="btn" id="copyDiagBtn" type="button" style="display:none" title="?debug=1 only — copies just the session timeline (heard/matched/played/timing), separate from the full report.">Copy diagnostics</button>
-      <button class="btn" id="reportCloseBtn" type="button">Close</button>
+  <!-- OUR-168: restyled from an inline .report-panel/.show block (same
+       toggle CSS #calibPanel above still uses, untouched) into a modal --
+       a 260px-tall textarea plus four buttons needs real room, more than
+       a ~220px anchored popover could give it, so this reuses the exact
+       overlay pattern OUR-116's Game Review already established (see
+       .modal-overlay/.modal-card, shared with .review-overlay/.review-card
+       in the CSS above) rather than force-fitting a popover or inventing a
+       third pattern. Every control inside keeps its exact id and handler
+       (buildReport()/sendReport()/reportCopyBtn/copyDiagBtn, all
+       unchanged) -- presentation only. -->
+  <div class="modal-overlay" id="reportPanel" hidden>
+    <div class="modal-card">
+      <div class="review-head">
+        <h3>Diagnostic report</h3>
+        <button type="button" class="btn" id="reportCloseBtn">Close</button>
+      </div>
+      <p class="online-status" style="margin:0 0 10px">Paste this to whoever gave you the link.</p>
+      <div class="report-head">
+        <button class="btn" id="reportSendBtn" type="button">Send</button>
+        <button class="btn" id="reportCopyBtn" type="button">Copy</button>
+        <button class="btn" id="copyDiagBtn" type="button" style="display:none" title="?debug=1 only — copies just the session timeline (heard/matched/played/timing), separate from the full report.">Copy diagnostics</button>
+      </div>
+      <textarea id="reportOut" spellcheck="false" aria-label="Diagnostic report — add a description of what went wrong"></textarea>
+      <p class="report-foot"><b>Send</b> uploads exactly the text in the box above and nothing else — press it only
+        when you have read what is there. Copy keeps it local. It contains the moves of
+        this game, your settings, and what the microphone thought it heard — no account details.
+        If you have a GitHub account you can open an issue at
+        <a href="https://github.com/sportbega/mind-chess/issues" target="_blank" rel="noopener">github.com/sportbega/mind-chess/issues</a>.</p>
     </div>
-    <textarea id="reportOut" spellcheck="false" aria-label="Diagnostic report — add a description of what went wrong"></textarea>
-    <p class="report-foot"><b>Send</b> uploads exactly the text in the box above and nothing else — press it only
-      when you have read what is there. Copy keeps it local. It contains the moves of
-      this game, your settings, and what the microphone thought it heard — no account details.
-      If you have a GitHub account you can open an issue at
-      <a href="https://github.com/sportbega/mind-chess/issues" target="_blank" rel="noopener">github.com/sportbega/mind-chess/issues</a>.</p>
   </div>
 
-  <details class="help">
-    <summary>Voice commands</summary>
-    <ul>
-      <li><code>e4</code> — pawn moves by square alone</li>
-      <li><code>knight f3</code> / <code>knight to f3</code> — piece + destination</li>
-      <li><code>queen takes e5</code> — captures</li>
-      <li><code>castle kingside</code> / <code>short castle</code> / <code>long castle</code></li>
-      <li><code>e8 promote to queen</code> — or just say <code>e8</code> and it will ask</li>
-      <li><code>show board</code> / <code>hide board</code> — works any time, even mid-game</li>
-      <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>how much time</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
-      <li><b>Ask about the position</b> — <code>where are my knights</code>, <code>where can my bishop go</code>,
-        <code>what's on e4</code>, <code>is d5 empty</code>, <code>what's attacking my queen</code>,
-        <code>is my knight defended</code>, <code>anything hanging</code>, <code>am I in check</code>,
-        <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
-        <code>how many pieces do I have</code>, <code>what can I take</code></li>
-      <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
-      <li><b>Ask the engine</b> (<b>Coach</b>, on by default — say <code>coach off</code> to silence it) — <code>how am I doing</code>,
-        <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
-        number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
-      <li><b>Puzzles</b> — set <b>Opponent</b> to <i>Puzzles</i>. Mate in one or two, four to seven pieces so the
-        position fits in your head, read out loud when it starts. Say <code>next puzzle</code>,
-        <code>solution</code>, or <code>say the position again</code>. Every puzzle has exactly one key move,
-        so a rejection means it really wasn't the move. No engine and no network needed.</li>
-      <li><b>Tips</b> (on by default — say <code>tips off</code>) — occasional spoken facts you'd have seen with a
-        board in front of you: both queens coming off, a piece type disappearing, a repeated position, the
-        fifty-move count. Never advice, and never a move — that's what the coach is for.</li>
-      <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
-        (then it's cached and works offline), needs WebGPU, and falls back to the system voice if anything is
-        missing. Nothing downloads until you pick it.</li>
-      <li><b>Interrupt it</b> — press <kbd>Esc</kbd> (or tap the mic) any time it's talking. <b>Talk over it</b>
-        does the same by voice, but it leaves the mic open while the app speaks, so it depends on your machine's
-        echo cancellation — try it, and turn it off if it cuts itself short.</li>
-    </ul>
-  </details>
+  <!-- OUR-168: restyled from a <details> section into a modal -- reference
+       content this long (a dozen-plus bullet points, several of them
+       multi-sentence) reads far better in a wide scrollable card than
+       squeezed into a ~220px popover. Same .modal-overlay/.modal-card
+       pattern as the Report a problem modal just above. Every list item
+       carried over verbatim, word for word -- content unchanged, only the
+       container. -->
+  <div class="modal-overlay" id="voiceCommandsPanel" hidden>
+    <div class="modal-card">
+      <div class="review-head">
+        <h3>Voice commands</h3>
+        <button type="button" class="btn" id="voiceCommandsCloseBtn">Close</button>
+      </div>
+      <ul>
+        <li><code>e4</code> — pawn moves by square alone</li>
+        <li><code>knight f3</code> / <code>knight to f3</code> — piece + destination</li>
+        <li><code>queen takes e5</code> — captures</li>
+        <li><code>castle kingside</code> / <code>short castle</code> / <code>long castle</code></li>
+        <li><code>e8 promote to queen</code> — or just say <code>e8</code> and it will ask</li>
+        <li><code>show board</code> / <code>hide board</code> — works any time, even mid-game</li>
+        <li><code>what's on the board</code>, <code>whose turn</code>, <code>material</code>, <code>how much time</code>, <code>repeat</code>, <code>take back</code>, <code>new game</code></li>
+        <li><b>Ask about the position</b> — <code>where are my knights</code>, <code>where can my bishop go</code>,
+          <code>what's on e4</code>, <code>is d5 empty</code>, <code>what's attacking my queen</code>,
+          <code>is my knight defended</code>, <code>anything hanging</code>, <code>am I in check</code>,
+          <code>can I still castle</code>, <code>what did I just play</code>, <code>what were the last three moves</code>,
+          <code>how many pieces do I have</code>, <code>what can I take</code></li>
+        <li>Ambiguous? It asks "which knight — b or d?" — answer with just <code>b</code></li>
+        <li><b>Ask the engine</b> (<b>Coach</b>, on by default — say <code>coach off</code> to silence it) — <code>how am I doing</code>,
+          <code>what should I worry about</code>, <code>is my king safe</code>. Deliberately vague: it won't give you a
+          number or a move unless you set <code>coach full</code>, because this is meant to be training.</li>
+        <li><b>Puzzles</b> — set <b>Opponent</b> to <i>Puzzles</i>. Mate in one or two, four to seven pieces so the
+          position fits in your head, read out loud when it starts. Say <code>next puzzle</code>,
+          <code>solution</code>, or <code>say the position again</code>. Every puzzle has exactly one key move,
+          so a rejection means it really wasn't the move. No engine and no network needed.</li>
+        <li><b>Tips</b> (on by default — say <code>tips off</code>) — occasional spoken facts you'd have seen with a
+          board in front of you: both queens coming off, a piece type disappearing, a repeated position, the
+          fifty-move count. Never advice, and never a move — that's what the coach is for.</li>
+        <li><b>A better voice</b> — set <b>Speech</b> to <i>Natural</i>. It downloads a 326&nbsp;MB model once
+          (then it's cached and works offline), needs WebGPU, and falls back to the system voice if anything is
+          missing. Nothing downloads until you pick it.</li>
+        <li><b>Interrupt it</b> — press <kbd>Esc</kbd> (or tap the mic) any time it's talking. <b>Talk over it</b>
+          does the same by voice, but it leaves the mic open while the app speaks, so it depends on your machine's
+          echo cancellation — try it, and turn it off if it cuts itself short.</li>
+      </ul>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1757,6 +1829,8 @@
         testVoiceBtn=$('testVoiceBtn'), reportBtn=$('reportBtn'), reportPanel=$('reportPanel'),
         reportOut=$('reportOut'), reportCopyBtn=$('reportCopyBtn'), reportCloseBtn=$('reportCloseBtn'),
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
+        voiceCommandsBtn=$('voiceCommandsBtn'), voiceCommandsPanel=$('voiceCommandsPanel'),
+        voiceCommandsCloseBtn=$('voiceCommandsCloseBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         statsDetails=$('statsDetails'), statsBody=$('statsBody'),
         accountBody=$('accountBody'), identityLine=$('identityLine'), accountLogoutBtn=$('accountLogoutBtn'),
@@ -5063,7 +5137,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r144 (OUR-166: auto-dismiss Voice started toast)';
+  const BUILD='v2-r145 (OUR-168: Report a problem/Voice commands modals)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10352,8 +10426,11 @@
   function openReport(){
     reportSendBtn.disabled=false; reportSendBtn.textContent='Send';
     reportOut.value=buildReport();
-    reportPanel.classList.add('show');
-    reportPanel.scrollIntoView({block:'nearest'});
+    // OUR-168: hidden attribute now, not a .show class -- reportPanel is a
+    // fixed-position modal overlay (see .modal-overlay), so there's no
+    // scroll position to bring it into view like the old inline
+    // .report-panel needed.
+    reportPanel.hidden=false;
     // Land the caret in the box the reader is being asked to type in, rather
     // than making them scroll a 200-line log to find it. The box is editable
     // on purpose — a timeline with no sentence saying what looked wrong is a
@@ -10361,6 +10438,7 @@
     reportOut.focus();
     reportOut.setSelectionRange(reportOut.value.length,reportOut.value.length);
   }
+  function closeReport(){ reportPanel.hidden=true; }
   // Sending a report, which used to mean copy, switch app, paste, describe.
   //
   // Deliberately a button and not automatic. The report carries the game, the
@@ -10403,7 +10481,13 @@
   }
   reportSendBtn.addEventListener('click',sendReport);
   reportBtn.addEventListener('click',openReport);
-  reportCloseBtn.addEventListener('click',()=>reportPanel.classList.remove('show'));
+  reportCloseBtn.addEventListener('click',closeReport);
+  // Click-outside and Escape close it, same dismissal convention as the
+  // Game Review modal this reuses the exact overlay pattern from.
+  reportPanel.addEventListener('click',e=>{ if(e.target===reportPanel) closeReport(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!reportPanel.hidden) closeReport();
+  });
   reportCopyBtn.addEventListener('click',()=>{
     // Same two-step as the debug panel: execCommand works without a
     // permission prompt and without a secure context, navigator.clipboard
@@ -10421,7 +10505,7 @@
     // uploads verbatim — inserted at the caret so it doesn't clobber
     // anything already typed — rather than making the tester paste it in
     // by hand after copying.
-    if(reportPanel.classList.contains('show')){
+    if(!reportPanel.hidden){
       const start=reportOut.selectionStart!=null?reportOut.selectionStart:reportOut.value.length;
       const end=reportOut.selectionEnd!=null?reportOut.selectionEnd:reportOut.value.length;
       reportOut.setRangeText(text,start,end,'end');
@@ -10430,6 +10514,20 @@
     catch(e){ prompt('Copy these diagnostics:',text); }
     copyDiagBtn.textContent='Copied!';
     setTimeout(()=>copyDiagBtn.textContent='Copy diagnostics',1400);
+  });
+
+  // OUR-168: Voice commands modal -- pure reference content, no state to
+  // set up on open (unlike openReport(), which rebuilds the report text
+  // every time), so there's nothing beyond the show/hide toggle itself.
+  // Same click-outside/Escape dismissal as the Report a problem modal
+  // just above and the Game Review modal both reuse this pattern from.
+  function openVoiceCommands(){ voiceCommandsPanel.hidden=false; }
+  function closeVoiceCommands(){ voiceCommandsPanel.hidden=true; }
+  voiceCommandsBtn.addEventListener('click',openVoiceCommands);
+  voiceCommandsCloseBtn.addEventListener('click',closeVoiceCommands);
+  voiceCommandsPanel.addEventListener('click',e=>{ if(e.target===voiceCommandsPanel) closeVoiceCommands(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!voiceCommandsPanel.hidden) closeVoiceCommands();
   });
 
   if(location.protocol==='file:') originBanner.classList.add('show');
