@@ -79,15 +79,27 @@
      720px floor, the page keeps its original tested width regardless of
      how small the board goes (nothing above 618px board-max ever needed
      lowering it); above that floor, .app == board + the fixed chrome
-     around it (.boardpanel's 16px padding ×2, the .ranks column, its 6px
-     gap, and .board-outer's own clamp(10px,2.7vw,25px) padding ×2) — so
-     .boardpanel stretching to fill .app now means stretching to fill
-     EXACTLY the board plus its frame, with the same near-zero gap at any
-     slider position, not just at 960. No JS change needed: this is a CSS
-     custom property already being set on every slider input, so raising
-     or lowering it recomputes .app's width the same tick .board-grid's
-     own max-width does. */
-  .app{width:100%;max-width:max(720px,calc(var(--board-max,750px) + 52px + (clamp(10px,2.7vw,25px) * 2)));display:flex;flex-direction:column;gap:16px}
+     around it -- so .boardpanel stretching to fill .app now means
+     stretching to fill EXACTLY the board plus its frame, with the same
+     near-zero gap at any slider position, not just at 960. No JS change
+     needed: this is a CSS custom property already being set on every
+     slider input, so raising or lowering it recomputes .app's width the
+     same tick .board-grid's own max-width does.
+
+     OUR-223 Phase 1: dropped the formula's old third term entirely --
+     .board-outer's own clamp(10px,2.7vw,25px) padding ×2 -- now that
+     .board-outer carries no padding of its own. Keeping that term would
+     have left .app sized for chrome that no longer exists, a fixed empty
+     margin that grows with viewport width (clamp scales with vw) rather
+     than shrinking to nothing the way an actually-removed padding should.
+
+     OUR-223 Phase 2: the remaining "+32px" is now JUST .boardpanel's own
+     16px padding ×2 -- it used to also carry the .ranks column's 14px
+     width and its 6px gap to .board-col (32+14+6=52), but rank/file
+     labels are imprinted directly on the grid's own edge squares now
+     (renderBoard()) and .ranks is gone, so there's no separate column
+     width or gap left to account for. */
+  .app{width:100%;max-width:max(720px,calc(var(--board-max,750px) + 32px));display:flex;flex-direction:column;gap:16px}
 
   /* banner */
   .banner{
@@ -205,6 +217,17 @@
     background:var(--panel); border:1px solid var(--line); border-radius:14px;
     padding:8px; box-shadow:0 14px 34px #000a;
   }
+  /* OUR-224: #promotionPicker's own hidden attribute (toggled by
+     positionPromotionPicker()) was silently losing to the plain
+     .promotion-picker{display:flex} rule above -- same specificity as the
+     UA [hidden]{display:none} default, but this one is later in the
+     cascade, so it won and kept the picker visible (at a stale position:
+     fixed location, e.g. floating in a corner during normal play, or
+     visible in fullscreen since .app.fullscreen-active>*{display:none}
+     only reaches direct children of .app and this is position:fixed, not
+     a child of .app at all) regardless of the attribute. Same fix already
+     used for #levelField/#clockField and .popover-panel above (OUR-199). */
+  #promotionPicker[hidden]{display:none}
   .promo-choice{
     width:52px; height:52px; display:flex; align-items:center; justify-content:center;
     background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
@@ -505,9 +528,18 @@
      below) is now gone too -- the size slider/Reset moved out of
      .board-head entirely into a popover on a new header icon, same
      "moved out, selector now dead" situation all over again. */
-  .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
-  .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
-  .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
+  /* OUR-223 Phase 1: destyled in place, not removed as an element -- the
+     element itself still needs to exist and stay a flex row (unchanged
+     display:flex/gap:6px below) so .app.fullscreen-active's own
+     .board-outer{flex:1;min-height:0} rule further down still has
+     something to anchor to without re-wiring that flex chain. Dropping
+     just the decorative padding/gradient/shadow (the wood-textured "frame"
+     around the grid, absent from Game Review's own board -- OUR-222's
+     board-comparison screenshots confirmed this was exactly the visual
+     difference) is what Adni meant by "the background layer". The .app
+     max-width formula below is recalculated to match -- it used to add
+     this padding on both sides, and now there's none to add. */
+  .board-outer{display:flex;gap:6px;padding:0;border-radius:0;background:none;box-shadow:none}
   .board-col{flex:1;min-width:0}
   /* container-type lives on .board-grid itself, not .board-col: .sq's
      font-size below is sized in cqw, and a query container reports its OWN
@@ -596,6 +628,22 @@
   .sq.white-piece{color:var(--piece-light);-webkit-text-stroke:1.3px var(--piece-light-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
   .sq.black-piece{color:var(--piece-dark);-webkit-text-stroke:1px var(--piece-dark-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
   .sq.last{background-color:#cbb87c!important;box-shadow:none}
+  /* OUR-222: rank/file labels imprinted directly on the review board's own
+     edge squares (chess.com/Lichess style) instead of a separate row/
+     column outside the grid -- position:absolute takes each label out of
+     .sq's own display:grid flow (plain grid auto-placement would
+     otherwise stack a second child into its own implicit row below the
+     piece, not the corner). Colored with the OPPOSITE square's own
+     --sq-light/--sq-dark variable -- the same two variables .sq.light/
+     .sq.dark already use for their backgrounds -- rather than a new
+     per-theme label color, so this reads correctly against all nine
+     board themes (OUR-69) for free, the same reasoning legal-move
+     highlighting's --accent/--accent-2 reuse already established. */
+  .sq-coord{position:absolute;font-size:clamp(8px,2.2cqw,12px);font-weight:600;line-height:1;pointer-events:none;font-variant-numeric:tabular-nums;z-index:1}
+  .sq-coord.rank{top:3%;left:5%}
+  .sq-coord.file{bottom:3%;right:5%}
+  .sq.light .sq-coord{color:var(--sq-dark)}
+  .sq.dark .sq-coord{color:var(--sq-light)}
   .sq.checked{box-shadow:inset 0 0 0 2px var(--danger)}
   /* Mouse/touch board interaction. var(--accent)/var(--accent-2) rather
      than a fixed color, since both already vary across all nine board
@@ -636,7 +684,6 @@
      the ghost sits directly under the cursor, exactly where drop-target
      hit-testing needs to see the real square underneath instead. */
   .drag-ghost{position:fixed;top:0;left:0;transform:translate(-50%,-50%);pointer-events:none;z-index:60;line-height:1;-webkit-text-stroke:inherit;paint-order:stroke fill}
-  .files{display:grid;grid-template-columns:repeat(8,1fr);font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin:4px auto 0;text-align:center}
 
   /* inset:0 is relative to .boardpanel (its positioned ancestor), which
      spans .board-head too, not just .board-outer underneath this — so
@@ -787,11 +834,17 @@
              OUR-215 Phase B: Play/Pause auto-advance, reusing the same
              showReviewPosition()/narrateReviewStep() as manual stepping.
              OUR-216 Phase C: both of the above narrate at whichever depth
-             #reviewDepthSelect currently holds -- see narrateReviewStep(). -->
+             #reviewDepthSelect currently holds -- see narrateReviewStep().
+             OUR-222: Reload (jump to the start) and +-5 fast-forward/
+             rewind added either side of Prev/Play/Next -- same tape-deck
+             row, same underlying showReviewPosition()/narrateReviewStep(). -->
         <div class="review-step-row">
+          <button type="button" class="btn" id="reviewReloadBtn" title="Back to the start">&#8634; Reload</button>
+          <button type="button" class="btn" id="reviewRewind5Btn" title="Back 5 moves">&minus;5</button>
           <button type="button" class="btn" id="reviewPrevBtn">&larr; Prev</button>
           <button type="button" class="btn" id="reviewPlayBtn">Play</button>
           <button type="button" class="btn" id="reviewNextBtn">Next &rarr;</button>
+          <button type="button" class="btn" id="reviewForward5Btn" title="Forward 5 moves">+5</button>
         </div>
         <div class="review-movelist" id="reviewMoveList"></div>
       </div>
@@ -1606,11 +1659,13 @@
         <button class="btn" id="reviewGameBtn" type="button" style="display:none">Review game</button>
       </div>
     </div>
+    <!-- OUR-223 Phase 2: rank/file labels now imprinted directly on the
+         grid's own edge squares (renderBoard(), same .sq-coord pattern as
+         Game Review's board) -- the separate .ranks/.files rows this used
+         to also render are gone, along with syncFilesWidth(). -->
     <div class="board-outer">
-      <div class="ranks" id="ranks"></div>
       <div class="board-col">
         <div class="board-grid" id="boardGrid"></div>
-        <div class="files" id="files"></div>
       </div>
     </div>
     <div class="board-veil" id="boardVeil">
@@ -2201,7 +2256,7 @@
   const transcript=$('transcript'), moveStrip=$('moveStrip'),
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
-        ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
+        boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
         boardOpacityCaretBtn=$('boardOpacityCaretBtn'), boardOpacityPopover=$('boardOpacityPopover'),
         boardThemeBtn=$('boardThemeBtn'), boardThemePopover=$('boardThemePopover'),
         coachTipsBtn=$('coachTipsBtn'), coachTipsPopover=$('coachTipsPopover'),
@@ -2247,6 +2302,7 @@
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
         reviewPerspectiveBtn=$('reviewPerspectiveBtn'), reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
+        reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -3411,7 +3467,7 @@
       ?slideQueue.map(mv=>({to:mv.to,origin:captureSlideOrigin(boardGrid,mv.from)}))
       :[];
     suppressNextBoardSlide=false;
-    boardGrid.innerHTML=''; ranksEl.innerHTML=''; filesEl.innerHTML='';
+    boardGrid.innerHTML='';
     const board=game.board();
     const flipped=isBoardFlipped();
     let checkSq=null;
@@ -3443,11 +3499,27 @@
         if(checkSq&&sq===checkSq) div.classList.add('checked');
         if(sq===selectedSquare) div.classList.add('selected');
         else if(legalTargets.some(m=>m.to===sq)) div.classList.add(cell?'legal-capture':'legal-target');
+        // OUR-223 Phase 2: rank/file labels imprinted on the edge squares
+        // themselves, same .sq-coord pattern already built and verified
+        // for Game Review's own board (OUR-222) -- fi===0 is always the
+        // leftmost rendered column and ri===7 the bottommost rendered row
+        // regardless of `flipped`, since flipping already swapped which
+        // logical rank/file (r/f) land there.
+        if(fi===0){
+          const rankLabel=document.createElement('span');
+          rankLabel.className='sq-coord rank';
+          rankLabel.textContent=rank;
+          div.appendChild(rankLabel);
+        }
+        if(ri===7){
+          const fileLabel=document.createElement('span');
+          fileLabel.className='sq-coord file';
+          fileLabel.textContent=String.fromCharCode(97+f);
+          div.appendChild(fileLabel);
+        }
         boardGrid.appendChild(div);
       }
-      const rl=document.createElement('div'); rl.textContent=8-r; ranksEl.appendChild(rl);
     }
-    (flipped?'hgfedcba':'abcdefgh').split('').forEach(f=>{ const d=document.createElement('div'); d.textContent=f; filesEl.appendChild(d); });
     slideOrigins.forEach(s=>playSlideAnimation(boardGrid,s.to,s.origin));
   }
   function renderMoveStrip(){
@@ -3776,10 +3848,6 @@
     fullscreenBtn.title=on?'Exit fullscreen':'Fullscreen';
     fullscreenBtn.querySelector('.fullscreen-expand').style.display=on?'none':'';
     fullscreenBtn.querySelector('.fullscreen-compress').style.display=on?'':'none';
-    // The board's own width changes size class here (see .board-grid rules
-    // above) — the file labels below it need to be told, not just left to
-    // a ResizeObserver that may not have fired yet by the time this paints.
-    setTimeout(syncFilesWidth,0);
   }
   async function toggleFullscreen(){
     try{
@@ -3831,9 +3899,11 @@
   // press which fires once per discrete step (never more than one per
   // rendered frame — that's the whole reason keyboard never exposed this).
   //
-  // r72 batched syncFilesWidth()'s forced-layout read and the localStorage
-  // write into one requestAnimationFrame per burst, on the theory that the
-  // `--board-max` custom-property write itself was cheap enough to stay
+  // r72 batched a forced-layout read (syncFilesWidth(), since removed by
+  // OUR-223 Phase 2 along with the separate .files row it kept in sync)
+  // and the localStorage write into one requestAnimationFrame per burst,
+  // on the theory that the `--board-max` custom-property write itself was
+  // cheap enough to stay
   // synchronous on every raw event. That was true when it was written —
   // and already false by then, because r71 (shipped one build earlier) had
   // just made `.app`'s own max-width a function of this exact variable
@@ -3863,7 +3933,6 @@
     boardSizeRAF=requestAnimationFrame(()=>{
       boardSizeRAF=null;
       document.documentElement.style.setProperty('--board-max',boardSizePendingPx+'px');
-      syncFilesWidth();
       try{ localStorage.setItem(BOARD_SIZE_KEY,boardSizePendingPx); }catch(e){}
     });
   }
@@ -3907,29 +3976,6 @@
     boardSizeLastApplied=snapped;
     applyBoardSize(snapped);
   });
-  // The file labels ("a"–"h") are a plain block/grid element, not aspect-
-  // ratio-sized like the board grid itself, so they stretch to fill
-  // whatever width their flex/block container gives them — normally that
-  // equals the grid's own width by coincidence, but fullscreen made
-  // .board-col genuinely wider than the (height-constrained) grid inside
-  // it, and the letters spread out to fill the extra room instead of
-  // staying under their columns. Keeping this synced by actual measurement
-  // is more robust than trying to make two independently-sized elements
-  // agree through CSS alone — it's correct in the normal layout too, just
-  // a no-op there since the two widths already happen to match.
-  // An explicit width, not max-width: .files has auto left/right margins for
-  // centering, and an auto margin on a flex item opts it OUT of stretch — it
-  // shrinks to its own (much narrower) content size instead of filling the
-  // space max-width would otherwise cap, which is exactly the wrong
-  // direction for a cap to correct.
-  function syncFilesWidth(){ filesEl.style.width=boardGrid.getBoundingClientRect().width+'px'; }
-  // ResizeObserver as a general catch-all (window resize, zoom, anything
-  // else that changes the grid's size) — but not relied on alone, since a
-  // resize observer's first callback timing isn't something to gate a fix
-  // on sight-unseen. The two known resize triggers (fullscreen toggling,
-  // the size slider) call syncFilesWidth() directly, right below.
-  if(window.ResizeObserver) new ResizeObserver(syncFilesWidth).observe(boardGrid);
-  setTimeout(syncFilesWidth,0);
 
   // ===============================================================
   // Appearance — contrast/saturation/brightness/hue/transparency, layered
@@ -5064,6 +5110,23 @@
           div.appendChild(glyph);
           div.classList.add(cell.color==='w'?'white-piece':'black-piece');
         }
+        // OUR-222: fi===0 is always the leftmost rendered column and
+        // ri===7 the bottommost rendered row, regardless of `flipped` --
+        // flipping already swapped which logical rank/file (r/f) land
+        // there, so the label text (8-r, the letter for f) is already
+        // correct for whichever orientation is showing.
+        if(fi===0){
+          const rankLabel=document.createElement('span');
+          rankLabel.className='sq-coord rank';
+          rankLabel.textContent=8-r;
+          div.appendChild(rankLabel);
+        }
+        if(ri===7){
+          const fileLabel=document.createElement('span');
+          fileLabel.className='sq-coord file';
+          fileLabel.textContent=String.fromCharCode(97+f);
+          div.appendChild(fileLabel);
+        }
         reviewBoardGrid.appendChild(div);
       }
     }
@@ -5132,6 +5195,9 @@
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
     reviewPrevBtn.disabled=(idx<=0);
     reviewNextBtn.disabled=(idx>=reviewResult.perMove.length);
+    reviewReloadBtn.disabled=(idx<=0);
+    reviewRewind5Btn.disabled=(idx<=0);
+    reviewForward5Btn.disabled=(idx>=reviewResult.perMove.length);
   }
   // OUR-214 Phase A: Simple-tier narration for one stepped-to move --
   // the move itself (reusing describeMove()'s own piece/capture/castle
@@ -5423,6 +5489,35 @@
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
+  // OUR-222: back to the very start, reusing showReviewPosition(0) as-is --
+  // position 0 has no move to narrate (narrateReviewStep() already no-ops
+  // for idx<=0, same as it always has for Prev stepping back to the
+  // start), so there's nothing new to say here, only somewhere new to
+  // look. Works from anywhere, including after auto-play has already
+  // reached the end.
+  reviewReloadBtn.addEventListener('click',()=>{
+    if(!reviewResult||reviewPositionIdx===0) return;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    showReviewPosition(0);
+  });
+  // OUR-222: +-5 step, clamped to the game's own start/end -- same
+  // showReviewPosition()/narrateReviewStep() as single-step Prev/Next, so
+  // whichever move is landed on gets exactly the same narration (including
+  // the final-move game-end announcement, OUR-221, when a jump lands
+  // there). No slide animation queued: jumping several moves at once has
+  // no single origin/destination pair to FLIP between (same reasoning
+  // already applied to the move-list's own click-to-jump), so this is an
+  // instant reposition, narrated same as any other step.
+  function reviewJumpBy(delta){
+    if(!reviewResult) return;
+    const idx=Math.max(0,Math.min(reviewResult.perMove.length,reviewPositionIdx+delta));
+    if(idx===reviewPositionIdx) return;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    showReviewPosition(idx);
+    narrateReviewStep(idx);
+  }
+  reviewRewind5Btn.addEventListener('click',()=>reviewJumpBy(-5));
+  reviewForward5Btn.addEventListener('click',()=>reviewJumpBy(5));
   // OUR-215 Phase B: one step of auto-play, reusing Phase A's own
   // showReviewPosition()/narrateReviewStep() -- no separate stepping path.
   // Advances only once whenSpeechIdle() reports the current move's
@@ -6344,7 +6439,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r173 (OUR-221: Game Review announces checkmate/stalemate/draw at the final move)';
+  const BUILD='v2-r174 (OUR-222/223/224: Game Review controls, main board redesign, promotion picker fix)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
