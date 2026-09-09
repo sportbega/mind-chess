@@ -878,6 +878,13 @@
            signed-in branch (see below); every other branch there leaves
            it hidden, so there's one single place this ever turns on. -->
       <p class="status" id="identityLine" hidden></p>
+      <!-- OUR-225: relocated here from board-head, directly under the
+           identity line (OUR-162) beneath the title -- keeps the board
+           area itself clean of clock/status text. Same #clockLine id,
+           same renderClock()/formatClock() underneath; only the position
+           (and the tag, span -> p, since it's now its own stacked status
+           line rather than sharing a flex row with #turnPill) changed. -->
+      <p class="status clock" id="clockLine"></p>
     </div>
     <!-- OUR-175: type-a-move + Send moved out to a new row under the
          board (see .below-board-row there) -- this is the header's icon
@@ -1607,7 +1614,6 @@
   <div class="boardpanel">
     <div class="board-head">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-        <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
         <!-- OUR-194: Board size slider + Reset moved out of this row
              entirely, into a popover on a new round icon in the header --
@@ -4041,21 +4047,42 @@
     const total=Math.ceil(Math.max(0,ms)/1000);
     return Math.floor(total/60)+':'+String(total%60).padStart(2,'0');
   }
+  // OUR-225: same per-mode identity labels Game Review's own White/Black
+  // lines already show (reviewPlayerLabel(), OUR-208) -- reused directly
+  // rather than re-deriving "(You)"/"(Computer, Level N)"/etc. a second
+  // time. That function takes a game DESCRIPTOR object ({mode, humanColor,
+  // level, opponentName}, the exact shape lastCompletedGame stores), so
+  // this builds the live equivalent from the same live variables
+  // onGameEnd() itself reads to construct that descriptor after a game
+  // ends -- level from levelKey (computer) or lichessState.aiLevel
+  // (Lichess AI), opponentName from lichessState.opponentName (a real
+  // Lichess opponent only). Online and two-player both fall through
+  // reviewPlayerLabel()'s own final `return null`, so they get no
+  // parentheses at all -- the same "omit where no real identity exists"
+  // rule OUR-208 already established, inherited for free.
+  function liveClockLabels(){
+    const level=(mode==='computer')?levelKey:(mode==='lichess'&&lichessState&&lichessState.aiLevel)?lichessState.aiLevel:null;
+    const opponentName=(mode==='lichess'&&lichessState)?lichessState.opponentName:null;
+    const d={mode,humanColor,level,opponentName};
+    const w=reviewPlayerLabel('w',d), b=reviewPlayerLabel('b',d);
+    return {white:'White'+(w?' ('+w+')':''), black:'Black'+(b?' ('+b+')':'')};
+  }
   function renderClock(){
     if(mode==='online'){
       if(!onlineState||!onlineState.clockPreset||boardHidden){ clockLine.textContent=''; return; }
-      const {w,b}=computeOnlineMs();
-      clockLine.textContent='White '+formatClock(w)+' · Black '+formatClock(b);
+      const {w,b}=computeOnlineMs(), lbl=liveClockLabels();
+      clockLine.textContent=lbl.white+' '+formatClock(w)+' · '+lbl.black+' '+formatClock(b);
       return;
     }
     if(mode==='lichess'){
       if(!lichessState||boardHidden){ clockLine.textContent=''; return; }
-      const {w,b}=computeLichessMs();
-      clockLine.textContent='White '+formatClock(w)+' · Black '+formatClock(b);
+      const {w,b}=computeLichessMs(), lbl=liveClockLabels();
+      clockLine.textContent=lbl.white+' '+formatClock(w)+' · '+lbl.black+' '+formatClock(b);
       return;
     }
     if(!clockPreset||boardHidden){ clockLine.textContent=''; return; }
-    clockLine.textContent='White '+formatClock(whiteMs)+' · Black '+formatClock(blackMs);
+    const lbl=liveClockLabels();
+    clockLine.textContent=lbl.white+' '+formatClock(whiteMs)+' · '+lbl.black+' '+formatClock(blackMs);
   }
   function stopClock(){ if(clockTimer){ clearInterval(clockTimer); clockTimer=null; } }
   function startClock(){
@@ -6439,7 +6466,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r174 (OUR-222/223/224: Game Review controls, main board redesign, promotion picker fix)';
+  const BUILD='v2-r175 (OUR-225: clock line player identity labels + relocated under identity line)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
