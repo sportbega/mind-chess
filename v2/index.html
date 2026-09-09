@@ -223,7 +223,7 @@
      (see .mic-btn-wrap below) reuses this exact same visual treatment,
      and a class named "volume" applying to a verbosity control read
      wrong. Same CSS, same behavior, just shared instead of duplicated. */
-  .speaker-wrap,.mic-btn-wrap,.settings-wrap{position:relative;display:inline-flex}
+  .speaker-wrap,.mic-btn-wrap,.settings-wrap,.board-toggle-wrap{position:relative;display:inline-flex}
   /* OUR-152: z-index:2 -- needed on .mic-btn-wrap specifically: #micBtn
      carries its own z-index:1 (below, kept so it sits above the sibling
      .ring pulse elements in #micWrap), and since this caret is now
@@ -854,19 +854,56 @@
            and this can join the round icon-button set too. aria-label/
            title carry what the visible text used to say, for anyone not
            reading the icon. -->
-      <button class="icon-btn mic-size" id="boardToggleBtn" type="button" aria-label="Hide board" title="Hide board">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <g class="board-eye-open">
-            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </g>
-          <g class="board-eye-closed" style="display:none">
-            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-3.35 3.35a3 3 0 1 1-4.24-4.24"/>
-            <path d="M6.1 6.1C3.13 8.14 1 12 1 12s4 7 11 7a10.94 10.94 0 0 0 5.94-1.94"/>
-            <path d="M1 1l22 22"/>
-          </g>
-        </svg>
-      </button>
+      <!-- OUR-182: caret-popover opacity slider added, same
+           .caret-btn/.popover-panel pattern as the speaker's volume
+           popover (OUR-144/OUR-145) and the mic's verbosity popover
+           (OUR-150) -- wrapped in its own .board-toggle-wrap for the
+           same reason those two needed their own wrappers (independent
+           position:relative anchor for the caret, not tied to this
+           button's own layout). #boardToggleBtn's own click (binary
+           hide/show, OUR-143) is completely untouched -- the caret is a
+           separate button, same click/popover separation OUR-144
+           established. Investigated before building: the Appearance
+           panel's existing Transparency slider (r67/OUR-161) fades
+           #boardOuter's own opacity with a deliberate 40% floor --
+           "aesthetic only, not meant to go fully invisible." This new
+           slider is a genuinely different mechanism controlling a
+           genuinely different element: #boardVeil's own opacity (the
+           opaque covering panel #boardHidden shows/hides, not the board
+           itself), with no floor, because going all the way to fully
+           see-through IS the point here. The two never fight -- one
+           dims the board's own pixels, the other fades the veil that
+           sits on top of them, and #boardHidden's binary click (see
+           setBoardVeilOpacity(0) there) always snaps this back to fully
+           opaque first, so a fresh "Hide" click never lands ambiguous
+           just because the slider was left partway from an earlier
+           session. -->
+      <div class="board-toggle-wrap">
+        <button class="icon-btn mic-size" id="boardToggleBtn" type="button" aria-label="Hide board" title="Hide board">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <g class="board-eye-open">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </g>
+            <g class="board-eye-closed" style="display:none">
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-3.35 3.35a3 3 0 1 1-4.24-4.24"/>
+              <path d="M6.1 6.1C3.13 8.14 1 12 1 12s4 7 11 7a10.94 10.94 0 0 0 5.94-1.94"/>
+              <path d="M1 1l22 22"/>
+            </g>
+          </svg>
+        </button>
+        <button class="caret-btn" id="boardOpacityCaretBtn" type="button" aria-label="Board opacity" title="Board opacity — how much the board shows through while hidden" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 8l5 5 5-5"/>
+          </svg>
+        </button>
+        <div class="popover-panel" id="boardOpacityPopover" hidden>
+          <div class="field">
+            <label for="boardOpacityRange">Board opacity</label>
+            <input type="range" id="boardOpacityRange" min="0" max="100" step="5" value="0" />
+          </div>
+        </div>
+      </div>
       <!-- OUR-162: Voice settings, restyled from its old collapsible
            <details> section into a round icon button, same
            .settings-wrap/.popover-panel pattern as Game settings/
@@ -1711,6 +1748,12 @@
   // ===============================================================
   const game = new Chess();
   let boardHidden = true;
+  // OUR-182: 0-100, "how visible the board is through the veil" (matching
+  // the slider's own 0=hidden/100=visible framing) -- default 0 so a
+  // fresh #boardVeil (boardHidden defaults true, just above) looks exactly
+  // as fully-opaque-hidden as it always did for anyone who never touches
+  // this new control.
+  let boardVeilOpacity = 0;
   // null = follow humanColor automatically (Black sees Black on the bottom,
   // same as every other chess site) — true/false once the player has
   // explicitly flipped it themselves, which then sticks regardless of which
@@ -1877,6 +1920,8 @@
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
+        boardOpacityCaretBtn=$('boardOpacityCaretBtn'), boardOpacityPopover=$('boardOpacityPopover'),
+        boardOpacityRange=$('boardOpacityRange'),
         promotionPicker=$('promotionPicker'), promoChoices=[...document.querySelectorAll('.promo-choice')],
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
@@ -3052,8 +3097,30 @@
     boardToggleBtn.querySelector('.board-eye-open').style.display=h?'none':'';
     boardToggleBtn.querySelector('.board-eye-closed').style.display=h?'':'none';
   }
-  function setBoardHidden(h){
+  // OUR-182: sets #boardVeil's own opacity (0-100, "how visible the board
+  // is") -- independent of boardHidden's binary display:flex/none, and of
+  // #boardOuter's own opacity (the Appearance panel's separate
+  // Transparency slider, r67/OUR-161). Called from the slider's input
+  // handler and from setBoardHidden() below, so it's the one place that
+  // ever touches boardVeil.style.opacity.
+  function setBoardVeilOpacity(v){
+    boardVeilOpacity=v;
+    boardOpacityRange.value=String(v);
+    boardVeil.style.opacity=String((100-v)/100);
+    saveState();
+  }
+  // preserveOpacity exists for exactly one caller: restoreState(), which
+  // already applied a just-restored boardVeilOpacity before calling this
+  // and needs that value left alone rather than reset. Every other
+  // caller -- the click handler, both voice commands ("hide board"/"show
+  // board"), puzzle start, new-game start -- gets the default: a fresh
+  // "hide" always lands fully opaque, regardless of wherever the slider
+  // was left from earlier in the session. The click/voice command is the
+  // no-ambiguity action; dragging the slider afterward is a deliberate,
+  // separate choice to peek through.
+  function setBoardHidden(h,preserveOpacity){
     boardHidden=h;
+    if(h&&!preserveOpacity) setBoardVeilOpacity(0);
     boardVeil.style.display=h?'flex':'none';
     updateBoardToggleIcon(h);
     if(!h) renderBoard();
@@ -3061,6 +3128,9 @@
     saveState();
   }
   boardToggleBtn.addEventListener('click',()=>setBoardHidden(!boardHidden));
+  boardOpacityRange.addEventListener('input',()=>{
+    setBoardVeilOpacity(Number(boardOpacityRange.value));
+  });
   flipBoardBtn.addEventListener('click',()=>{
     boardFlippedOverride=!isBoardFlipped();
     renderBoard();
@@ -5240,7 +5310,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r151 (OUR-181: New game leads the icon row)';
+  const BUILD='v2-r152 (OUR-182: board opacity popover on Hide/Show board)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10011,6 +10081,7 @@
     closeGameSettingsPopover();
     closeAppearancePopover();
     closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
     volumePopover.hidden=false;
     volumeCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -10046,6 +10117,7 @@
     closeGameSettingsPopover();
     closeAppearancePopover();
     closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
     verbosityPopover.hidden=false;
     verbosityCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -10073,6 +10145,7 @@
     closeVerbosityPopover();
     closeAppearancePopover();
     closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
     gameSettingsPopover.hidden=false;
     gameSettingsBtn.setAttribute('aria-expanded','true');
   }
@@ -10098,6 +10171,7 @@
     closeVerbosityPopover();
     closeGameSettingsPopover();
     closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
     appearancePopover.hidden=false;
     appearanceBtn.setAttribute('aria-expanded','true');
   }
@@ -10124,6 +10198,7 @@
     closeVerbosityPopover();
     closeGameSettingsPopover();
     closeAppearancePopover();
+    closeBoardOpacityPopover();
     voiceSettingsPopover.hidden=false;
     voiceSettingsBtn.setAttribute('aria-expanded','true');
   }
@@ -10139,6 +10214,35 @@
   document.addEventListener('click',()=>{ if(!voiceSettingsPopover.hidden) closeVoiceSettingsPopover(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!voiceSettingsPopover.hidden) closeVoiceSettingsPopover();
+  });
+
+  // OUR-182: board-opacity popover on the Hide/Show board button -- same
+  // caret/popover pattern as narration volume above (down to closing
+  // whichever OTHER popover is open first). #boardToggleBtn's own click
+  // (binary hide/show) is untouched -- this caret is #boardOpacityCaretBtn,
+  // a separate element, same separation OUR-144 established for
+  // mute-vs-volume.
+  function openBoardOpacityPopover(){
+    closeVolumePopover();
+    closeVerbosityPopover();
+    closeGameSettingsPopover();
+    closeAppearancePopover();
+    closeVoiceSettingsPopover();
+    boardOpacityPopover.hidden=false;
+    boardOpacityCaretBtn.setAttribute('aria-expanded','true');
+  }
+  function closeBoardOpacityPopover(){
+    boardOpacityPopover.hidden=true;
+    boardOpacityCaretBtn.setAttribute('aria-expanded','false');
+  }
+  boardOpacityCaretBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(boardOpacityPopover.hidden) openBoardOpacityPopover(); else closeBoardOpacityPopover();
+  });
+  boardOpacityPopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!boardOpacityPopover.hidden) closeBoardOpacityPopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!boardOpacityPopover.hidden) closeBoardOpacityPopover();
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
@@ -10215,7 +10319,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,narrationVolume,handsFree,bargeIn,humanColor,boardHidden,boardFlippedOverride,
+        pgn:game.pgn(),mode,levelKey,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,narrationVolume,handsFree,bargeIn,humanColor,boardHidden,boardVeilOpacity,boardFlippedOverride,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -10313,7 +10417,12 @@
         : gameOver
           ? 'Game restored.'+endSuffix()
           : 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.');
-      setBoardHidden(saved.boardHidden!==false);
+      // OUR-182: setBoardVeilOpacity() applies the persisted value to
+      // #boardVeil directly; setBoardHidden()'s own default reset-to-0
+      // behavior is deliberately skipped here (preserveOpacity=true) so
+      // restoring a session doesn't stomp a previously fine-tuned value.
+      setBoardVeilOpacity((typeof saved.boardVeilOpacity==='number')?saved.boardVeilOpacity:0);
+      setBoardHidden(saved.boardHidden!==false,true);
       boardFlippedOverride=typeof saved.boardFlippedOverride==='boolean'?saved.boardFlippedOverride:null;
       startClock();
       renderAll();
