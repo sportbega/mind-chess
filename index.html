@@ -286,7 +286,22 @@
      row at any reasonable width, so it moved to the button's own title
      tooltip instead of disappearing outright — the "Voice commands"
      details block elsewhere still documents the same phrases at length. */
-  .mic-compact{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* OUR-170: two explicit rows, not one that quietly wraps across three.
+     Measured first (same discipline as OUR-164): at the default board
+     size, this row's available width is 852px. All 15 controls (13
+     round icons + the pill + Send) need ~964px -- 112px over. Icons alone
+     would need to shrink to ~40.7px to close that gap at the current
+     10px gap, below the ~44-48px accessible touch-target floor OUR-95
+     already established (the exact reason mic/speaker stayed 48px while
+     other buttons went smaller that round) -- so shrinking wasn't a
+     viable fix here, not a matter of picking a slightly smaller number.
+     Splitting into icons-row (13 icons, ~756px, comfortably one line) and
+     input-row (pill + Send, ~188px) fixes it without touching size at
+     all. .mic-compact itself becomes the column; each row is its own
+     flex-wrap row inside it, so narrow-width wrapping still works exactly
+     as before, just within two predictable groups instead of one. */
+  .mic-compact{display:flex;flex-direction:column;gap:10px}
+  .mic-compact-icons,.mic-compact-input{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   /* Type-a-move (OUR-93, widened in OUR-94): a short move like "Nf3" or
      "e4" never needed the width a full sentence-length placeholder
      implied, but 120px (OUR-93's first pass) actually clipped "Type a
@@ -342,7 +357,13 @@
   #micBtn:hover:not(:disabled){border-color:var(--accent)}
   .mic-wrap.listening #micBtn{background:var(--accent-2);border-color:var(--accent-2);color:#0e2320}
   #micBtn svg{width:20px;height:20px}
-  .mic-note{flex-basis:100%;font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0;max-width:22ch}
+  /* OUR-170: flex-basis:100% dropped -- that was the trick that forced
+     this onto its own line within .mic-compact's old single flex-wrap
+     row. .mic-compact is a column now (two explicit rows above it, see
+     there), so a plain third child already sits on its own line with no
+     trick needed; flex-basis:100% here would instead apply to height in
+     a column container, which is not what this wants. */
+  .mic-note{font-size:12px;color:var(--text-dim);min-height:1.2em;font-family:'IBM Plex Mono',monospace;margin:0;max-width:22ch}
   .mic-note.err{color:var(--danger)}
   .mic-note.ok{color:var(--ok)}
 
@@ -681,6 +702,7 @@
          speaker and hide-board are all type="button", so they can't
          accidentally trigger a submit themselves. -->
     <form class="mic-compact" id="textForm">
+      <div class="mic-compact-icons">
       <!-- OUR-156: both Resign buttons relocated here from .board-head,
            directly left of the type-a-move pill. They share this one slot
            rather than getting two -- lichessResignBtn and computerResignBtn
@@ -699,26 +721,6 @@
       <button class="icon-btn mic-size" id="computerResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
-        </svg>
-      </button>
-      <!-- OUR-154: placeholder shortened from "Type a move" to an example
-           move -- the field itself was already a full pill (border-radius:
-           999px, see .mic-compact input[type=text] below), this just makes
-           the text inside it read as a worked example rather than an
-           instruction, to go with Send's icon losing its own label. -->
-      <input type="text" id="textInput" placeholder="e.g. e4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-      <!-- OUR-154: restyled from a .btn.primary text pill (OUR-95/OUR-99's
-           33.5px sizing) to the round 48px icon-button set every other
-           control on this row now belongs to. Dropped the accent-gold
-           "primary" fill along with the text label -- every other button in
-           this set (mic, speaker, New game, Flip board, Hide board) is
-           plain .icon-btn, and Send singled out in gold next to them would
-           read as a different kind of control rather than one more member
-           of the same row. Same type="submit", same form, same click/Enter
-           behavior -- only the visual treatment changed. -->
-      <button class="icon-btn mic-size" type="submit" aria-label="Send" title="Send">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2Z"/>
         </svg>
       </button>
       <div class="mic-wrap" id="micWrap">
@@ -1168,10 +1170,32 @@
           <path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>
         </svg>
       </button>
-      <!-- flex-basis:100% (see .mic-compact .mic-note) drops this onto its
-           own line below the button row rather than fighting the five
-           controls above for horizontal space — it's status text, not a
-           sixth control, and wasn't part of the ordering this asked for. -->
+      </div>
+      <div class="mic-compact-input">
+      <!-- OUR-154: placeholder shortened from "Type a move" to an example
+           move -- the field itself was already a full pill (border-radius:
+           999px, see .mic-compact input[type=text] below), this just makes
+           the text inside it read as a worked example rather than an
+           instruction, to go with Send's icon losing its own label. -->
+      <input type="text" id="textInput" placeholder="e.g. e4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <!-- OUR-154: restyled from a .btn.primary text pill (OUR-95/OUR-99's
+           33.5px sizing) to the round 48px icon-button set every other
+           control on this row now belongs to. Dropped the accent-gold
+           "primary" fill along with the text label -- every other button in
+           this set (mic, speaker, New game, Flip board, Hide board) is
+           plain .icon-btn, and Send singled out in gold next to them would
+           read as a different kind of control rather than one more member
+           of the same row. Same type="submit", same form, same click/Enter
+           behavior -- only the visual treatment changed. -->
+      <button class="icon-btn mic-size" type="submit" aria-label="Send" title="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2Z"/>
+        </svg>
+      </button>
+      </div>
+      <!-- OUR-170: micNote sits directly below both rows now -- a plain
+           third child of .mic-compact (a column now, see the CSS), not a
+           flex-wrap trick forcing a line break within one row anymore. -->
       <p class="mic-note" id="micNote"></p>
     </form>
   </header>
@@ -5137,7 +5161,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r145 (OUR-168: Report a problem/Voice commands modals)';
+  const BUILD='v2-r146 (OUR-170: header split into icons row + move row)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
