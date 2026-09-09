@@ -175,7 +175,11 @@
      this comment); fixing the board's real 420px height turned the same
      stretch into an actually-visible full-height pill button. */
   .review-perspective-btn{flex:0 0 auto;align-self:flex-start}
+  .review-depth-field{flex:0 0 auto;align-self:flex-start;display:flex;align-items:center;gap:6px;font-size:13px}
   .review-eval-text{flex:1 1 100%;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+  .review-step-row{flex:1 1 100%;display:flex;gap:8px}
+  .review-step-row .btn{flex:1 1 auto}
+  .review-step-row .btn:disabled{opacity:.4;cursor:default}
   .review-movelist{flex:1 1 260px;min-width:220px;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:2px}
   .review-move{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px;background:none;border:0;color:var(--text);text-align:left;width:100%}
   .review-move:hover{background:var(--panel-2)}
@@ -744,7 +748,29 @@
              evalObj already computed for the current position, nothing
              here re-analyzes anything). -->
         <button type="button" class="btn review-perspective-btn" id="reviewPerspectiveBtn">Perspective: White</button>
+        <!-- OUR-216 Phase C: Simple/Deep commentary depth, switchable at
+             any time -- mirrors the existing #coachSelect off/hints/full
+             field pattern. Changing it re-narrates whatever move is
+             currently shown (see the change handler) rather than
+             requiring a replay. -->
+        <div class="review-depth-field">
+          <label for="reviewDepthSelect">Commentary</label>
+          <select id="reviewDepthSelect">
+            <option value="simple" selected>Simple</option>
+            <option value="deep">Deep</option>
+          </select>
+        </div>
         <div class="review-eval-text" id="reviewEvalText"></div>
+        <!-- OUR-214 Phase A: manual step + Simple narration.
+             OUR-215 Phase B: Play/Pause auto-advance, reusing the same
+             showReviewPosition()/narrateReviewStep() as manual stepping.
+             OUR-216 Phase C: both of the above narrate at whichever depth
+             #reviewDepthSelect currently holds -- see narrateReviewStep(). -->
+        <div class="review-step-row">
+          <button type="button" class="btn" id="reviewPrevBtn">&larr; Prev</button>
+          <button type="button" class="btn" id="reviewPlayBtn">Play</button>
+          <button type="button" class="btn" id="reviewNextBtn">Next &rarr;</button>
+        </div>
         <div class="review-movelist" id="reviewMoveList"></div>
       </div>
     </div>
@@ -2197,7 +2223,8 @@
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
         reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'),
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
-        reviewPerspectiveBtn=$('reviewPerspectiveBtn'),
+        reviewPerspectiveBtn=$('reviewPerspectiveBtn'), reviewDepthSelect=$('reviewDepthSelect'),
+        reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -4797,6 +4824,11 @@
   // flips, only re-signed/re-mirrored at render time in
   // showReviewPosition()/formatEvalText().
   let reviewToken=0, reviewResult=null, reviewPositionIdx=0, reviewPerspective='w';
+  // OUR-215 Phase B: auto-play. reviewAutoToken is bumped on every stop (by
+  // Pause, a manual Prev/Next, the game ending, or closing the overlay) so
+  // a whenSpeechIdle() waiter already in flight from a step before the stop
+  // becomes a no-op instead of firing one extra advance.
+  let reviewAutoPlaying=false, reviewAutoToken=0;
   function renderReviewBoard(fen,flipped){
     reviewBoardGrid.innerHTML='';
     const probe=new Chess(); probe.load(fen);
@@ -4862,7 +4894,207 @@
     reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+formatEvalText(evalObj,fen,reviewPerspective);
     const items=reviewMoveList.querySelectorAll('.review-move');
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
+    reviewPrevBtn.disabled=(idx<=0);
+    reviewNextBtn.disabled=(idx>=reviewResult.perMove.length);
   }
+  // OUR-214 Phase A: Simple-tier narration for one stepped-to move --
+  // the move itself (reusing describeMove()'s own piece/capture/castle
+  // phrasing via describeUci(), same as the live coach builds sentences
+  // from a PV move) plus its existing classification (OUR-115), nothing
+  // more.
+  const REVIEW_CLASS_PHRASE={
+    best:'the best move', excellent:'an excellent move', good:'a good move',
+    inaccuracy:'an inaccuracy', mistake:'a mistake', blunder:'a blunder'
+  };
+  function reviewMoveSentence(move){
+    const m=describeUci(move.fenBefore,move.uci);
+    let base;
+    if(m&&m.flags.indexOf('k')!==-1) base='Castles kingside';
+    else if(m&&m.flags.indexOf('q')!==-1) base='Castles queenside';
+    else if(m){
+      base=cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
+      if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
+    }else base=move.san;
+    const phrase=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
+    return phrase?base+', '+phrase+'.':base+'.';
+  }
+
+  // ---------------------------------------------------------------
+  // OUR-216 Phase C: Deep commentary. Every input here (evalBefore/
+  // evalAfter's pv[]/bestmove) was already computed by analyzeGame() for
+  // Simple tier and OUR-115's classification -- no new Stockfish calls.
+  // Stockfish gives eval numbers and move sequences, not reasons, so this
+  // is template pattern-matching over that data (hung piece / check /
+  // fork), never invented positional prose. When no clean pattern
+  // matches -- true of most non-tactical Inaccuracies -- the honest
+  // answer is just the eval swing (already the classification word in
+  // the Simple base sentence) and the best move, not a forced tactic
+  // claim or made-up strategic reasoning. See DEVLOG Day 2.9: this whole
+  // feature has to stay template/engine-only, zero-cost, no LLM.
+  // ---------------------------------------------------------------
+
+  // Does the opponent's own best reply (evalAfter.pv[0], from the position
+  // right after the move -- not a new engine call) capture something this
+  // move left hanging? Excludes a reply landing on the exact square the
+  // mover just captured on -- that is an ordinary recapture continuing a
+  // trade, not a fresh hang.
+  function reviewHungPieceNote(move){
+    const pv=move.evalAfter&&move.evalAfter.pv;
+    if(!pv||!pv.length) return null;
+    const reply=describeUci(move.fenAfter,pv[0]);
+    if(!reply||!reply.captured) return null;
+    // A "hang" is a net material loss from this move's own capture (if any)
+    // against what the opponent's reply immediately wins back -- NOT about
+    // whether the reply lands on the same square. A queen capturing a pawn
+    // that gets recaptured by a knight (Qxe5+?? Nxe5) lands the reply on the
+    // exact square the mover just captured on, and that IS the textbook
+    // hang; a pawn recapturing a pawn on that same square is an even trade
+    // and isn't. Comparing material values (not squares) tells them apart.
+    const m=describeUci(move.fenBefore,move.uci);
+    const paid=m&&m.captured?PIECE_VALUE[m.captured]:0;
+    const gained=PIECE_VALUE[reply.captured];
+    if(gained<=paid) return null;
+    return 'That hangs the '+PIECE_NAME[reply.captured]+' on '+spokenSquare(reply.to)+'.';
+  }
+  // Reuses pvGivesCheck() exactly as the live coach's own "is my king safe?"
+  // answer does (index.html's matchQuestion) -- just the opponent's first
+  // reply, not a deeper search.
+  function reviewCheckNote(move){
+    const pv=move.evalAfter&&move.evalAfter.pv;
+    if(!pv||!pv.length) return null;
+    const chk=pvGivesCheck(move.fenAfter,pv,1);
+    if(!chk) return null;
+    return 'That allows a check with the '+PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to)+'.';
+  }
+  // Same board-reading geometry as attackersOf() above, parameterized on an
+  // explicit probe instead of the live `game` -- review analyzes a finished
+  // game's own stored positions, never the game in progress.
+  function reviewSquaresAttacked(probe,square,byColor,pieceType){
+    const f0=FILES.indexOf(square[0]), r0=+square[1]-1, hits=[];
+    const at=(f,r)=>(f<0||f>7||r<0||r>7)?null:probe.get(sqName(f,r));
+    const consider=(f,r)=>{ const p=at(f,r); if(p&&p.color!==byColor) hits.push(sqName(f,r)); };
+    if(pieceType==='n') N_DELTA.forEach(d=>consider(f0+d[0],r0+d[1]));
+    else if(pieceType==='k') K_DELTA.forEach(d=>consider(f0+d[0],r0+d[1]));
+    else if(pieceType==='p'){ const pr=byColor==='w'?r0+1:r0-1; [-1,1].forEach(df=>consider(f0+df,pr)); }
+    else{
+      const dirs=pieceType==='r'?R_DELTA:pieceType==='b'?B_DELTA:R_DELTA.concat(B_DELTA);
+      dirs.forEach(d=>{
+        let f=f0+d[0], r=r0+d[1];
+        while(f>=0&&f<8&&r>=0&&r<8){
+          const p=at(f,r);
+          if(p){ if(p.color!==byColor) hits.push(sqName(f,r)); break; }
+          f+=d[0]; r+=d[1];
+        }
+      });
+    }
+    return hits;
+  }
+  // Fork: the opponent's own best reply, once played, attacks 2+ of the
+  // mover's non-pawn pieces at once. Pawns excluded from the count -- a
+  // "fork" of two pawns isn't the kind of thing worth flagging here.
+  function reviewForkNote(move){
+    const pv=move.evalAfter&&move.evalAfter.pv;
+    if(!pv||!pv.length) return null;
+    const probe=new Chess(); if(!probe.load(move.fenAfter)) return null;
+    const u=pv[0], mv=probe.move({from:u.slice(0,2),to:u.slice(2,4),promotion:u.length>4?u[4]:undefined});
+    if(!mv) return null;
+    const targets=reviewSquaresAttacked(probe,mv.to,mv.color,mv.piece)
+      .filter(sq=>{ const p=probe.get(sq); return p&&p.type!=='p'; });
+    if(targets.length<2) return null;
+    return 'That forks '+joinAnd(targets.map(sq=>'the '+PIECE_NAME[probe.get(sq).type]+' on '+spokenSquare(sq)))+'.';
+  }
+  // Only attempted for Inaccuracy/Mistake/Blunder -- a Best/Excellent/Good
+  // move didn't lose meaningful equity, so pattern-matching a "tactic" onto
+  // one would be noise, not insight, even if something superficially
+  // matched. First match wins; these are independent finds, not stacked
+  // into one sentence, to keep Deep commentary readable and short (see the
+  // 12s narration-length note on reviewDeepSentence() below).
+  function reviewDeepTacticNote(move){
+    if(!move.classification||['best','excellent','good'].indexOf(move.classification)!==-1) return null;
+    return reviewHungPieceNote(move)||reviewCheckNote(move)||reviewForkNote(move);
+  }
+  // "The engine preferred [piece] to [square] instead" -- evalBefore.bestmove
+  // is the engine's own top choice at the position before this move, exactly
+  // what OUR-115's classification already compares the played move against.
+  function reviewBestMoveNote(move){
+    const bestUci=move.evalBefore&&move.evalBefore.bestmove;
+    if(!bestUci) return null;
+    const m=describeUci(move.fenBefore,bestUci);
+    if(!m) return null;
+    let phrase;
+    if(m.flags.indexOf('k')!==-1) phrase='castling kingside';
+    else if(m.flags.indexOf('q')!==-1) phrase='castling queenside';
+    else phrase=PIECE_NAME[m.piece]+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to);
+    return 'The engine preferred '+phrase+' instead.';
+  }
+  // "The best line continues [move], [move]" -- walks evalBefore.pv past its
+  // own first move (already named by reviewBestMoveNote() above) through a
+  // scratch probe. maxPlies is kept small deliberately: this only runs
+  // alongside a tactic note already in the sentence, and every extra clause
+  // is more the 12s whenSpeechIdle() ceiling (OUR-215) has to cover
+  // in auto-play -- see reviewDeepSentence()'s own note on that.
+  function reviewLineContinuation(move,maxPlies){
+    const pv=move.evalBefore&&move.evalBefore.pv;
+    if(!pv||pv.length<2) return '';
+    const probe=new Chess(); if(!probe.load(move.fenBefore)) return '';
+    const descs=[];
+    for(let i=0;i<pv.length&&descs.length<maxPlies;i++){
+      const u=pv[i], mv=probe.move({from:u.slice(0,2),to:u.slice(2,4),promotion:u.length>4?u[4]:undefined});
+      if(!mv) break;
+      if(i===0) continue;
+      descs.push(mv.flags.indexOf('k')!==-1?'castling kingside'
+                :mv.flags.indexOf('q')!==-1?'castling queenside'
+                :PIECE_NAME[mv.piece]+' '+(mv.captured?'takes ':'to ')+spokenSquare(mv.to));
+    }
+    return descs.length?' Continuing '+joinAnd(descs)+'.':'';
+  }
+  // Deep = Simple's own sentence, plus template-derived reasoning built
+  // entirely from analyzeGame()'s existing per-move data. A Best move has
+  // nothing more to explain (the player already found the top choice), so
+  // Deep and Simple are identical there.
+  //
+  // 12s narration-length note (OUR-215's whenSpeechIdle() trust
+  // deadline): the longest realistic Deep sentence -- Simple base + a
+  // tactic clause + "the engine preferred..." + a 1-ply continuation --
+  // runs roughly 20-28 words. At a natural spoken pace (~2.2-2.5 words/sec)
+  // that is close to but should stay under 12s; it is NOT a wide margin.
+  // The honest-fallback path (no tactic found, the common case for
+  // Inaccuracies) is much shorter -- base + one "preferred X instead"
+  // clause -- and is in no danger. Kept the continuation capped at 1 extra
+  // ply and only ever added alongside a tactic clause (never on its own)
+  // specifically to keep the worst case bounded; if real Deep sentences in
+  // practice run past ~10s, that ceiling should be raised for review's own
+  // whenSpeechIdle() call rather than left shared with live play's shorter
+  // replies -- flagging this rather than quietly widening a constant three
+  // other call sites also rely on.
+  function reviewDeepSentence(move){
+    const base=reviewMoveSentence(move);
+    if(!move.classification||move.classification==='best') return base;
+    const best=reviewBestMoveNote(move);
+    if(!best) return base;   // no bestmove/PV data at this position (rare/terminal) -- Simple is all we can honestly say
+    const tactic=reviewDeepTacticNote(move);
+    if(tactic) return base+' '+tactic+' '+best+reviewLineContinuation(move,1);
+    // Honest fallback: no clean tactic pattern matched. Eval swing (the
+    // classification word already in `base`) and the best move -- nothing
+    // invented to fill the gap.
+    return base+' '+best;
+  }
+  let reviewDepth='simple';   // 'simple' | 'deep' -- OUR-216 Phase C
+  function reviewSentenceFor(move){
+    return reviewDepth==='deep'?reviewDeepSentence(move):reviewMoveSentence(move);
+  }
+  // idx is a POSITION index (0..perMove.length); the move that reaches
+  // position idx is perMove[idx-1]. idx 0 (the starting position) has no
+  // move to narrate.
+  function narrateReviewStep(idx){
+    if(!reviewResult||idx<=0) return;
+    const move=reviewResult.perMove[idx-1];
+    if(move) speak(reviewSentenceFor(move));
+  }
+  reviewDepthSelect.addEventListener('change',()=>{
+    reviewDepth=reviewDepthSelect.value;
+    narrateReviewStep(reviewPositionIdx);   // re-narrate the current move at the new tier, not a replay
+  });
   // OUR-202: keeps the button's own label and the bar's title attribute
   // in sync with reviewPerspective -- called once from openReviewOverlay()
   // (setting the default) and once from the button's own click handler
@@ -4876,6 +5108,54 @@
     reviewPerspective=reviewPerspective==='b'?'w':'b';
     updateReviewPerspectiveUI();
     showReviewPosition(reviewPositionIdx);
+  });
+  // OUR-215 Phase B: stops auto-advance (button back to "Play", pending
+  // whenSpeechIdle() waiter orphaned via the token bump) and cuts off
+  // whatever is currently narrating -- a manual step or an explicit Pause
+  // should be heard as an immediate, clean stop, not let the in-flight
+  // sentence finish on its own first.
+  function stopReviewAutoPlay(){
+    reviewAutoToken++;
+    reviewAutoPlaying=false;
+    reviewPlayBtn.textContent='Play';
+    cancelSpeech('review auto-play stopped');
+  }
+  reviewPrevBtn.addEventListener('click',()=>{
+    if(!reviewResult||reviewPositionIdx<=0) return;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    const idx=reviewPositionIdx-1;
+    showReviewPosition(idx);
+    narrateReviewStep(idx);
+  });
+  reviewNextBtn.addEventListener('click',()=>{
+    if(!reviewResult||reviewPositionIdx>=reviewResult.perMove.length) return;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    const idx=reviewPositionIdx+1;
+    showReviewPosition(idx);
+    narrateReviewStep(idx);
+  });
+  // OUR-215 Phase B: one step of auto-play, reusing Phase A's own
+  // showReviewPosition()/narrateReviewStep() -- no separate stepping path.
+  // Advances only once whenSpeechIdle() reports the current move's
+  // narration has actually finished (or given up after REPLY_WAIT_MAX_MS,
+  // the same ceiling live play already trusts for this exact wait), never
+  // on a fixed timer -- a Blunder's longer sentence gets exactly as long
+  // to finish as a short "Best move" one.
+  function reviewAutoAdvance(myToken){
+    if(myToken!==reviewAutoToken||!reviewResult) return;
+    if(reviewPositionIdx>=reviewResult.perMove.length){ stopReviewAutoPlay(); return; }
+    const idx=reviewPositionIdx+1;
+    showReviewPosition(idx);
+    narrateReviewStep(idx);
+    whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REPLY_WAIT_MAX_MS);
+  }
+  reviewPlayBtn.addEventListener('click',()=>{
+    if(!reviewResult) return;
+    if(reviewAutoPlaying){ stopReviewAutoPlay(); return; }
+    if(reviewPositionIdx>=reviewResult.perMove.length) return;   // already at the end -- nothing to play
+    reviewAutoPlaying=true;
+    reviewPlayBtn.textContent='Pause';
+    reviewAutoAdvance(reviewAutoToken);
   });
   function classificationLabel(c){
     return {best:'Best',excellent:'Excellent',good:'Good',inaccuracy:'Inaccuracy',mistake:'Mistake',blunder:'Blunder'}[c]||'';
@@ -4909,7 +5189,10 @@
     }
     reviewMoveList.innerHTML=html;
     reviewMoveList.querySelectorAll('.review-move').forEach(el=>{
-      el.addEventListener('click',()=>showReviewPosition(+el.dataset.idx));
+      el.addEventListener('click',()=>{
+        if(reviewAutoPlaying) stopReviewAutoPlay();
+        showReviewPosition(+el.dataset.idx);
+      });
     });
     showReviewPosition(result.perMove.length);
   }
@@ -4923,6 +5206,16 @@
     // defensive, not an expected path.
     reviewPerspective=descriptor.humanColor||'w';
     updateReviewPerspectiveUI();
+    // OUR-216: a fresh review always starts at Simple, regardless of what
+    // the last one was left on.
+    reviewDepth='simple';
+    reviewDepthSelect.value='simple';
+    // OUR-215: a fresh review starts paused, regardless of whether the last
+    // one was left auto-playing -- reviewAutoToken orphans any leftover
+    // whenSpeechIdle() waiter from that previous session.
+    reviewAutoToken++;
+    reviewAutoPlaying=false;
+    reviewPlayBtn.textContent='Play';
     reviewToken++;
     const myToken=reviewToken;
     reviewOverlay.hidden=false;
@@ -4942,7 +5235,12 @@
       reviewProgress.innerHTML='Review failed: '+((err&&err.message)||'the engine could not be reached.');
     });
   }
-  function closeReviewOverlay(){ reviewToken++; reviewOverlay.hidden=true; reviewResult=null; }
+  function closeReviewOverlay(){
+    reviewToken++;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    reviewOverlay.hidden=true;
+    reviewResult=null;
+  }
   reviewGameBtn.addEventListener('click',openReviewOverlay);
   reviewCloseBtn.addEventListener('click',closeReviewOverlay);
   reviewOverlay.addEventListener('click',e=>{ if(e.target===reviewOverlay) closeReviewOverlay(); });
@@ -5743,7 +6041,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r169 (OUR-212: exports track the live perspective toggle)';
+  const BUILD='v2-r170 (OUR-214/215/216: Game Review manual step, auto-play, Deep commentary)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
