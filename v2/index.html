@@ -5733,7 +5733,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r167 (OUR-208: exports use player perspective, player labels on White/Black)';
+  const BUILD='v2-r168 (OUR-210: fix Lichess clock backward-jump bug)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9612,7 +9612,36 @@
   // bumped synchronously, before the POST resolves, so that when the stream
   // echoes this move back in a later gameState event, applyLichessMoves()
   // sees it as already-applied and does not replay/re-narrate it.
+  //
+  // OUR-210 (bug report 1, v2-r167): the OPPONENT's clock briefly jumped backward
+  // (e.g. 7:33 -> 7:37) right after the player's own move, correcting
+  // itself once the next real gameState event arrived. Root cause: this
+  // function never touched lichessState.lastEventAt, but game.turn() had
+  // already flipped to the opponent the moment applyMove()'s own
+  // game.move() ran, before this was even called. computeLichessMs()'s
+  // `running` reads game.turn() fresh every tick, so the very next
+  // 200ms render already saw the OPPONENT as running -- and charged them
+  // elapsed time measured from lastEventAt, which was still anchored to
+  // whenever the PLAYER's own previous gameState/gameFull event arrived,
+  // i.e. the start of the player's OWN thinking time, not the opponent's.
+  // The opponent's clock plummeted by however long the player had just
+  // spent thinking, then snapped back up once the real echo corrected
+  // wtime/btime/lastEventAt together. Confirmed against the diagnostic
+  // capture: raw wtime/btime from Lichess were clean throughout -- this
+  // never touched what Lichess sent, only how it was interpolated
+  // between events.
+  //
+  // Fix: re-anchor lastEventAt to now, right here, the moment the
+  // opponent's clock actually starts running locally -- a second,
+  // narrower anchor point alongside the ones gameFull/gameState set for
+  // themselves (see handleLichessEvent()'s own comment for that half of
+  // this same bug). wtime/btime themselves are left untouched (still
+  // last known, not yet including whatever increment Lichess will
+  // apply) -- only the anchor moves, so the opponent's display ticks
+  // down cleanly from its last known value instead of retroactively
+  // being blamed for the player's own think time.
   async function sendLichessMove(applied){
+    lichessState.lastEventAt=Date.now();
     const priorCount=lichessState.moveCount;
     lichessState.moveCount=priorCount+1;
     updateLichessAbortVisibility();
@@ -9712,8 +9741,20 @@
     speak(lichessGameOverText(status));
     renderAll();
   }
+  // OUR-210 (bug report 1, v2-r167): the clock also jumped backward on a plain
+  // chatLine event, not just around the player's own move (see
+  // sendLichessMove()'s own comment for that half of the fix). Root
+  // cause: lastEventAt used to be reset to now unconditionally, for
+  // EVERY event type Lichess sends -- but chatLine (and any other type
+  // this app doesn't explicitly branch on) never touches wtime/btime.
+  // Resetting the anchor without a fresh value to anchor made
+  // computeLichessMs() see elapsed~=0 right after a chat message,
+  // showing the running side's RAW last-known time -- undoing however
+  // much it had already ticked down locally -- until the next real
+  // gameState event corrected it back down. lastEventAt now only moves
+  // in the gameFull/gameState branches below, at the exact same moment
+  // wtime/btime themselves do, so the two can never disagree.
   function handleLichessEvent(evt){
-    lichessState.lastEventAt=Date.now();
     // Any real message proves the connection is healthy again — this is
     // what lets the backoff in scheduleLichessReconnect() reset rather than
     // keep climbing forever once a dropped stream reconnects.
@@ -9762,6 +9803,7 @@
           +' against '+opponent+'.');
       applyLichessMoves(evt.state.moves);
       lichessState.wtime=evt.state.wtime; lichessState.btime=evt.state.btime;
+      lichessState.lastEventAt=Date.now();
       lichessState.status=evt.state.status;
       lichessEvent('gameFull',(reconnecting?'reconnect':'connect')+' color='+lichessState.color
         +' wtime='+lichessState.wtime+' btime='+lichessState.btime+' status='+lichessState.status);
@@ -9777,6 +9819,7 @@
     }else if(evt.type==='gameState'){
       applyLichessMoves(evt.moves);
       lichessState.wtime=evt.wtime; lichessState.btime=evt.btime;
+      lichessState.lastEventAt=Date.now();
       lichessState.status=evt.status;
       lichessEvent('gameState','turn='+game.turn()+' wtime='+lichessState.wtime
         +' btime='+lichessState.btime+' status='+lichessState.status);
