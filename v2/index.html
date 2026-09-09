@@ -2768,7 +2768,28 @@
   // commands the user can already read, which in hands-free mode would
   // otherwise get picked up by the mic as new (unrecognized) speech and loop.
   function warnSilent(text){ log('System',text); }
-  function note(text, cls){ micNote.className='mic-note'+(cls?' '+cls:''); micNote.textContent=text; }
+  // OUR-166: #micNote is a one-off status line, not the transcript (that's
+  // log()/warnSilent() above) -- every other note() call site already
+  // clears itself with a follow-up note('') once whatever it was waiting
+  // on resolves (a download finishes, speech starts, listening stops), so
+  // this never needed a timer before. testVoice()'s "Voice started" is the
+  // one terminal, positive-confirmation case with no such follow-up event
+  // and nothing logged to the transcript backing it up -- it just sat
+  // there until the next unrelated note() call happened to overwrite it.
+  // autoDismissMs is opt-in per call (only testVoice's success message
+  // passes one) so every other call site's persist-until-replaced
+  // behavior is completely unchanged. A later note() of any kind cancels
+  // a pending auto-dismiss first, so a fast-following status update can
+  // never get wiped by a stale timer from the message before it.
+  let noteAutoDismissTimer=null;
+  function note(text, cls, autoDismissMs){
+    if(noteAutoDismissTimer){ clearTimeout(noteAutoDismissTimer); noteAutoDismissTimer=null; }
+    micNote.className='mic-note'+(cls?' '+cls:'');
+    micNote.textContent=text;
+    if(autoDismissMs) noteAutoDismissTimer=setTimeout(()=>{
+      micNote.className='mic-note'; micNote.textContent=''; noteAutoDismissTimer=null;
+    },autoDismissMs);
+  }
 
   // ===============================================================
   // Rendering
@@ -5042,7 +5063,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r143 (OUR-164: shrink type-a-move to fit Log out)';
+  const BUILD='v2-r144 (OUR-166: auto-dismiss Voice started toast)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9740,7 +9761,15 @@
         // we can actually observe. A muted phone produces exactly this, and
         // claiming success there would send a tester off looking in the wrong
         // place — the one failure this button exists to prevent.
-        note('Voice started — you should have heard a move.','ok');
+        // OUR-166: auto-dismisses after 3s like a toast -- terminal
+        // success confirmation with no follow-up note() to clear it
+        // itself, and nothing logged to the transcript standing in for
+        // it once it's gone. "No sound came out." just below stays
+        // sticky on purpose: it's a failure state (worth leaving visible
+        // for troubleshooting) and warnSilent() right after it already
+        // puts a permanent, more detailed record in the transcript --
+        // this one has no such backup copy anywhere else.
+        note('Voice started — you should have heard a move.','ok',3000);
         micEvent('tts','voice test: audio started in '+(lastAudioStartAt-t0)+'ms');
         return;
       }
