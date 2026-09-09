@@ -426,27 +426,11 @@
      Pieces) are gone -- all four moved into popovers in the below-board
      row, and nothing in .board-head is a <select> or uses that class
      anymore. Same "verbositySelect all over again" situation OUR-150
-     already hit once for this exact rule. */
-  .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
-  /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
-     enough that a drag felt "chunky" independent of anything r72/r77 fixed,
-     since that's a pixels-to-value ratio issue, not a performance one.
-     240px more than doubles it to ~9px/step. The row it lives in already
-     has flex-wrap on the parent (.board-head's inner div), so if a
-     narrower boardpanel makes the row too tight, this field wraps to its
-     own line — but a flat 240px is still a fixed width, and flex-wrap only
-     redistributes multiple items across lines, it can't shrink a single
-     item that's wider than the line itself. On a narrow phone (~390px),
-     240px alone caused real horizontal overflow even alone on its own
-     line — confirmed visually, not assumed. min(240px,100%) lets it
-     shrink to whatever the row actually has once genuinely tight, capping
-     at 240px everywhere roomier. A percentage here would resolve against
-     .board-size-field's own auto (content-based) width — circular, since
-     that width is itself driven by this same input — so this uses a
-     viewport-relative bound instead, which has no such dependency: 50vw
-     hits the 240px cap at any viewport ≳480px, and actually shrinks on
-     something as narrow as a phone. */
-  .board-size-field input[type=range]{width:min(240px,50vw)}
+     already hit once for this exact rule. OUR-194: .board-size-field itself
+     (and its own width tuning, and the fullscreen-hide rule targeting it
+     below) is now gone too -- the size slider/Reset moved out of
+     .board-head entirely into a popover on a new header icon, same
+     "moved out, selector now dead" situation all over again. */
   .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
   .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
   .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
@@ -510,14 +494,13 @@
      .board-head (Fullscreen to <header>, verbosity into a popover on the
      mic button), so neither selector could still match anything here
      either. */
-  /* .board-size-field as a class (not an inline style on the wrapper div)
-     so this rule can actually win the cascade — an inline style always
-     beats a stylesheet rule regardless of specificity, which is exactly
-     what silently defeated an earlier :has()-based version of this line. */
   /* OUR-192/OUR-192: .board-head-field's own entry here is gone -- same
      "moved out, selector now dead" situation as #flipBoardBtn's own
-     removal from this list back in OUR-140. */
-  .app.fullscreen-active .board-head .board-size-field{display:none}
+     removal from this list back in OUR-140. OUR-194: .board-size-field's
+     own entry is gone the same way -- it moved to a header popover, and
+     the header itself is already fully hidden in fullscreen via the
+     blanket .app.fullscreen-active>* rule, so no replacement rule is
+     needed here. */
   .app.fullscreen-active .board-head{justify-content:center;gap:14px}
   .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
   .app.fullscreen-active .exit-fullscreen-btn{display:block}
@@ -1181,6 +1164,34 @@
           </g>
         </svg>
       </button>
+      <!-- OUR-194: board size (zoom) slider + Reset, moved out of
+           .board-head entirely into their own round icon here, between
+           Voice commands and Log out as asked. Same
+           .settings-wrap/.popover-panel pattern as Game settings/
+           Appearance -- own click opens it directly, no separate caret
+           (nothing else on #boardSizeBtn to protect). Same
+           boardSizeRange/boardSizeResetBtn ids, same input/click handlers
+           and persistence (untouched) -- position/presentation only. Glyph
+           is a magnifying glass with a plus, the standard "zoom" mark. -->
+      <div class="settings-wrap">
+        <button class="icon-btn mic-size" id="boardSizeBtn" type="button" aria-label="Board size" title="Board size" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="10" cy="10" r="7"/>
+            <line x1="15" y1="15" x2="21" y2="21"/>
+            <line x1="10" y1="7" x2="10" y2="13"/>
+            <line x1="7" y1="10" x2="13" y2="10"/>
+          </svg>
+        </button>
+        <div class="popover-panel" id="boardSizePopover" hidden>
+          <div class="popover-fields">
+            <div class="field">
+              <label for="boardSizeRange">Board size</label>
+              <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
+            </div>
+            <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
+          </div>
+        </div>
+      </div>
       <!-- OUR-162: Log out relocated from the auth bar (where its identity
            text used to sit next to it) into this row, directly after
            Appearance as asked -- grouped with the other settings-style
@@ -1254,18 +1265,10 @@
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
-        <!-- OUR-106: swapped with Fullscreen below — Reset now sits left of
-             the slider, Fullscreen right of it. Reset stays grouped inside
-             .board-size-field with the slider itself (not pulled out
-             standalone): that's what the fullscreen-hide rule at
-             .app.fullscreen-active .board-head .board-size-field targets,
-             so moving Reset's position within the div rather than out of it
-             keeps "hidden together with the slider in fullscreen" exactly
-             as it worked before — only the order inside changed. -->
-        <div class="board-size-field" title="Ignored while fullscreen — fullscreen picks its own size and this is restored on exit.">
-          <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
-          <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
-        </div>
+        <!-- OUR-194: Board size slider + Reset moved out of this row
+             entirely, into a popover on a new round icon in the header --
+             see there. Same ids (boardSizeRange/boardSizeResetBtn), same
+             change handler/persistence, position only. -->
         <!-- OUR-192: Board/Piece theme moved out of this row entirely,
              into a popover on a new round icon in the below-board row --
              see there. -->
@@ -1440,19 +1443,17 @@
         </g>
       </svg>
     </button>
-    <!-- OUR-192: Board &amp; Pieces theme, restyled from board-head selects
-         into a round icon (a knight standing on a small checkered square --
-         flagged by Adni as a first attempt, easy to revise once seen live)
-         opening a popover with both selects, same pattern as Game
-         settings/Appearance. Same ids, same change handler (applyTheme(),
-         unchanged), same persistence -- position/presentation only. -->
+    <!-- OUR-194: Board &amp; Pieces theme -- glyph simplified from a knight
+         standing on a checkered square (OUR-192's first attempt, flagged
+         by Adni as unclear at small size) down to just a knight head
+         alone, bigger and plainer. Same button/popover/change-handler
+         behavior as before, glyph swap only. -->
     <div class="settings-wrap">
       <button class="icon-btn mic-size" id="boardThemeBtn" type="button" aria-label="Board &amp; pieces" title="Board &amp; pieces">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 17.5c0-1.7.4-2.4.4-4 0-.8-.9-1.3-1.4-2.6-.5-1.5.3-4.9 3-4.9 1.6 0 2.5 1 2.9 2 .3.9-.1 1.6-.7 2.1 1 .4 1.8 1.4 1.8 2.7 0 1.6-.6 2.6-.6 4.7"/>
-          <circle cx="12.3" cy="8.4" r=".5" fill="currentColor" stroke="none"/>
-          <rect x="5.5" y="17.5" width="13" height="3.5" rx=".6"/>
-          <path d="M12 17.5v3.5"/><path d="M5.5 19.25h13"/>
+          <path d="M6 21c0-2.5 1-4 1-6.5 0-1.3-1.3-2-2-4C4.3 7.5 6 4 9.5 4c2.3 0 3.5 1.5 3.8 2.8.3 1.3-.3 2.2-1.1 2.8 1.4.6 2.8 2 2.8 4 0 2.5-1 3.9-1 6.4"/>
+          <circle cx="10.5" cy="8.5" r=".6" fill="currentColor" stroke="none"/>
+          <path d="M4.5 21h11"/>
         </svg>
       </button>
       <div class="popover-panel wide" id="boardThemePopover" hidden>
@@ -1485,17 +1486,17 @@
         </div>
       </div>
     </div>
-    <!-- OUR-192: Coach &amp; Tips, restyled from board-head selects into a
-         round icon (a whistle -- also flagged as a first attempt) opening
-         a popover with both selects. Same ids, same change handlers
-         (unchanged, still wired further down), same persistence --
-         position/presentation only. -->
+    <!-- OUR-194: Coach &amp; Tips -- glyph swapped from a whistle (OUR-192's
+         first attempt, flagged by Adni for revision) to a graduation cap,
+         reading more clearly as "coaching/teaching". Same button/
+         popover/change-handler behavior, glyph swap only. -->
     <div class="settings-wrap">
       <button class="icon-btn mic-size" id="coachTipsBtn" type="button" aria-label="Coach &amp; tips" title="Coach &amp; tips">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3.5 12a4.5 4.5 0 0 1 4.5-4.5h9a5 5 0 1 1 0 10H8a4.5 4.5 0 0 1-4.5-4.5Z"/>
-          <circle cx="7.5" cy="12" r="1.6"/>
-          <path d="M16.5 7.5v-1a2 2 0 1 1 4 0"/>
+          <path d="M2 9l10-4 10 4-10 4-10-4Z"/>
+          <path d="M6 11v4c0 1.5 2.5 3 6 3s6-1.5 6-3v-4"/>
+          <path d="M20 9v5"/>
+          <circle cx="20" cy="15.3" r=".9" fill="currentColor" stroke="none"/>
         </svg>
       </button>
       <div class="popover-panel wide" id="coachTipsPopover" hidden>
@@ -1998,6 +1999,7 @@
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
         fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
         boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'), newPuzzleBtn=$('newPuzzleBtn'),
+        boardSizeBtn=$('boardSizeBtn'), boardSizePopover=$('boardSizePopover'),
         apContrastRange=$('apContrastRange'), apSaturateRange=$('apSaturateRange'),
         apBrightnessRange=$('apBrightnessRange'), apHueRange=$('apHueRange'),
         apOpacityRange=$('apOpacityRange'), appearanceResetBtn=$('appearanceResetBtn'),
@@ -5417,7 +5419,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r157 (OUR-192: icon-row spacing fix, new popovers, enlarged glyphs)';
+  const BUILD='v2-r158 (OUR-194: knight-head/graduation-cap glyphs, board size moved to header zoom popover)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10184,6 +10186,7 @@
     saveState();
   }
   function openVolumePopover(){
+    closeBoardSizePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
     closeAppearancePopover();
@@ -10222,6 +10225,7 @@
   // input. #micBtn's own click handler (listening toggle, see below) is
   // untouched -- this caret is #verbosityCaretBtn, a separate element.
   function openVerbosityPopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeGameSettingsPopover();
     closeAppearancePopover();
@@ -10252,6 +10256,7 @@
   // other click behavior of its own to protect from being overloaded, so
   // there was nothing to keep separate.
   function openGameSettingsPopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeVerbosityPopover();
     closeAppearancePopover();
@@ -10280,6 +10285,7 @@
   // Game settings just above, same reasoning for the button's own click
   // opening it directly (nothing else on #appearanceBtn to protect).
   function openAppearancePopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
@@ -10309,6 +10315,7 @@
   // button's own click opening it directly (nothing else on
   // #voiceSettingsBtn to protect -- it's a separate element from #micBtn).
   function openVoiceSettingsPopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
@@ -10340,6 +10347,7 @@
   // a separate element, same separation OUR-144 established for
   // mute-vs-volume.
   function openBoardOpacityPopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
@@ -10369,6 +10377,7 @@
   // own click opening it directly (nothing else on #boardThemeBtn to
   // protect).
   function openBoardThemePopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
@@ -10396,6 +10405,7 @@
   // OUR-192: Coach & Tips popover -- same pattern as Board & Pieces just
   // above.
   function openCoachTipsPopover(){
+    closeBoardSizePopover();
     closeVolumePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
@@ -10418,6 +10428,38 @@
   document.addEventListener('click',()=>{ if(!coachTipsPopover.hidden) closeCoachTipsPopover(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!coachTipsPopover.hidden) closeCoachTipsPopover();
+  });
+
+  // OUR-194: board size (zoom) popover -- same pattern as Board & Pieces/
+  // Coach & Tips above, own click opens it directly (nothing else on
+  // #boardSizeBtn to protect). Wraps the existing boardSizeRange/
+  // boardSizeResetBtn ids and their own input/click handlers below,
+  // untouched -- this only adds the popover open/close plumbing around
+  // controls that already worked.
+  function openBoardSizePopover(){
+    closeVolumePopover();
+    closeVerbosityPopover();
+    closeGameSettingsPopover();
+    closeAppearancePopover();
+    closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
+    boardSizePopover.hidden=false;
+    boardSizeBtn.setAttribute('aria-expanded','true');
+  }
+  function closeBoardSizePopover(){
+    boardSizePopover.hidden=true;
+    boardSizeBtn.setAttribute('aria-expanded','false');
+  }
+  boardSizeBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(boardSizePopover.hidden) openBoardSizePopover(); else closeBoardSizePopover();
+  });
+  boardSizePopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!boardSizePopover.hidden) closeBoardSizePopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!boardSizePopover.hidden) closeBoardSizePopover();
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
