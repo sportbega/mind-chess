@@ -607,6 +607,28 @@
   .sq.legal-capture{box-shadow:inset 0 0 0 4px var(--accent)}
   .sq.drag-hover{box-shadow:inset 0 0 0 3px var(--accent-2)}
   .sq.drag-origin{opacity:.35}
+  /* OUR-219: a piece's glyph lives in its own child element (rather than
+     as the .sq div's own text node) purely so a move's slide animation has
+     something to apply a transform to without also dragging the square's
+     own background/box-shadow along with it. Purely a wrapper -- color/
+     stroke/shadow all still come from the parent .sq.white-piece/.black-
+     piece rules above via normal inheritance, so this changes nothing
+     visually on its own. */
+  .piece-glyph{display:inline-block}
+  /* OUR-219: hover feedback, reusing the exact same --accent/--accent-2
+     theme variables .selected/.legal-target/.legal-capture above already
+     ride (see their own comment) rather than adding new per-theme
+     entries. Suppressed while a drag/click gesture already owns the
+     square's own visual state (mid-drag, or the actively selected/
+     legal-target square itself) so hover never fights those for the same
+     box-shadow. */
+  .sq:hover:not(.selected):not(.legal-target):not(.legal-capture):not(.drag-origin){box-shadow:inset 0 0 0 2px var(--accent-2);cursor:pointer}
+  /* Hover-preview: legal targets shown for a piece the pointer is over but
+     hasn't clicked yet (see updateBoardHover()) -- same visual language as
+     an actual selection's own legal-target/legal-capture, just a shade
+     lighter so a real selection still reads as the more committed state. */
+  .sq.legal-target.hover-preview::after{opacity:.35}
+  .sq.legal-capture.hover-preview{box-shadow:inset 0 0 0 3px var(--accent)}
   /* Copies the origin square's own computed color/stroke/size at drag
      start (see onBoardPointerMove) rather than hardcoding any of them, so
      this is correct at any board size and under any theme without having
@@ -3270,6 +3292,76 @@
   function isBoardFlipped(){
     return boardFlippedOverride!==null?boardFlippedOverride:humanColor==='b';
   }
+  // ===============================================================
+  // OUR-219: piece slide animation. Standard chess-site behavior (chess.com/
+  // Lichess) is a piece visibly sliding from origin to destination rather
+  // than teleporting -- but renderBoard()/renderReviewBoard() both fully
+  // wipe and rebuild every square on every render (innerHTML=''), which is
+  // NOT something a CSS transition can play across on its own: a
+  // transitioned property needs to change on the SAME element, not get
+  // thrown away and recreated. Rather than rearchitect either render
+  // function into a persistent piece-layer model (real risk to everything
+  // that already depends on their current shape -- selection, legal-move
+  // dots, check highlighting, drag-and-drop), this uses the FLIP technique
+  // (First-Last-Invert-Play): capture the moving piece's on-screen rect
+  // from the CURRENT (about to be wiped) DOM before rebuilding, then once
+  // the new position exists, offset the piece now sitting on the
+  // destination square by the old-rect-minus-new-rect delta and animate
+  // that offset back to zero. The DOM swap itself stays instant and cheap;
+  // only the visual transform is animated.
+  //
+  // Explicitly opt-in per render (a `moves` array queued right before the
+  // specific renderAll()/renderBoard() call that represents a real move),
+  // not opt-out: every other renderBoard() call site -- flip, undo, new
+  // game, puzzle load, reveal/hide board, PGN paste -- simply never queues
+  // anything, so it defaults to no animation without needing its own
+  // suppression. That is deliberately the safer direction to default a
+  // brand-new visual feature in, over trying to enumerate and suppress
+  // every non-move re-render site by hand.
+  const SLIDE_MS=180;
+  function captureSlideOrigin(gridEl,fromSq){
+    if(!fromSq) return null;
+    const el=gridEl.querySelector('.sq[data-square="'+fromSq+'"] .piece-glyph');
+    return el?el.getBoundingClientRect():null;
+  }
+  function playSlideAnimation(gridEl,toSq,originRect){
+    if(!originRect) return;
+    const el=gridEl.querySelector('.sq[data-square="'+toSq+'"] .piece-glyph');
+    if(!el) return;
+    const destRect=el.getBoundingClientRect();
+    const dx=originRect.left-destRect.left, dy=originRect.top-destRect.top;
+    if(!dx&&!dy) return;
+    el.style.transition='none';
+    el.style.transform='translate('+dx+'px,'+dy+'px)';
+    el.getBoundingClientRect();   // force layout so the line above is committed before the next frame clears it
+    requestAnimationFrame(()=>{
+      el.style.transition='transform '+SLIDE_MS+'ms ease';
+      el.style.transform='';
+      el.addEventListener('transitionend',()=>{ el.style.transition=''; el.style.transform=''; },{once:true});
+    });
+  }
+  // Castling moves two pieces at once (king + rook); every other move is a
+  // single {from,to} pair. Shared by the live board and review's own
+  // stepping (reviewSlideMovesFor() below), rather than each computing this
+  // independently.
+  function slideMovesFor(m){
+    const moves=[{from:m.from,to:m.to}];
+    if(m.flags.indexOf('k')!==-1){ const rank=m.color==='w'?'1':'8'; moves.push({from:'h'+rank,to:'f'+rank}); }
+    else if(m.flags.indexOf('q')!==-1){ const rank=m.color==='w'?'1':'8'; moves.push({from:'a'+rank,to:'d'+rank}); }
+    return moves;
+  }
+  // Set right before the ONE renderAll()/renderBoard() call that should
+  // animate -- see applyMove() and loadOnlinePgn(). null the rest of the
+  // time, which is what makes every other render site's silence into
+  // correct behavior rather than a gap that needed filling.
+  let pendingBoardSlide=null;
+  // Set by drag-and-drop's own drop handler right before it calls
+  // execPlan()/applyMove() -- a completed drag has already visually landed
+  // the piece at the drop square via its own ghost element (see
+  // onBoardPointerMove/Up), so re-sliding it from scratch here would be a
+  // double-animation, not a missing one.
+  let suppressNextBoardSlide=false;
+
   function renderBoard(){
     // Self-healing rather than hunting down every place the position can
     // change (move, undo, new game, pgn load, online/Lichess sync — all
@@ -3282,6 +3374,16 @@
       const p=game.get(selectedSquare);
       if(!p||p.color!==game.turn()){ selectedSquare=null; legalTargets=[]; }
     }
+    // OUR-219: capture the moving piece's(es') old screen position(s)
+    // before the wipe below destroys them -- see the block comment above
+    // captureSlideOrigin(). Consumed (cleared) unconditionally below, so a
+    // stray queued slide can never leak into some later, unrelated render.
+    const slideQueue=pendingBoardSlide;
+    pendingBoardSlide=null;
+    const slideOrigins=(slideQueue&&!suppressNextBoardSlide)
+      ?slideQueue.map(mv=>({to:mv.to,origin:captureSlideOrigin(boardGrid,mv.from)}))
+      :[];
+    suppressNextBoardSlide=false;
     boardGrid.innerHTML=''; ranksEl.innerHTML=''; filesEl.innerHTML='';
     const board=game.board();
     const flipped=isBoardFlipped();
@@ -3303,7 +3405,13 @@
         div.className='sq '+(((f+1)+rank)%2===1?'light':'dark');
         div.dataset.square=sq;
         const cell=board[r][f];
-        if(cell){ div.textContent=SOLID[cell.type]; div.classList.add(cell.color==='w'?'white-piece':'black-piece'); }
+        if(cell){
+          const glyph=document.createElement('span');
+          glyph.className='piece-glyph';
+          glyph.textContent=SOLID[cell.type];
+          div.appendChild(glyph);
+          div.classList.add(cell.color==='w'?'white-piece':'black-piece');
+        }
         if(lastMove&&(sq===lastMove.from||sq===lastMove.to)) div.classList.add('last');
         if(checkSq&&sq===checkSq) div.classList.add('checked');
         if(sq===selectedSquare) div.classList.add('selected');
@@ -3313,6 +3421,7 @@
       const rl=document.createElement('div'); rl.textContent=8-r; ranksEl.appendChild(rl);
     }
     (flipped?'hgfedcba':'abcdefgh').split('').forEach(f=>{ const d=document.createElement('div'); d.textContent=f; filesEl.appendChild(d); });
+    slideOrigins.forEach(s=>playSlideAnimation(boardGrid,s.to,s.origin));
   }
   function renderMoveStrip(){
     const h=game.history();
@@ -3481,6 +3590,42 @@
     selectedSquare=null; legalTargets=[];
     renderBoard();
   }
+  // OUR-219: hover-preview -- legal destination squares for the player's
+  // own piece under the cursor, shown BEFORE any click (same data
+  // selectSquare() above computes for an actual selection). A separate
+  // listener from onBoardPointerMove() below, which only ever runs mid-
+  // gesture after a pointerdown -- this one's whole job is the opposite
+  // case, nothing pressed yet, so folding it into that handler's early
+  // return would mean it never ran.
+  let hoverPreviewSquare=null, hoverPreviewTargets=[];
+  function clearHoverPreview(){
+    if(!hoverPreviewTargets.length) return;
+    hoverPreviewTargets.forEach(sq=>{
+      const el=boardGrid.querySelector('.sq[data-square="'+sq+'"]');
+      if(el) el.classList.remove('legal-target','legal-capture','hover-preview');
+    });
+    hoverPreviewTargets=[];
+  }
+  function updateHoverPreview(sq){
+    if(sq===hoverPreviewSquare) return;
+    hoverPreviewSquare=sq;
+    clearHoverPreview();
+    // No preview while a gesture already owns the board's visual state
+    // (mid-drag/click) or a real selection is already showing its own
+    // legal-target dots -- two overlapping dot-sets would just be noise.
+    if(!sq||boardHidden||boardPointer||selectedSquare) return;
+    const piece=game.get(sq);
+    if(!piece||piece.color!==game.turn()||!moveGateOk()) return;
+    game.moves({verbose:true}).filter(m=>m.from===sq).forEach(m=>{
+      const el=boardGrid.querySelector('.sq[data-square="'+m.to+'"]');
+      if(!el) return;
+      el.classList.add(game.get(m.to)?'legal-capture':'legal-target','hover-preview');
+      hoverPreviewTargets.push(m.to);
+    });
+  }
+  boardGrid.addEventListener('pointermove',e=>updateHoverPreview(squareFromPoint(e.clientX,e.clientY)));
+  boardGrid.addEventListener('pointerleave',()=>updateHoverPreview(null));
+
   let boardPointer=null; // {sq,x,y,dragging,ghostEl,pointerId,reselecting}
   const DRAG_THRESHOLD_PX=6;
   function onBoardPointerDown(e){
@@ -3565,7 +3710,11 @@
       const dropSq=squareFromPoint(e.clientX,e.clientY);
       const match=(dropSq&&dropSq!==bp.sq)?legalTargets.find(m=>m.to===dropSq):null;
       clearBoardSelection();
-      if(match) execPlan(planForMove(match));
+      // OUR-219: this gesture already visually landed the piece at the drop
+      // square via its own ghost element -- applyMove()'s own slide would
+      // be a double-animation (piece already there, then re-sliding on top
+      // of itself), not a missing one.
+      if(match){ suppressNextBoardSlide=true; execPlan(planForMove(match)); }
       return;
     }
     // A plain press-and-release with no drag in between: pressing an
@@ -3961,6 +4110,19 @@
   // still downloading and speechSynthesis was covering. One spelling, no
   // source of truth required.
   function voiceizeSquares(text){ return text; }
+  // OUR-218: deliberately NOT given pick()-based phrase variation, unlike
+  // Game Review's narration below. predictNarration() calls this exact
+  // function a second time, ahead of the real move, purely to pre-render a
+  // Kokoro clip for the text applyMove() will actually speak -- and
+  // requestReserve()'s own cache only pays off when that guess and the real
+  // call produce byte-identical text (kokoroReserve.text===text). Random
+  // phrasing here would make every prediction a guaranteed miss, silently
+  // undoing that latency optimization on every single move. The live
+  // coach's own Q&A answers (askEngine()'s callers, matchQuestion()'s
+  // handlers) already use pick() throughout -- they're never predicted
+  // ahead of time, so they don't have this constraint. The two systems
+  // aren't unifiable on this point without also reworking the prediction
+  // path; flagging rather than forcing it.
   function describeMove(m,v){
     const color=m.color==='w'?'White':'Black', piece=PIECE_NAME[m.piece];
     let base;
@@ -4829,7 +4991,16 @@
   // a whenSpeechIdle() waiter already in flight from a step before the stop
   // becomes a no-op instead of firing one extra advance.
   let reviewAutoPlaying=false, reviewAutoToken=0;
+  // OUR-219: Prev/Next/auto-play step queue this the same way applyMove()
+  // queues pendingBoardSlide for the live board -- see that variable's own
+  // comment for why this is opt-in-per-render rather than opt-out. Kept
+  // separate from the live board's own state (never shared) since the two
+  // boards render into different grids and step independently.
+  let pendingReviewSlide=null;
   function renderReviewBoard(fen,flipped){
+    const slideQueue=pendingReviewSlide;
+    pendingReviewSlide=null;
+    const slideOrigins=slideQueue?slideQueue.map(mv=>({to:mv.to,origin:captureSlideOrigin(reviewBoardGrid,mv.from)})):[];
     reviewBoardGrid.innerHTML='';
     const probe=new Chess(); probe.load(fen);
     const board=probe.board();
@@ -4839,11 +5010,31 @@
         const f=flipped?7-fi:fi;
         const div=document.createElement('div');
         div.className='sq '+(((f+1)+(8-r))%2===1?'light':'dark');
+        div.dataset.square=String.fromCharCode(97+f)+(8-r);
         const cell=board[r][f];
-        if(cell){ div.textContent=SOLID[cell.type]; div.classList.add(cell.color==='w'?'white-piece':'black-piece'); }
+        if(cell){
+          const glyph=document.createElement('span');
+          glyph.className='piece-glyph';
+          glyph.textContent=SOLID[cell.type];
+          div.appendChild(glyph);
+          div.classList.add(cell.color==='w'?'white-piece':'black-piece');
+        }
         reviewBoardGrid.appendChild(div);
       }
     }
+    slideOrigins.forEach(s=>playSlideAnimation(reviewBoardGrid,s.to,s.origin));
+  }
+  // Mirrors slideMovesFor() above for review's own perMove entries (uci
+  // string + fenBefore rather than a live chess.js move object). reverse
+  // swaps from/to for stepping BACKWARD (Prev undoes the move that reached
+  // the position being left, so the piece visually slides back).
+  function reviewSlideMovesFor(move,reverse){
+    const m=describeUci(move.fenBefore,move.uci);
+    if(!m) return [];
+    const pairs=[{from:m.from,to:m.to}];
+    if(m.flags.indexOf('k')!==-1){ const rank=m.color==='w'?'1':'8'; pairs.push({from:'h'+rank,to:'f'+rank}); }
+    else if(m.flags.indexOf('q')!==-1){ const rank=m.color==='w'?'1':'8'; pairs.push({from:'a'+rank,to:'d'+rank}); }
+    return reverse?pairs.map(p=>({from:p.to,to:p.from})):pairs;
   }
   // OUR-146: pulled out of showReviewPosition() so the TXT/PDF exports can
   // report the exact same eval text as the on-screen review, from one
@@ -4902,9 +5093,20 @@
   // phrasing via describeUci(), same as the live coach builds sentences
   // from a PV move) plus its existing classification (OUR-115), nothing
   // more.
+  // OUR-218: several phrasings per classification, same pick() mechanism
+  // the live coach already uses for its own answers (C2, see pick() below)
+  // -- reused, not reinvented. pick()'s own "don't repeat the last choice
+  // from this exact list" logic is keyed on the array itself, so calling
+  // pick(REVIEW_CLASS_PHRASE.inaccuracy) on consecutive Inaccuracies in the
+  // same game (or across games this session) already won't say the same
+  // one twice running, for free.
   const REVIEW_CLASS_PHRASE={
-    best:'the best move', excellent:'an excellent move', good:'a good move',
-    inaccuracy:'an inaccuracy', mistake:'a mistake', blunder:'a blunder'
+    best:['the best move','the top choice','exactly what the engine wanted'],
+    excellent:['an excellent move','a great choice','very strong'],
+    good:['a good move','a solid choice','reasonable'],
+    inaccuracy:['an inaccuracy','not quite the best choice','a small slip'],
+    mistake:['a mistake','a real error','off the mark'],
+    blunder:['a blunder','a serious error','a costly mistake']
   };
   function reviewMoveSentence(move){
     const m=describeUci(move.fenBefore,move.uci);
@@ -4915,8 +5117,8 @@
       base=cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
       if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
     }else base=move.san;
-    const phrase=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
-    return phrase?base+', '+phrase+'.':base+'.';
+    const options=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
+    return options?base+', '+pick(options)+'.':base+'.';
   }
 
   // ---------------------------------------------------------------
@@ -4954,7 +5156,8 @@
     const paid=m&&m.captured?PIECE_VALUE[m.captured]:0;
     const gained=PIECE_VALUE[reply.captured];
     if(gained<=paid) return null;
-    return 'That hangs the '+PIECE_NAME[reply.captured]+' on '+spokenSquare(reply.to)+'.';
+    const sq=PIECE_NAME[reply.captured]+' on '+spokenSquare(reply.to);
+    return pick(['That hangs the '+sq+'.','That leaves the '+sq+' hanging.','The '+sq+' is left undefended.']);
   }
   // Reuses pvGivesCheck() exactly as the live coach's own "is my king safe?"
   // answer does (index.html's matchQuestion) -- just the opponent's first
@@ -4964,7 +5167,8 @@
     if(!pv||!pv.length) return null;
     const chk=pvGivesCheck(move.fenAfter,pv,1);
     if(!chk) return null;
-    return 'That allows a check with the '+PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to)+'.';
+    const sq=PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to);
+    return pick(['That allows a check with the '+sq+'.','That opens up a check from the '+sq+'.','Watch out -- that lets the '+sq+' give check.']);
   }
   // Same board-reading geometry as attackersOf() above, parameterized on an
   // explicit probe instead of the live `game` -- review analyzes a finished
@@ -5001,7 +5205,8 @@
     const targets=reviewSquaresAttacked(probe,mv.to,mv.color,mv.piece)
       .filter(sq=>{ const p=probe.get(sq); return p&&p.type!=='p'; });
     if(targets.length<2) return null;
-    return 'That forks '+joinAnd(targets.map(sq=>'the '+PIECE_NAME[probe.get(sq).type]+' on '+spokenSquare(sq)))+'.';
+    const list=joinAnd(targets.map(sq=>'the '+PIECE_NAME[probe.get(sq).type]+' on '+spokenSquare(sq)));
+    return pick(['That forks '+list+'.','That hits '+list+' at once.','A fork -- '+list+' are all under attack.']);
   }
   // Only attempted for Inaccuracy/Mistake/Blunder -- a Best/Excellent/Good
   // move didn't lose meaningful equity, so pattern-matching a "tactic" onto
@@ -5025,7 +5230,7 @@
     if(m.flags.indexOf('k')!==-1) phrase='castling kingside';
     else if(m.flags.indexOf('q')!==-1) phrase='castling queenside';
     else phrase=PIECE_NAME[m.piece]+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to);
-    return 'The engine preferred '+phrase+' instead.';
+    return pick(['The engine preferred '+phrase+' instead.','Stronger was '+phrase+'.','The better try was '+phrase+'.']);
   }
   // "The best line continues [move], [move]" -- walks evalBefore.pv past its
   // own first move (already named by reviewBestMoveNote() above) through a
@@ -5046,7 +5251,9 @@
                 :mv.flags.indexOf('q')!==-1?'castling queenside'
                 :PIECE_NAME[mv.piece]+' '+(mv.captured?'takes ':'to ')+spokenSquare(mv.to));
     }
-    return descs.length?' Continuing '+joinAnd(descs)+'.':'';
+    if(!descs.length) return '';
+    const list=joinAnd(descs);
+    return ' '+pick(['Continuing '+list+'.','Then likely '+list+'.','Followed by '+list+'.']);
   }
   // Deep = Simple's own sentence, plus template-derived reasoning built
   // entirely from analyzeGame()'s existing per-move data. A Best move has
@@ -5124,6 +5331,10 @@
     if(!reviewResult||reviewPositionIdx<=0) return;
     if(reviewAutoPlaying) stopReviewAutoPlay();
     const idx=reviewPositionIdx-1;
+    // Prev undoes the move that reached the CURRENT (about to be left)
+    // position -- that's perMove[reviewPositionIdx-1], read before idx
+    // below reassigns.
+    pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[reviewPositionIdx-1],true);
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
@@ -5131,6 +5342,7 @@
     if(!reviewResult||reviewPositionIdx>=reviewResult.perMove.length) return;
     if(reviewAutoPlaying) stopReviewAutoPlay();
     const idx=reviewPositionIdx+1;
+    pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
@@ -5145,6 +5357,7 @@
     if(myToken!==reviewAutoToken||!reviewResult) return;
     if(reviewPositionIdx>=reviewResult.perMove.length){ stopReviewAutoPlay(); return; }
     const idx=reviewPositionIdx+1;
+    pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
     showReviewPosition(idx);
     narrateReviewStep(idx);
     whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REPLY_WAIT_MAX_MS);
@@ -5548,6 +5761,11 @@
     const applied=game.move({from:spec.from,to:spec.to,promotion:spec.promotion});
     if(!applied){ warn('That move wasn\u2019t legal after all.'); return; }
     lastMove=applied;
+    // OUR-219: queue the slide for renderBoard()'s own upcoming render
+    // (from renderAll() below) -- suppressNextBoardSlide is set by drag-
+    // and-drop's own drop handler right before it gets here, since that
+    // gesture already visually landed the piece via its own ghost element.
+    pendingBoardSlide=slideMovesFor(applied);
     playMoveSound(!!applied.captured);
     playMoveEventSounds(applied);
     // OUR-108: increment is added to the mover's own clock right after
@@ -6041,7 +6259,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r170 (OUR-214/215/216: Game Review manual step, auto-play, Deep commentary)';
+  const BUILD='v2-r171 (OUR-218/219: varied commentary phrasing, piece slide animation, board hover highlights)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9553,6 +9771,9 @@
     gameOver=game.game_over();
     pendingAction=null;
     if(game.history().length>prevLen && lastMove){
+      // OUR-219: this path is server-driven resync (an opponent's move, or
+      // a reconnect), never a drag -- no suppression to consider.
+      pendingBoardSlide=slideMovesFor(lastMove);
       playMoveSound(!!lastMove.captured);
       playMoveEventSounds(lastMove);
       speak(describeMove(lastMove,verbosity)+endSuffix());
