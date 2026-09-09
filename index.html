@@ -3097,30 +3097,46 @@
     boardToggleBtn.querySelector('.board-eye-open').style.display=h?'none':'';
     boardToggleBtn.querySelector('.board-eye-closed').style.display=h?'':'none';
   }
-  // OUR-182: sets #boardVeil's own opacity (0-100, "how visible the board
-  // is") -- independent of boardHidden's binary display:flex/none, and of
-  // #boardOuter's own opacity (the Appearance panel's separate
-  // Transparency slider, r67/OUR-161). Called from the slider's input
-  // handler and from setBoardHidden() below, so it's the one place that
-  // ever touches boardVeil.style.opacity.
-  function setBoardVeilOpacity(v){
+  // OUR-184: split into two separate concerns, since a real bug fell out
+  // of conflating them in OUR-182 -- "what value does the slider/popover
+  // remember and show" is not the same thing as "what's #boardVeil's
+  // actual live opacity right now", and treating them as one meant a
+  // player who'd previously dialed transparency down and then reloaded
+  // got a translucent hidden board the instant the page loaded, before
+  // they'd touched anything this session.
+  //
+  // rememberBoardVeilOpacity() only updates the slider's own value + the
+  // persisted preference -- it never touches what's actually on screen.
+  // applyOpaqueVeil() only forces what's on screen right now (fully
+  // opaque) -- it never touches the remembered preference. setBoardVeilOpacity()
+  // (the slider's own input handler) does both together, since dragging
+  // it live IS the deliberate action that's supposed to both show and
+  // remember a new value.
+  function rememberBoardVeilOpacity(v){
     boardVeilOpacity=v;
     boardOpacityRange.value=String(v);
-    boardVeil.style.opacity=String((100-v)/100);
     saveState();
   }
-  // preserveOpacity exists for exactly one caller: restoreState(), which
-  // already applied a just-restored boardVeilOpacity before calling this
-  // and needs that value left alone rather than reset. Every other
-  // caller -- the click handler, both voice commands ("hide board"/"show
-  // board"), puzzle start, new-game start -- gets the default: a fresh
-  // "hide" always lands fully opaque, regardless of wherever the slider
-  // was left from earlier in the session. The click/voice command is the
-  // no-ambiguity action; dragging the slider afterward is a deliberate,
-  // separate choice to peek through.
-  function setBoardHidden(h,preserveOpacity){
+  function applyOpaqueVeil(){ boardVeil.style.opacity='1'; }
+  function setBoardVeilOpacity(v){
+    rememberBoardVeilOpacity(v);
+    boardVeil.style.opacity=String((100-v)/100);
+  }
+  // isRestore exists for exactly one caller: restoreState(), which already
+  // set the slider to the player's remembered preference via
+  // rememberBoardVeilOpacity() before calling this, and must NOT have that
+  // preference silently become live opacity the instant the page loads --
+  // applyOpaqueVeil() forces the veil solid regardless, without touching
+  // what the slider remembers. Every other caller -- the click handler,
+  // both voice commands ("hide board"/"show board"), puzzle start,
+  // new-game start -- gets the default: a fresh "hide" always resets BOTH
+  // the live veil and the remembered slider value to fully opaque,
+  // regardless of wherever either was left from earlier. The click/voice
+  // command is the no-ambiguity action; dragging the slider afterward,
+  // in THIS session, is the only way to make it see-through again.
+  function setBoardHidden(h,isRestore){
     boardHidden=h;
-    if(h&&!preserveOpacity) setBoardVeilOpacity(0);
+    if(h){ if(isRestore) applyOpaqueVeil(); else setBoardVeilOpacity(0); }
     boardVeil.style.display=h?'flex':'none';
     updateBoardToggleIcon(h);
     if(!h) renderBoard();
@@ -5310,7 +5326,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r152 (OUR-182: board opacity popover on Hide/Show board)';
+  const BUILD='v2-r153 (OUR-184: fix hidden board loading see-through)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10417,11 +10433,14 @@
         : gameOver
           ? 'Game restored.'+endSuffix()
           : 'Game restored. '+(game.turn()==='w'?'White':'Black')+' to move.');
-      // OUR-182: setBoardVeilOpacity() applies the persisted value to
-      // #boardVeil directly; setBoardHidden()'s own default reset-to-0
-      // behavior is deliberately skipped here (preserveOpacity=true) so
-      // restoring a session doesn't stomp a previously fine-tuned value.
-      setBoardVeilOpacity((typeof saved.boardVeilOpacity==='number')?saved.boardVeilOpacity:0);
+      // OUR-184: rememberBoardVeilOpacity() only sets the slider's own
+      // displayed/persisted value here -- it deliberately does NOT touch
+      // #boardVeil's live opacity. setBoardHidden(...,true) is what
+      // forces the veil fully opaque if the board is actually hidden,
+      // regardless of whatever the slider remembers -- a reload must
+      // never hand a player a see-through "hidden" board just because
+      // they'd dialed it down before closing the tab.
+      rememberBoardVeilOpacity((typeof saved.boardVeilOpacity==='number')?saved.boardVeilOpacity:0);
       setBoardHidden(saved.boardHidden!==false,true);
       boardFlippedOverride=typeof saved.boardFlippedOverride==='boolean'?saved.boardFlippedOverride:null;
       startClock();
