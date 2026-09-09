@@ -293,22 +293,19 @@
      row at any reasonable width, so it moved to the button's own title
      tooltip instead of disappearing outright — the "Voice commands"
      details block elsewhere still documents the same phrases at length. */
-  /* OUR-170: two explicit rows, not one that quietly wraps across three.
-     Measured first (same discipline as OUR-164): at the default board
-     size, this row's available width is 852px. All 15 controls (13
-     round icons + the pill + Send) need ~964px -- 112px over. Icons alone
-     would need to shrink to ~40.7px to close that gap at the current
-     10px gap, below the ~44-48px accessible touch-target floor OUR-95
-     already established (the exact reason mic/speaker stayed 48px while
-     other buttons went smaller that round) -- so shrinking wasn't a
-     viable fix here, not a matter of picking a slightly smaller number.
-     Splitting into icons-row (13 icons, ~756px, comfortably one line) and
-     input-row (pill + Send, ~188px) fixes it without touching size at
-     all. .mic-compact itself becomes the column; each row is its own
-     flex-wrap row inside it, so narrow-width wrapping still works exactly
-     as before, just within two predictable groups instead of one. */
-  .mic-compact{display:flex;flex-direction:column;gap:10px}
-  .mic-compact-icons,.mic-compact-input{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* OUR-170: this used to be one of two explicit rows inside a .mic-compact
+     column (icons, then pill+Send), built after measuring the row was
+     112px over budget for all 15 controls on one line at once, with
+     shrinking icons ruled out since it would drop the accessible
+     touch-target size below ~44px. OUR-175 moved the pill+Send row out
+     entirely (see .below-board-row below, now living under the board
+     instead) -- .mic-compact-icons is now the header's only row, so the
+     column wrapper it used to need is gone too. */
+  .mic-compact-icons{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* OUR-175: same flex-wrap row treatment .mic-compact-icons/-input used,
+     for the pill+Send+Statistics+Transcript row now living under the
+     board instead of in the header -- see the HTML for why. */
+  .below-board-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
   /* Type-a-move (OUR-93, widened in OUR-94): a short move like "Nf3" or
      "e4" never needed the width a full sentence-length placeholder
      implied, but 120px (OUR-93's first pass) actually clipped "Type a
@@ -332,8 +329,8 @@
      130px/80px frees 20px, a small buffer past that measured 16px rather
      than the exact minimum, and still leaves comfortable room for the
      7-character "e.g. e4" placeholder (OUR-154) at this font size. */
-  .mic-compact input[type=text]{flex:0 1 130px;min-width:80px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
-  .mic-compact input[type=text]::placeholder{color:var(--text-dim)}
+  .below-board-row input[type=text]{flex:0 1 130px;min-width:80px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
+  .below-board-row input[type=text]::placeholder{color:var(--text-dim)}
   /* OUR-95: Send and Hide board used to be forced to 48px to match the
      mic/speaker circles, but that made every button in the header row
      taller than Flip board/Fullscreen/Reset in .board-head (33.5px,
@@ -701,14 +698,13 @@
            it hidden, so there's one single place this ever turns on. -->
       <p class="status" id="identityLine" hidden></p>
     </div>
-    <!-- One row, five controls, in this order (OUR-93): type-a-move,
-         mic, speaker mute, hide/reveal board, Send. Was two separate
-         pieces — a .mic-compact div here, and a standalone form lower on
-         the page — merged into one <form> so Enter-to-submit on the text
-         input keeps working exactly as it did in the old textrow. Mic,
-         speaker and hide-board are all type="button", so they can't
-         accidentally trigger a submit themselves. -->
-    <form class="mic-compact" id="textForm">
+    <!-- OUR-175: type-a-move + Send moved out to a new row under the
+         board (see .below-board-row there) -- this is the header's icon
+         row only now (OUR-93 through OUR-172's whole history of what
+         lived in this one row doesn't apply as literally as it used to,
+         see the below-board comment for the current story). Every icon
+         here is type="button", so none of them can accidentally trigger
+         a submit even without a wrapping <form> anymore. -->
       <div class="mic-compact-icons">
       <!-- OUR-156: both Resign buttons relocated here from .board-head,
            directly left of the type-a-move pill. They share this one slot
@@ -1178,33 +1174,11 @@
         </svg>
       </button>
       </div>
-      <div class="mic-compact-input">
-      <!-- OUR-154: placeholder shortened from "Type a move" to an example
-           move -- the field itself was already a full pill (border-radius:
-           999px, see .mic-compact input[type=text] below), this just makes
-           the text inside it read as a worked example rather than an
-           instruction, to go with Send's icon losing its own label. -->
-      <input type="text" id="textInput" placeholder="e.g. e4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-      <!-- OUR-154: restyled from a .btn.primary text pill (OUR-95/OUR-99's
-           33.5px sizing) to the round 48px icon-button set every other
-           control on this row now belongs to. Dropped the accent-gold
-           "primary" fill along with the text label -- every other button in
-           this set (mic, speaker, New game, Flip board, Hide board) is
-           plain .icon-btn, and Send singled out in gold next to them would
-           read as a different kind of control rather than one more member
-           of the same row. Same type="submit", same form, same click/Enter
-           behavior -- only the visual treatment changed. -->
-      <button class="icon-btn mic-size" type="submit" aria-label="Send" title="Send">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2Z"/>
-        </svg>
-      </button>
-      </div>
-      <!-- OUR-170: micNote sits directly below both rows now -- a plain
-           third child of .mic-compact (a column now, see the CSS), not a
-           flex-wrap trick forcing a line break within one row anymore. -->
+      <!-- OUR-175: micNote is a direct child of <header> now, alongside
+           .mic-compact-icons -- header itself is already the column (see
+           the CSS), so this just sits below the icons row with no wrapper
+           of its own needed. -->
       <p class="mic-note" id="micNote"></p>
-    </form>
   </header>
 
   <div class="online-panel" id="onlinePanel">
@@ -1386,6 +1360,85 @@
     </div>
   </div>
 
+  <!-- OUR-175: type-a-move + Send relocated here from the header (OUR-172's
+       third row) -- below the board instead, alongside Statistics and
+       Transcript, both restyled from collapsible <details> sections into
+       round icon buttons for the same reason Report a problem/Voice
+       commands were in OUR-168. Same id (#textForm) and submit handler as
+       before, unchanged -- Enter-to-submit only ever depended on textInput
+       and the submit button sharing one <form>, not on where that form
+       lives in the page. Every icon-only sibling here (Statistics,
+       Transcript) is type="button", so neither can accidentally trigger
+       a submit, same reasoning the header row's icons relied on. -->
+  <form class="below-board-row" id="textForm">
+    <!-- OUR-154: placeholder shortened from "Type a move" to an example
+         move -- the field itself was already a full pill (border-radius:
+         999px, see .below-board-row input[type=text] above), this just
+         makes the text inside it read as a worked example rather than an
+         instruction, to go with Send's icon losing its own label. -->
+    <input type="text" id="textInput" placeholder="e.g. e4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+    <!-- OUR-154: restyled from a .btn.primary text pill into the round
+         48px icon-button set. Same type="submit", same form, same
+         click/Enter behavior -- only the visual treatment changed. -->
+    <button class="icon-btn mic-size" type="submit" aria-label="Send" title="Send">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2Z"/>
+      </svg>
+    </button>
+    <!-- OUR-175: Statistics, restyled from a collapsible <details> section
+         (OUR-114/OUR-115) into a round icon (three ascending bars) opening
+         the same content as a modal -- tables and an openings list want
+         real room, same reasoning OUR-168 chose a modal for Report a
+         problem over a popover. renderStats() still only runs when this
+         is actually opened (openStats() below calls it directly, same
+         "don't pay for a Supabase round trip nobody asked for" reasoning
+         the old toggle listener had) -- every renderStats()/statsBody
+         call site elsewhere in the file switches from checking
+         statsDetails.open to !statsDetails.hidden, since #statsDetails is
+         a modal-overlay div now, not a <details>. -->
+    <button class="icon-btn mic-size" id="statsBtn" type="button" aria-label="Statistics" title="Statistics">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/>
+      </svg>
+    </button>
+    <!-- OUR-175: Transcript, restyled from a collapsible <details> section
+         (r74) into a round icon (lines on a page) opening the same
+         narration log as a modal instead of a popover -- it's a
+         full-width 190px-tall scrollable box of prose lines already, and
+         a ~220px popover would have made every line wrap awkwardly, the
+         same "needs real room" call OUR-168 made for Report a problem.
+         Deliberately a different glyph shape from Voice commands' head-
+         and-speech-waves icon (OUR-168) so the two are never confused at
+         a glance. #transcript itself (id, aria-live, live log() calls)
+         is completely unchanged, only its container is. -->
+    <button class="icon-btn mic-size" id="transcriptBtn" type="button" aria-label="Transcript" title="Transcript">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 3h9l3 3v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/>
+        <path d="M8 9h8"/><path d="M8 13h8"/><path d="M8 17h5"/>
+      </svg>
+    </button>
+  </form>
+
+  <div class="modal-overlay" id="statsDetails" hidden>
+    <div class="modal-card">
+      <div class="review-head">
+        <h3>Statistics</h3>
+        <button type="button" class="btn" id="statsCloseBtn">Close</button>
+      </div>
+      <div id="statsBody"><p class="empty">Loading…</p></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="transcriptDetails" hidden>
+    <div class="modal-card">
+      <div class="review-head">
+        <h3>Transcript</h3>
+        <button type="button" class="btn" id="transcriptCloseBtn">Close</button>
+      </div>
+      <div class="transcript" id="transcript" aria-live="polite"></div>
+    </div>
+  </div>
+
   <div class="movestrip" id="moveStrip"><span class="empty">No moves yet.</span></div>
 
   <!-- OUR-160: Appearance's old <details> section is gone -- Board/Piece
@@ -1397,18 +1450,12 @@
        is safe -- same situation OUR-158 already confirmed for
        #gameSettingsDetails. -->
 
-  <!-- OUR-115: same collapsible-panel convention as Appearance/Game
-       settings above — read-only, so no field-grid form controls, just a
-       summary line, a per-mode table, and a top-openings list.
-       renderStats() (below, in JS) fills #statsBody the first time this
-       is opened (not eagerly at boot — online/Lichess counts need a
-       Supabase round trip that a player who never opens this panel
-       shouldn't pay for) and every time after, so a game finishing while
-       the panel is already open doesn't need its own refresh call site. -->
-  <details class="help" id="statsDetails">
-    <summary>Statistics</summary>
-    <div id="statsBody"><p class="empty">Loading…</p></div>
-  </details>
+  <!-- OUR-175: Statistics' old <details> section is gone -- see
+       #statsDetails under the board now (a modal, next to the relocated
+       type-a-move+Send). renderStats() still only fills #statsBody when
+       actually opened, same "don't pay for a Supabase round trip nobody
+       asked for" reasoning as before -- openStats() calls it directly now
+       instead of a 'toggle' event listener. -->
 
   <!-- OUR-158: Game settings' old <details> section is gone -- Opponent/
        Level/Clock moved into a popover on a new round gear icon in the
@@ -1552,10 +1599,11 @@
        itself is safe -- same situation OUR-158/OUR-160 already confirmed
        for #gameSettingsDetails/#appearanceDetails. -->
 
-  <details class="help" id="transcriptDetails" open>
-    <summary>Transcript</summary>
-    <div class="transcript" id="transcript" aria-live="polite"></div>
-  </details>
+  <!-- OUR-175: Transcript's old <details> section is gone -- see
+       #transcriptDetails under the board now (a modal, next to the
+       relocated type-a-move+Send and Statistics). #transcript itself
+       (id, aria-live, live log() calls) is unchanged, only its
+       container is. -->
 
   <!-- OUR-168: #reportBtn moved to the header (round icon, bug glyph) --
        see there. This standalone spot is gone; the report it opens is
@@ -1864,6 +1912,9 @@
         voiceCommandsCloseBtn=$('voiceCommandsCloseBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         statsDetails=$('statsDetails'), statsBody=$('statsBody'),
+        statsBtn=$('statsBtn'), statsCloseBtn=$('statsCloseBtn'),
+        transcriptDetails=$('transcriptDetails'), transcriptBtn=$('transcriptBtn'),
+        transcriptCloseBtn=$('transcriptCloseBtn'),
         accountBody=$('accountBody'), identityLine=$('identityLine'), accountLogoutBtn=$('accountLogoutBtn'),
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
@@ -3970,7 +4021,7 @@
     // before clicking Review, and this way that can't matter.
     lastCompletedGame={mode, pgn, humanColor, level, client_key};
     updateReviewButtonVisibility();
-    if(statsDetails.open) renderStats();
+    if(!statsDetails.hidden) renderStats();
   }
   let lastCompletedGame=null;
 
@@ -4139,7 +4190,34 @@
       statsBody.innerHTML=html;
     });
   }
-  statsDetails.addEventListener('toggle',()=>{ if(statsDetails.open) renderStats(); });
+  // OUR-175: statsDetails is a modal now, not a <details> -- openStats()
+  // calls renderStats() directly on open (same "don't pay for a Supabase
+  // round trip nobody asked for" reasoning the old 'toggle' listener had),
+  // and every other renderStats() call site elsewhere in the file already
+  // switched from checking statsDetails.open to !statsDetails.hidden.
+  // Same click-outside/Escape dismissal as the Report a problem/Voice
+  // commands modals (OUR-168).
+  function openStats(){ statsDetails.hidden=false; renderStats(); }
+  function closeStats(){ statsDetails.hidden=true; }
+  statsBtn.addEventListener('click',openStats);
+  statsCloseBtn.addEventListener('click',closeStats);
+  statsDetails.addEventListener('click',e=>{ if(e.target===statsDetails) closeStats(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!statsDetails.hidden) closeStats();
+  });
+
+  // OUR-175: Transcript modal -- pure passive log, no state to set up on
+  // open (log() already keeps #transcript scrolled to the latest entry
+  // continuously in the background, visible or not), so there's nothing
+  // beyond the show/hide toggle itself. Same dismissal pattern as above.
+  function openTranscript(){ transcriptDetails.hidden=false; }
+  function closeTranscript(){ transcriptDetails.hidden=true; }
+  transcriptBtn.addEventListener('click',openTranscript);
+  transcriptCloseBtn.addEventListener('click',closeTranscript);
+  transcriptDetails.addEventListener('click',e=>{ if(e.target===transcriptDetails) closeTranscript(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!transcriptDetails.hidden) closeTranscript();
+  });
 
   // ===============================================================
   // OUR-116: Game review — Stockfish-driven post-game analysis.
@@ -4322,8 +4400,8 @@
         if(!user) return null;
         return db.from('mind_chess_results').update({accuracy:humanAcc})
           .eq('user_id',user.id).eq('client_key',descriptor.client_key);
-      }).then(()=>{ if(statsDetails.open) renderStats(); }).catch(()=>{});
-    }else if(statsDetails.open){
+      }).then(()=>{ if(!statsDetails.hidden) renderStats(); }).catch(()=>{});
+    }else if(!statsDetails.hidden){
       renderStats();
     }
   }
@@ -5168,7 +5246,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r147 (OUR-172: title on its own dedicated line)';
+  const BUILD='v2-r148 (OUR-175: move+Send below board, Stats/Transcript modals)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -8413,7 +8491,7 @@
                                   // retrying local stats under this identity.
       accountPendingEmail=null;
       renderAccount();
-      if(statsDetails.open) renderStats();
+      if(!statsDetails.hidden) renderStats();
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not set password.')); }
   }
   async function handleAccountLogin(email,password){
@@ -8426,7 +8504,7 @@
       backfillAttempted=false;
       accountUiMode='idle';
       renderAccount();
-      if(statsDetails.open) renderStats();
+      if(!statsDetails.hidden) renderStats();
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not log in.')); }
   }
   // OUR-129 Phase C: Lichess OAuth, reusing the same claim-vs-switch split
@@ -8532,7 +8610,7 @@
       passwordResetSentTo=null;
       backfillAttempted=false;
       renderAccount();
-      if(statsDetails.open) renderStats();
+      if(!statsDetails.hidden) renderStats();
     }catch(e){ accountError(friendlyAuthErrorMessage(e,'Could not set new password.')); }
   }
   async function handleAccountLogout(){
@@ -8547,7 +8625,7 @@
     // same as always.
     accountUiMode='idle';
     renderAccount();
-    if(statsDetails.open) renderStats();
+    if(!statsDetails.hidden) renderStats();
   }
   // OUR-162: accountLogoutBtn is now a static header button (moved out of
   // accountBody's own innerHTML, which used to recreate -- and rebind --
