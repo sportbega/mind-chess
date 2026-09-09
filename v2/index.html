@@ -403,7 +403,10 @@
      the first place; fullscreen swallowing it defeated that same intent
      a different way than blindfold mode almost did. */
   .app.fullscreen-active #checkAlert{display:block}
-  .app.fullscreen-active .board-head #flipBoardBtn,
+  /* OUR-140: #flipBoardBtn's own entry here is gone -- it moved out of
+     .board-head into <header>, which is already fully hidden in
+     fullscreen by the blanket rule above, so this selector would never
+     have matched anything again. */
   .app.fullscreen-active .board-head #fullscreenBtn,
   /* OUR-107: narration joined this row, next to Fullscreen — hidden here
      too so fullscreen stays the same decluttered clock/turn(/New puzzle)
@@ -627,6 +630,28 @@
           <path d="M12 5v14M5 12h14"/>
         </svg>
       </button>
+      <!-- OUR-140: moved here from .board-head (OUR-86), same restyle
+           reasoning as New game just above -- a single fixed action with
+           no dynamic label, so the icon-only treatment costs nothing.
+           Same id, same click handler (flipBoardBtn.addEventListener
+           below) -- only where it lives and how it looks changed.
+           Fullscreen behavior is unchanged despite the move: this button
+           used to be individually hidden by
+           ".app.fullscreen-active .board-head #flipBoardBtn" (removed
+           below, now dead since it's no longer inside .board-head), but
+           <header> itself is a direct child of .app and already fully
+           hidden by the blanket ".app.fullscreen-active>*{display:none}"
+           rule -- so it's hidden in fullscreen exactly as before, just
+           via the same mechanism New game/mic/speaker already rely on
+           rather than its own rule. -->
+      <button class="icon-btn mic-size" id="flipBoardBtn" type="button" aria-label="Flip board" title="Flip the board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 2l4 4-4 4"/>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 22l-4-4 4-4"/>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
       <!-- Moved here from .board-head (OUR-90): the button that reveals a
            hidden board used to live inside the row that's part of what's
            hidden, reachable only by scrolling to (and half-seeing) the
@@ -693,7 +718,6 @@
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <span class="status clock" id="clockLine" style="margin:0"></span>
         <span class="status" id="turnPill" style="margin:0"></span>
-        <button class="btn" id="flipBoardBtn" type="button" title="Flip the board">Flip board</button>
         <!-- OUR-106: swapped with Fullscreen below — Reset now sits left of
              the slider, Fullscreen right of it. Reset stays grouped inside
              .board-size-field with the slider itself (not pulled out
@@ -4443,7 +4467,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r130 (OUR-138: New game as a round 48px + icon button)';
+  const BUILD='v2-r131 (OUR-140: Flip board relocated as round icon button)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
