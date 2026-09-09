@@ -287,6 +287,21 @@
   #lichessSettingsField[hidden]{display:none}
   .online-status{margin:0;font-size:13px;color:var(--text-dim)}
   .online-actions{display:flex;gap:8px;flex-wrap:wrap}
+  /* OUR-201: #lichessTimeSelect's widest option ("Correspondence (3
+     days/move)") sizes the select to within a hair of its own
+     container's edge -- measured live: 237.5px select in a 226px content
+     box once .lichess-option's own padding is subtracted, so it was
+     ALREADY overflowing its immediate parent by ~11px, just not quite
+     the outer popover (.size-wide, OUR-199) at this exact width/zoom.
+     #lichessAiTimeSelect never hit this because none of its own options
+     run anywhere near as long. A flex item's default min-width:auto
+     equals its own content's width, which is exactly what was blocking
+     it from ever shrinking below that -- min-width:0 lifts that floor,
+     max-width:100% caps it to whatever the row actually has, letting the
+     browser's own text-overflow ellipsis handle a genuinely-too-long
+     option's display text instead of pushing the box wider than its
+     container. */
+  .online-actions select{min-width:0;max-width:100%}
   /* OUR-132: gives "Play a real opponent" and "Play the Lichess computer"
      their own visually separate boxes so a player can't mistake one
      option's controls for the other's -- same border/radius language as
@@ -2165,7 +2180,16 @@
     p.appendChild(tag); p.appendChild(document.createTextNode(text));
     chatLog.appendChild(p); chatLog.scrollTop=chatLog.scrollHeight;
   }
-  function updateChatVisibility(){ chatDetails.hidden=!(mode==='online'||mode==='lichess'); }
+  // OUR-201: also syncs Level/Clock's own visibility (updateLevelClockVisibility(),
+  // defined near showLichessPanel() below) -- piggybacking here rather than
+  // adding a call at each of this function's own 4 call sites, all of
+  // which already run immediately after `mode` itself changes (the
+  // modeSelect 'change' handler, plus 3 direct mode='online' assignments
+  // elsewhere that each already call this same function right after).
+  function updateChatVisibility(){
+    chatDetails.hidden=!(mode==='online'||mode==='lichess');
+    updateLevelClockVisibility();
+  }
   // ===============================================================
   // Speaking gate — the mic is hard-muted while we talk
   // ===============================================================
@@ -5506,7 +5530,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r162 (OUR-199: hide Level/Clock in Lichess mode, fix dropdown overflow, trim labels)';
+  const BUILD='v2-r163 (OUR-201: fix real-opponent dropdown overflow, hide Level for all non-computer modes)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9277,12 +9301,13 @@
   // this field's hidden attribute here is what makes switching Opponent to
   // Lichess WHILE the popover happens to already be open reveal the
   // section immediately, with no reopen needed.
-  // OUR-199: Level/Clock (this local game's own difficulty/time control)
-  // hidden the same way, same reason -- Lichess mode has its own AI
-  // level/time controls right below, showing both read as redundant.
+  // OUR-199/OUR-201: Level/Clock's OWN hidden state is no longer set here
+  // -- updateLevelClockVisibility() (below, called from modeSelect's
+  // 'change' handler and both mode-restore paths) now owns both, since
+  // Level's rule grew past a simple "lichess or not" binary (OUR-201:
+  // hidden for every non-computer mode, not just Lichess).
   function showLichessPanel(){
     lichessSettingsField.hidden=false;
-    levelField.hidden=true; clockField.hidden=true;
     // Visible, not just enforced silently in tipFor()/askEngine() — a
     // disabled control tells the player the setting can't do anything here,
     // rather than looking live while every answer it would trigger is muted.
@@ -9291,8 +9316,23 @@
   }
   function hideLichessPanel(){
     lichessSettingsField.hidden=true;
-    levelField.hidden=false; clockField.hidden=false;
     coachSelect.disabled=false; tipsSelect.disabled=false;
+  }
+  // OUR-201: Level only applies to the local engine (computer mode) --
+  // two-player/online/puzzle/lichess all have their own opponent (a
+  // human, Lichess's own AI, or a puzzle's own progression) with no 1-11
+  // ladder to set. Clock keeps applying to computer/two-player/online
+  // (all three genuinely tick a local game clock -- see startClock()'s
+  // own mode checks) but not lichess (its own separate time control,
+  // folded in just below) or puzzle (startPuzzle() calls stopClock()
+  // unconditionally -- no clock ever runs there regardless of what Clock
+  // is set to, confirmed by reading startPuzzle() itself, not assumed).
+  // #levelField/#clockField[hidden] already override .field's own
+  // display:flex (see that rule's own comment, OUR-199) so no new CSS
+  // is needed here -- this only decides WHEN hidden gets set.
+  function updateLevelClockVisibility(){
+    levelField.hidden=mode!=='computer';
+    clockField.hidden=(mode==='lichess'||mode==='puzzle');
   }
   function lichessNote(text){ lichessStatusEl.textContent=text; }
   // OUR-134: surfaces any already-unfinished games the moment this panel
@@ -10704,6 +10744,12 @@
       // reconnectOnline() above) — a reload always drops back to vs-computer
       // rather than guessing at a game id it never persisted.
       mode=(saved.mode==='online'||saved.mode==='lichess')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
+      // OUR-201: this restore path can land directly on 'two-player' or
+      // 'puzzle' without ever passing through modeSelect's own 'change'
+      // handler or any of updateChatVisibility()'s other 3 call sites --
+      // sync Level/Clock's own visibility here too, or a reload restoring
+      // into either mode would leave both showing regardless.
+      updateLevelClockVisibility();
       // A puzzle isn't a game, so restoring its PGN would restore a half-solved
       // position with no puzzle attached to it. Re-enter the mode properly and
       // let it serve the next unsolved one.
