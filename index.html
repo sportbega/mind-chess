@@ -217,6 +217,17 @@
     background:var(--panel); border:1px solid var(--line); border-radius:14px;
     padding:8px; box-shadow:0 14px 34px #000a;
   }
+  /* OUR-224: #promotionPicker's own hidden attribute (toggled by
+     positionPromotionPicker()) was silently losing to the plain
+     .promotion-picker{display:flex} rule above -- same specificity as the
+     UA [hidden]{display:none} default, but this one is later in the
+     cascade, so it won and kept the picker visible (at a stale position:
+     fixed location, e.g. floating in a corner during normal play, or
+     visible in fullscreen since .app.fullscreen-active>*{display:none}
+     only reaches direct children of .app and this is position:fixed, not
+     a child of .app at all) regardless of the attribute. Same fix already
+     used for #levelField/#clockField and .popover-panel above (OUR-199). */
+  #promotionPicker[hidden]{display:none}
   .promo-choice{
     width:52px; height:52px; display:flex; align-items:center; justify-content:center;
     background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
@@ -6428,7 +6439,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r173 (OUR-221: Game Review announces checkmate/stalemate/draw at the final move)';
+  const BUILD='v2-r174 (OUR-222/223/224: Game Review controls, main board redesign, promotion picker fix)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
