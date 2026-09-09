@@ -3961,6 +3961,19 @@
   // still downloading and speechSynthesis was covering. One spelling, no
   // source of truth required.
   function voiceizeSquares(text){ return text; }
+  // OUR-218: deliberately NOT given pick()-based phrase variation, unlike
+  // Game Review's narration below. predictNarration() calls this exact
+  // function a second time, ahead of the real move, purely to pre-render a
+  // Kokoro clip for the text applyMove() will actually speak -- and
+  // requestReserve()'s own cache only pays off when that guess and the real
+  // call produce byte-identical text (kokoroReserve.text===text). Random
+  // phrasing here would make every prediction a guaranteed miss, silently
+  // undoing that latency optimization on every single move. The live
+  // coach's own Q&A answers (askEngine()'s callers, matchQuestion()'s
+  // handlers) already use pick() throughout -- they're never predicted
+  // ahead of time, so they don't have this constraint. The two systems
+  // aren't unifiable on this point without also reworking the prediction
+  // path; flagging rather than forcing it.
   function describeMove(m,v){
     const color=m.color==='w'?'White':'Black', piece=PIECE_NAME[m.piece];
     let base;
@@ -4902,9 +4915,20 @@
   // phrasing via describeUci(), same as the live coach builds sentences
   // from a PV move) plus its existing classification (OUR-115), nothing
   // more.
+  // OUR-218: several phrasings per classification, same pick() mechanism
+  // the live coach already uses for its own answers (C2, see pick() below)
+  // -- reused, not reinvented. pick()'s own "don't repeat the last choice
+  // from this exact list" logic is keyed on the array itself, so calling
+  // pick(REVIEW_CLASS_PHRASE.inaccuracy) on consecutive Inaccuracies in the
+  // same game (or across games this session) already won't say the same
+  // one twice running, for free.
   const REVIEW_CLASS_PHRASE={
-    best:'the best move', excellent:'an excellent move', good:'a good move',
-    inaccuracy:'an inaccuracy', mistake:'a mistake', blunder:'a blunder'
+    best:['the best move','the top choice','exactly what the engine wanted'],
+    excellent:['an excellent move','a great choice','very strong'],
+    good:['a good move','a solid choice','reasonable'],
+    inaccuracy:['an inaccuracy','not quite the best choice','a small slip'],
+    mistake:['a mistake','a real error','off the mark'],
+    blunder:['a blunder','a serious error','a costly mistake']
   };
   function reviewMoveSentence(move){
     const m=describeUci(move.fenBefore,move.uci);
@@ -4915,8 +4939,8 @@
       base=cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
       if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
     }else base=move.san;
-    const phrase=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
-    return phrase?base+', '+phrase+'.':base+'.';
+    const options=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
+    return options?base+', '+pick(options)+'.':base+'.';
   }
 
   // ---------------------------------------------------------------
@@ -4954,7 +4978,8 @@
     const paid=m&&m.captured?PIECE_VALUE[m.captured]:0;
     const gained=PIECE_VALUE[reply.captured];
     if(gained<=paid) return null;
-    return 'That hangs the '+PIECE_NAME[reply.captured]+' on '+spokenSquare(reply.to)+'.';
+    const sq=PIECE_NAME[reply.captured]+' on '+spokenSquare(reply.to);
+    return pick(['That hangs the '+sq+'.','That leaves the '+sq+' hanging.','The '+sq+' is left undefended.']);
   }
   // Reuses pvGivesCheck() exactly as the live coach's own "is my king safe?"
   // answer does (index.html's matchQuestion) -- just the opponent's first
@@ -4964,7 +4989,8 @@
     if(!pv||!pv.length) return null;
     const chk=pvGivesCheck(move.fenAfter,pv,1);
     if(!chk) return null;
-    return 'That allows a check with the '+PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to)+'.';
+    const sq=PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to);
+    return pick(['That allows a check with the '+sq+'.','That opens up a check from the '+sq+'.','Watch out -- that lets the '+sq+' give check.']);
   }
   // Same board-reading geometry as attackersOf() above, parameterized on an
   // explicit probe instead of the live `game` -- review analyzes a finished
@@ -5001,7 +5027,8 @@
     const targets=reviewSquaresAttacked(probe,mv.to,mv.color,mv.piece)
       .filter(sq=>{ const p=probe.get(sq); return p&&p.type!=='p'; });
     if(targets.length<2) return null;
-    return 'That forks '+joinAnd(targets.map(sq=>'the '+PIECE_NAME[probe.get(sq).type]+' on '+spokenSquare(sq)))+'.';
+    const list=joinAnd(targets.map(sq=>'the '+PIECE_NAME[probe.get(sq).type]+' on '+spokenSquare(sq)));
+    return pick(['That forks '+list+'.','That hits '+list+' at once.','A fork -- '+list+' are all under attack.']);
   }
   // Only attempted for Inaccuracy/Mistake/Blunder -- a Best/Excellent/Good
   // move didn't lose meaningful equity, so pattern-matching a "tactic" onto
@@ -5025,7 +5052,7 @@
     if(m.flags.indexOf('k')!==-1) phrase='castling kingside';
     else if(m.flags.indexOf('q')!==-1) phrase='castling queenside';
     else phrase=PIECE_NAME[m.piece]+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to);
-    return 'The engine preferred '+phrase+' instead.';
+    return pick(['The engine preferred '+phrase+' instead.','Stronger was '+phrase+'.','The better try was '+phrase+'.']);
   }
   // "The best line continues [move], [move]" -- walks evalBefore.pv past its
   // own first move (already named by reviewBestMoveNote() above) through a
@@ -5046,7 +5073,9 @@
                 :mv.flags.indexOf('q')!==-1?'castling queenside'
                 :PIECE_NAME[mv.piece]+' '+(mv.captured?'takes ':'to ')+spokenSquare(mv.to));
     }
-    return descs.length?' Continuing '+joinAnd(descs)+'.':'';
+    if(!descs.length) return '';
+    const list=joinAnd(descs);
+    return ' '+pick(['Continuing '+list+'.','Then likely '+list+'.','Followed by '+list+'.']);
   }
   // Deep = Simple's own sentence, plus template-derived reasoning built
   // entirely from analyzeGame()'s existing per-move data. A Best move has
