@@ -464,6 +464,9 @@
      together at a glance. */
   .chat-log{margin-top:10px;height:140px;overflow-y:auto;font-family:'Inter',sans-serif;font-size:13px;display:flex;flex-direction:column;gap:6px}
   .chat-empty{color:var(--text-dim);margin:0}
+  /* OUR-206: shown instead of #chatLog/#chatForm (both display:none,
+     toggled in openChatModal()) for every mode besides online/lichess. */
+  .chat-inactive-note{color:var(--text-dim);font-size:13px;margin:0}
   .chat-line{margin:0;line-height:1.4;padding:6px 10px;border-radius:10px;background:var(--panel-2);max-width:85%;word-break:break-word}
   .chat-line .who{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);display:block;margin-bottom:2px}
   .chat-line.mine{align-self:flex-end;background:rgba(201,162,93,.16);border:1px solid var(--accent)}
@@ -1484,28 +1487,11 @@
   <!-- OUR-198: Lichess connection UI moved out of this spot entirely,
        into Game settings' own popover directly under Clock (see
        #lichessSettingsField there) -- no separate panel for it anymore. -->
-  <!-- OUR-98: moved here from down near the transcript so it sits above
-       the board and its control row (Flip board/Fullscreen/Reset), per
-       Adni's ask — same element, id, and behavior (send/receive,
-       visibility gated to online/lichess modes via updateChatVisibility()),
-       only its position moved. A separate channel from the transcript
-       below (see OUR-97): that's game narration, this is the other human
-       talking — still visually distinct (sans-serif vs. the transcript's
-       serif) even though it no longer sits next to it.
-       OUR-197: renamed "Opponent chat" -> "Chatbox" and dropped the
-       `open` attribute -- always starts collapsed, in every mode, no
-       exception. Stays this way under OUR-198 too, which only moved the
-       Lichess connection UI (previously its own panel just above this
-       one) into Game settings' popover -- Chatbox itself, its position,
-       and this default are untouched by that. -->
-  <details class="help chat-panel" id="chatDetails" hidden>
-    <summary>Chatbox</summary>
-    <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
-    <form class="chat-form" id="chatForm">
-      <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
-      <button class="btn primary" type="submit">Send</button>
-    </form>
-  </details>
+  <!-- OUR-98/OUR-197: Chatbox lived here as its own standalone collapsible
+       panel (originally "Opponent chat"). OUR-206 moved it out entirely,
+       into a round icon button next to Coach & Tips in the below-board
+       row (see there) -- no separate panel above the board for it
+       anymore. -->
 
   <!-- OUR-102: puzzle mode's spoken instructions (intro/roster, wrong-answer
        nudges, solved/stuck messages, the revealed solution) already reach
@@ -1776,7 +1762,47 @@
         </div>
       </div>
     </div>
+    <!-- OUR-206: Chatbox, restyled from its own standalone collapsible
+         panel (OUR-98/OUR-197) into a round icon next to Coach & Tips, as
+         asked. Unlike Level/Clock/the Lichess connection section
+         (OUR-199 onward), this button itself is NEVER hidden by mode --
+         it always sits here, in every mode, and #chatModal decides at
+         open time whether there's an actual chat to show (see
+         openChatModal()) rather than the button deciding whether to
+         exist at all. A different glyph shape from Voice commands'
+         head-and-speech-waves icon (OUR-168/OUR-179), same reasoning
+         Transcript's own icon already used (OUR-176) -- a plain speech
+         bubble reads unambiguously as "chat" without borrowing that
+         icon's silhouette. Same ids on every control inside the modal
+         (chatLog/chatForm/chatInput), same send/receive handlers
+         (unchanged) -- position, wrapper element and always-visible
+         button are the only things that changed. -->
+    <button class="icon-btn mic-size" id="chatBtn" type="button" aria-label="Chatbox" title="Chatbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H10l-4.5 4v-4h-1A2.5 2.5 0 0 1 2 13.5v-8A2.5 2.5 0 0 1 4 5.5Z"/>
+      </svg>
+    </button>
   </form>
+
+  <div class="modal-overlay" id="chatModal" hidden>
+    <div class="modal-card">
+      <div class="review-head">
+        <h3>Chatbox</h3>
+        <button type="button" class="btn" id="chatModalCloseBtn">Close</button>
+      </div>
+      <!-- OUR-206: shown/hidden at open time (openChatModal()) based on
+           whether `mode` is currently online/lichess -- chat only ever
+           has a real connection to send through in those two modes
+           (OUR-97), so every other mode gets this instead of an empty
+           log and a Send button that would silently do nothing. -->
+      <p class="chat-inactive-note" id="chatInactiveNote" hidden>Chat is available during online or Lichess games.</p>
+      <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
+      <form class="chat-form" id="chatForm">
+        <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="statsDetails" hidden>
     <div class="modal-card">
@@ -2191,7 +2217,8 @@
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
         computerResignBtn=$('computerResignBtn'),
         lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiTimeSelect=$('lichessAiTimeSelect'), lichessAiBtn=$('lichessAiBtn'),
-        chatDetails=$('chatDetails'), chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
+        chatBtn=$('chatBtn'), chatModal=$('chatModal'), chatModalCloseBtn=$('chatModalCloseBtn'), chatInactiveNote=$('chatInactiveNote'),
+        chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
         puzzleInfo=$('puzzleInfo');
 
   // ===============================================================
@@ -2216,16 +2243,14 @@
     p.appendChild(tag); p.appendChild(document.createTextNode(text));
     chatLog.appendChild(p); chatLog.scrollTop=chatLog.scrollHeight;
   }
-  // OUR-201: also syncs Level/Clock's own visibility (updateLevelClockVisibility(),
-  // defined near showLichessPanel() below) -- piggybacking here rather than
-  // adding a call at each of this function's own 4 call sites, all of
-  // which already run immediately after `mode` itself changes (the
-  // modeSelect 'change' handler, plus 3 direct mode='online' assignments
-  // elsewhere that each already call this same function right after).
-  function updateChatVisibility(){
-    chatDetails.hidden=!(mode==='online'||mode==='lichess');
-    updateLevelClockVisibility();
-  }
+  // OUR-206: this used to also gate chatDetails' own visibility on mode
+  // (online/lichess only) -- Chatbox is a round icon button now, always
+  // visible regardless of mode (see #chatBtn), so there's nothing left
+  // for a function under this name to do beyond what
+  // updateLevelClockVisibility() itself already does. Every one of this
+  // function's old call sites now calls that directly instead -- see its
+  // own comment for why it's one shared call point rather than one per
+  // site.
   // ===============================================================
   // Speaking gate — the mic is hard-muted while we talk
   // ===============================================================
@@ -4543,6 +4568,29 @@
     if(e.key==='Escape'&&!transcriptDetails.hidden) closeTranscript();
   });
 
+  // OUR-206: Chatbox modal -- #chatBtn itself is never hidden, but chat
+  // (OUR-97) only ever has a real connection to send through in online/
+  // lichess modes, so this decides at OPEN time whether to show the
+  // actual log+form or #chatInactiveNote instead -- computed fresh every
+  // open rather than kept live while the modal sits there, the same
+  // "nothing to do beyond the toggle itself" simplicity Transcript's own
+  // modal above already uses (mode can't realistically change out from
+  // under an open modal dialog either).
+  function openChatModal(){
+    const active=(mode==='online'||mode==='lichess');
+    chatInactiveNote.hidden=active;
+    chatLog.style.display=active?'':'none';
+    chatForm.style.display=active?'':'none';
+    chatModal.hidden=false;
+  }
+  function closeChatModal(){ chatModal.hidden=true; }
+  chatBtn.addEventListener('click',openChatModal);
+  chatModalCloseBtn.addEventListener('click',closeChatModal);
+  chatModal.addEventListener('click',e=>{ if(e.target===chatModal) closeChatModal(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!chatModal.hidden) closeChatModal();
+  });
+
   // ===============================================================
   // OUR-116: Game review — Stockfish-driven post-game analysis.
   //
@@ -5618,7 +5666,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r165 (OUR-204: fix Game Review board/eval bar sizing)';
+  const BUILD='v2-r166 (OUR-206: Chatbox as always-visible icon button + modal)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7466,9 +7514,11 @@
     if(v.trim()) route([v]);
   });
 
-  // OUR-97: one form, dispatched by mode — chatDetails is only ever
-  // visible (see updateChatVisibility()) while mode is 'online' or
-  // 'lichess', so this only has those two real branches to worry about.
+  // OUR-97: one form, dispatched by mode. OUR-206: the form itself is
+  // display:none whenever mode isn't 'online' or 'lichess' (see
+  // openChatModal()), so in practice this still only has those two real
+  // branches to worry about, even though #chatBtn/#chatModal no longer
+  // hide for any other mode the way chatDetails used to.
   chatForm.addEventListener('submit',e=>{
     e.preventDefault();
     const text=chatInput.value.trim(); chatInput.value='';
@@ -9351,7 +9401,7 @@
       if(r.error||!r.data) throw new Error('Game not found');
       const row=r.data;
       generation++;
-      mode='online'; modeSelect.value='online'; updateChatVisibility();
+      mode='online'; modeSelect.value='online'; updateLevelClockVisibility();
       onlineState={id:row.id,color:null,spectating:true,waiting:!row.black_id,starting:false,channel:null,pollTimer:null,lastUpdated:row.updated_at,
         userId:null,whiteId:row.white_id,blackId:row.black_id,
         clockPreset:row.clock_preset||0,clockIncrement:row.clock_increment||0,whiteMs:row.white_ms||0,blackMs:row.black_ms||0,
@@ -9418,6 +9468,9 @@
   // #levelField/#clockField[hidden] already override .field's own
   // display:flex (see that rule's own comment, OUR-199) so no new CSS
   // is needed here -- this only decides WHEN hidden gets set.
+  // OUR-206: the sole remaining call point for what used to be
+  // updateChatVisibility()'s 4 call sites too, now that Chatbox no
+  // longer has any mode-based visibility of its own to sync there.
   function updateLevelClockVisibility(){
     levelField.hidden=mode!=='computer';
     clockField.hidden=(mode==='lichess'||mode==='puzzle');
@@ -10170,7 +10223,7 @@
   modeSelect.addEventListener('change',()=>{
     const prevMode=mode;
     mode=modeSelect.value;
-    updateChatVisibility();
+    updateLevelClockVisibility();
     // Stale chat from a previous online/lichess session must not linger
     // into the next one — online mode re-fills this itself via
     // subscribeOnline()/loadOnlineChat() a moment later, lichess mode
@@ -10833,7 +10886,7 @@
       clockPreset=saved.clockPreset||0; clockIncrement=saved.clockIncrement||0; syncClockUI();
       whiteMs=saved.whiteMs||clockPreset*60000; blackMs=saved.blackMs||clockPreset*60000;
       if(saved.mode==='online'&&saved.onlineId&&reconnectOnline(saved.onlineId,saved.onlineColor||'w')){
-        mode='online'; modeSelect.value='online'; updateChatVisibility();
+        mode='online'; modeSelect.value='online'; updateLevelClockVisibility();
         transcript.innerHTML='';
         return true;
       }
@@ -10844,9 +10897,9 @@
       mode=(saved.mode==='online'||saved.mode==='lichess')?'computer':(saved.mode||'computer'); modeSelect.value=mode;
       // OUR-201: this restore path can land directly on 'two-player' or
       // 'puzzle' without ever passing through modeSelect's own 'change'
-      // handler or any of updateChatVisibility()'s other 3 call sites --
-      // sync Level/Clock's own visibility here too, or a reload restoring
-      // into either mode would leave both showing regardless.
+      // handler or any of updateLevelClockVisibility()'s other 3 call
+      // sites -- sync Level/Clock's own visibility here too, or a reload
+      // restoring into either mode would leave both showing regardless.
       updateLevelClockVisibility();
       // A puzzle isn't a game, so restoring its PGN would restore a half-solved
       // position with no puzzle attached to it. Re-enter the mode properly and
@@ -11237,7 +11290,7 @@
   const inviteMatch=location.hash.match(/^#game=([0-9a-fA-F-]{36})$/);
   const spectateMatch=location.hash.match(/^#spectate=([0-9a-fA-F-]{36})$/);
   if(inviteMatch){
-    mode='online'; modeSelect.value='online'; updateChatVisibility(); showOnlinePanel();
+    mode='online'; modeSelect.value='online'; updateLevelClockVisibility(); showOnlinePanel();
     joinOnline(inviteMatch[1]);
   }else if(spectateMatch){
     spectateOnline(spectateMatch[1]);
