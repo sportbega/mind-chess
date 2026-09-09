@@ -14,6 +14,13 @@
      inherently remote; if it fails to load, online mode disables itself and
      everything else keeps working. -->
 <script src="chess-0.10.3.js"></script>
+<!-- OUR-146: self-hosted for the same reason chess.js is -- this is a
+     static, offline-capable app, and a PDF export is worth building the
+     same way as everything else here rather than taking a runtime
+     dependency on a CDN. Non-critical, unlike chess.js above: if this
+     file is ever missing, only "Export as PDF" degrades (checked before
+     use, see exportReviewAsPdf()) -- nothing else in the app needs it. -->
+<script src="jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <style>
@@ -123,6 +130,7 @@
   .review-progress .bar-fill{height:100%;background:var(--accent-2);transition:width .15s ease}
   .review-content{display:flex;flex-wrap:wrap;gap:18px}
   .review-accuracy{flex:1 1 100%;display:flex;gap:24px;font-size:14px}
+  .review-export-row{flex:1 1 100%;display:flex;gap:8px}
   .review-accuracy b{font-size:20px;display:block}
   .review-board-row{display:flex;gap:8px;align-items:stretch;flex:0 0 auto}
   .review-evalbar{width:14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
@@ -562,6 +570,13 @@
       <div id="reviewProgress" class="review-progress"></div>
       <div id="reviewContent" class="review-content" hidden>
         <div class="review-accuracy" id="reviewAccuracy"></div>
+        <!-- OUR-146: export the finished review -- same reviewResult this
+             screen already renders from, so nothing here can show
+             different numbers than what's on screen. -->
+        <div class="review-export-row">
+          <button type="button" class="btn" id="reviewExportTxtBtn">Export as TXT</button>
+          <button type="button" class="btn" id="reviewExportPdfBtn">Export as PDF</button>
+        </div>
         <div class="review-board-row">
           <div class="review-evalbar" id="reviewEvalBar" title="Evaluation, White's perspective"><div class="review-evalbar-fill" id="reviewEvalFill"></div></div>
           <div class="board-grid review-board" id="reviewBoardGrid" style="--board-max:420px"></div>
@@ -1499,6 +1514,7 @@
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
         reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'),
+        reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -3955,6 +3971,23 @@
       }
     }
   }
+  // OUR-146: pulled out of showReviewPosition() so the TXT/PDF exports can
+  // report the exact same eval text as the on-screen review, from one
+  // place, rather than a second hand-copied version silently drifting
+  // from this one the next time either changes.
+  function formatEvalText(evalObj,fen){
+    const stm=fenTurn(fen);
+    if(!evalObj){
+      // Stockfish has no score/bestmove to give at a checkmated (or
+      // stalemated) position — nothing left to search — so this is
+      // expected, not a failed analysis; say which one it actually is.
+      const probe=new Chess(); probe.load(fen);
+      return probe.in_checkmate()?'Checkmate':probe.in_stalemate()?'Stalemate':'No evaluation';
+    }
+    if(evalObj.kind==='mate') return 'Mate in '+Math.abs(evalObj.value)+' ('+(signedCpFromWhite(evalObj,stm)>0?'White':'Black')+')';
+    const cpWhite=signedCpFromWhite(evalObj,stm);
+    return (cpWhite>=0?'+':'')+(cpWhite/100).toFixed(2);
+  }
   // Renders the position at reviewResult.perMove/fens index `idx` (0 =
   // starting position, i = the position after move i for i in
   // 1..perMove.length).
@@ -3964,21 +3997,9 @@
     const fen=reviewResult.fens[idx];
     renderReviewBoard(fen,isBoardFlipped());
     const evalObj=reviewResult.evals[idx];
-    const stm=fenTurn(fen);
-    const cpWhite=signedCpFromWhite(evalObj,stm);
-    const wpWhite=evalObj?winPercentFromCpWhite(cpWhite):50;
+    const wpWhite=evalObj?winPercentFromCpWhite(signedCpFromWhite(evalObj,fenTurn(fen))):50;
     reviewEvalFill.style.height=Math.max(0,Math.min(100,wpWhite))+'%';
-    let txt;
-    if(!evalObj){
-      // Stockfish has no score/bestmove to give at a checkmated (or
-      // stalemated) position — nothing left to search — so this is
-      // expected, not a failed analysis; say which one it actually is.
-      const probe=new Chess(); probe.load(fen);
-      txt=probe.in_checkmate()?'Checkmate':probe.in_stalemate()?'Stalemate':'No evaluation';
-    }
-    else if(evalObj.kind==='mate') txt='Mate in '+Math.abs(evalObj.value)+' ('+(signedCpFromWhite(evalObj,stm)>0?'White':'Black')+')';
-    else txt=(cpWhite>=0?'+':'')+(cpWhite/100).toFixed(2);
-    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+txt;
+    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+formatEvalText(evalObj,fen);
     const items=reviewMoveList.querySelectorAll('.review-move');
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
   }
@@ -4039,6 +4060,230 @@
   reviewGameBtn.addEventListener('click',openReviewOverlay);
   reviewCloseBtn.addEventListener('click',closeReviewOverlay);
   reviewOverlay.addEventListener('click',e=>{ if(e.target===reviewOverlay) closeReviewOverlay(); });
+
+  // ===============================================================
+  // OUR-146: export a finished review as TXT or PDF. Both read straight
+  // from reviewResult -- the exact same object this screen already
+  // renders from -- and reviewGameMeta() below, so neither export can
+  // ever show numbers the on-screen review doesn't already agree with.
+  // ===============================================================
+
+  // Same six colors as .review-badge in <style> (best/excellent/good/
+  // inaccuracy/mistake/blunder), converted to RGB triplets for jsPDF's
+  // setFillColor/setTextColor, which take numbers, not CSS hex strings.
+  // Copied by hand rather than parsed from the stylesheet at runtime --
+  // if OUR-115's palette ever changes, both places need updating, but
+  // that's already true of every other hardcoded color in this file.
+  const CLASS_PDF_COLORS={
+    best:{bg:[95,168,160],fg:[15,30,28]},
+    excellent:{bg:[127,176,105],fg:[15,30,12]},
+    good:{bg:[154,160,174],fg:[18,20,26]},
+    inaccuracy:{bg:[215,178,58],fg:[36,29,5]},
+    mistake:{bg:[217,138,61],fg:[36,21,5]},
+    blunder:{bg:[192,107,82],fg:[255,255,255]}
+  };
+
+  // Pulls in the games-log entry this review's client_key already wrote
+  // (see onGameEnd()) for result/date, rather than re-deriving them here
+  // and risking a second definition of "who won" drifting from the first.
+  // Opponent text is intentionally coarse (mode + level, not a specific
+  // person) since that's genuinely all any mode but Lichess/online tracks
+  // in lastCompletedGame -- inventing a more specific name than the app
+  // actually knows would just be printing something untrue.
+  function reviewGameMeta(){
+    if(!lastCompletedGame||!reviewResult) return null;
+    const d=lastCompletedGame;
+    const entry=loadGamesLog().find(e=>e.client_key===d.client_key)||null;
+    const MODE_LABELS={computer:'Vs. computer','two-player':'Two-player (local)',online:'Online multiplayer',lichess:'Lichess'};
+    const modeLabel=MODE_LABELS[d.mode]||d.mode;
+    const opponent=
+      d.mode==='computer'?'Stockfish — '+((LEVELS[d.level]||{}).name||('Level '+d.level))
+      :d.mode==='two-player'?'Local two-player'
+      :d.mode==='lichess'?'Lichess'
+      :d.mode==='online'?'Online opponent'
+      :'—';
+    const humanColorLabel=d.humanColor==='w'?'White':'Black';
+    let resultLabel='—';
+    if(entry&&entry.result){
+      resultLabel=(d.mode==='two-player')
+        ?(entry.result==='win'?'White won':entry.result==='loss'?'Black won':'Draw')
+        :(entry.result==='win'?'You won':entry.result==='loss'?'You lost':'Draw');
+    }
+    const date=(entry&&entry.endedAt)?new Date(entry.endedAt):new Date();
+    return {modeLabel,opponent,humanColorLabel,resultLabel,date,
+      accW:reviewResult.accuracy.w,accB:reviewResult.accuracy.b};
+  }
+
+  function reviewExportFilename(ext){
+    const meta=reviewGameMeta();
+    const stamp=(meta?meta.date:new Date()).toISOString().slice(0,10);
+    return 'mind-chess-review-'+stamp+'.'+ext;
+  }
+
+  // Standard client-side download: a Blob URL behind a throwaway <a
+  // download>, no server involved -- the only way a static GitHub Pages
+  // app can hand a file to the player at all.
+  function triggerDownload(blob,filename){
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
+  function exportReviewAsTxt(){
+    if(!reviewResult) return;
+    const meta=reviewGameMeta();
+    const pm=reviewResult.perMove;
+    const lines=[
+      'MIND CHESS — GAME REVIEW','='.repeat(40),
+      'Date: '+meta.date.toLocaleString(),
+      'Mode: '+meta.modeLabel,
+      'Opponent: '+meta.opponent,
+      'You played: '+meta.humanColorLabel,
+      'Result: '+meta.resultLabel,'',
+      'Accuracy — White: '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—')
+        +'   Black: '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—'),
+      '','Moves:'
+    ];
+    for(let i=0;i<pm.length;i+=2){
+      const w=pm[i], b=pm[i+1];
+      const evalW=formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1]);
+      lines.push('  '+(i/2+1)+'. '+w.san.padEnd(10)+(w.classification?classificationLabel(w.classification):'').padEnd(12)+'eval '+evalW);
+      if(b){
+        const evalB=formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2]);
+        lines.push('      '+b.san.padEnd(10)+(b.classification?classificationLabel(b.classification):'').padEnd(12)+'eval '+evalB);
+      }
+    }
+    lines.push('','Generated by Mind Chess.');
+    triggerDownload(new Blob([lines.join('\n')],{type:'text/plain'}),reviewExportFilename('txt'));
+  }
+
+  // Drawn on a plain <canvas> and embedded as a PNG rather than plotted
+  // with a charting library -- a line across evenly-spaced points is
+  // simple enough to draw by hand, and this app already treats "avoid a
+  // new dependency when the thing itself is simple" as the default (see
+  // Stockfish/Kokoro being vendored files rather than wrapped in yet
+  // another package). Same White-POV Win% conversion the live eval bar
+  // and the accuracy calculation already both use, so the chart can't
+  // disagree with either.
+  function buildEvalChartImage(){
+    const evals=reviewResult.evals, fens=reviewResult.fens;
+    const w=760,h=200;
+    const canvas=document.createElement('canvas');
+    canvas.width=w; canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#1b1e27'; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle='#2c3140'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+    const n=evals.length;
+    if(n>=2){
+      const points=evals.map((e,i)=>{
+        const wp=e?winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))):50;
+        return Math.max(0,Math.min(100,wp));
+      });
+      ctx.strokeStyle='#c9a25d'; ctx.lineWidth=2.5;
+      ctx.beginPath();
+      points.forEach((wp,i)=>{
+        const x=(i/(n-1))*w, y=h-(wp/100)*h;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+    }
+    return canvas.toDataURL('image/png');
+  }
+
+  // jsPDF's built-in Helvetica falls back to "?" for anything outside plain
+  // WinAnsi ASCII punctuation -- confirmed by reading a real exported PDF's
+  // content stream, where "—" and "·" both came out as "?". Everything drawn
+  // with doc.text() goes through this first.
+  function pdfSafe(s){
+    return String(s).replace(/[‒-―]/g,'-').replace(/[·•]/g,'-');
+  }
+
+  function exportReviewAsPdf(){
+    if(!reviewResult) return;
+    if(!(window.jspdf&&window.jspdf.jsPDF)){
+      warnSilent('PDF export isn’t available right now (jsPDF didn’t load) — try Export as TXT instead, or reload the page.');
+      return;
+    }
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:'mm',format:'a4'});
+    const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+    const marginX=16;
+    let y=18;
+    const meta=reviewGameMeta();
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(20,20,20);
+    doc.text('Mind Chess - Game Review',marginX,y); y+=9;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
+    doc.text(meta.date.toLocaleString(),marginX,y); y+=5.5;
+    doc.text(pdfSafe(meta.modeLabel+' · '+meta.opponent),marginX,y); y+=5.5;
+    doc.text(pdfSafe('You played '+meta.humanColorLabel+' · '+meta.resultLabel),marginX,y); y+=9;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20,20,20);
+    doc.text('Accuracy',marginX,y); y+=7.5;
+    doc.setFontSize(20);
+    doc.setTextColor(95,168,160);
+    doc.text('White  '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—'),marginX,y);
+    doc.setTextColor(60,60,60);
+    doc.text('Black  '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—'),marginX+80,y);
+    y+=10;
+
+    // A chart failure (canvas/addImage throwing) shouldn't cost the rest
+    // of the document -- the move list below is the part that actually
+    // matters most, so this stays isolated.
+    try{
+      const imgData=buildEvalChartImage();
+      const chartW=pageW-marginX*2, chartH=chartW*(200/760);
+      doc.addImage(imgData,'PNG',marginX,y,chartW,chartH);
+      y+=chartH+4;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
+      doc.text('Evaluation across the game (White\'s perspective)',marginX,y);
+      y+=8;
+    }catch(e){}
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20,20,20);
+    doc.text('Moves',marginX,y); y+=7;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+
+    const pm=reviewResult.perMove;
+    const colW=(pageW-marginX*2)/2;
+    const rowH=6.4;
+    function ensureRoom(){
+      if(y>pageH-16){ doc.addPage(); y=18; }
+    }
+    function drawMoveCell(x,moveNo,san,classification,evalTxt){
+      let cx=x;
+      if(moveNo!=null){ doc.setTextColor(120,120,120); doc.text(String(moveNo)+'.',cx,y); cx+=8; }
+      doc.setTextColor(20,20,20); doc.text(san,cx,y); cx+=17;
+      if(classification){
+        const col=CLASS_PDF_COLORS[classification], label=classificationLabel(classification);
+        doc.setFontSize(7.5);
+        const bw=doc.getTextWidth(label)+4;
+        doc.setFillColor(col.bg[0],col.bg[1],col.bg[2]);
+        doc.roundedRect(cx,y-3.6,bw,4.6,1,1,'F');
+        doc.setTextColor(col.fg[0],col.fg[1],col.fg[2]);
+        doc.text(label,cx+2,y-0.4);
+        doc.setFontSize(9);
+        cx+=bw+4;
+      }
+      doc.setTextColor(130,130,130);
+      doc.text(evalTxt,cx,y);
+    }
+    for(let i=0;i<pm.length;i+=2){
+      ensureRoom();
+      const w=pm[i], b=pm[i+1];
+      drawMoveCell(marginX,i/2+1,w.san,w.classification,formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1]));
+      if(b) drawMoveCell(marginX+colW,null,b.san,b.classification,formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2]));
+      y+=rowH;
+    }
+
+    doc.save(reviewExportFilename('pdf'));
+  }
+
+  reviewExportTxtBtn.addEventListener('click',exportReviewAsTxt);
+  reviewExportPdfBtn.addEventListener('click',exportReviewAsPdf);
 
   // ===============================================================
   // Applying moves
@@ -4544,7 +4789,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r133 (OUR-144: narration volume popover)';
+  const BUILD='v2-r134 (OUR-146: Game Review TXT/PDF export)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
