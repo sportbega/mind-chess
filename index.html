@@ -4368,7 +4368,12 @@
     // hold at click time — both are safe to read immediately after a real
     // completion, but a player could in principle poke the mode selector
     // before clicking Review, and this way that can't matter.
-    lastCompletedGame={mode, pgn, humanColor, level, client_key};
+    // OUR-208: opponentName is only ever non-null for a real Lichess
+    // opponent (see lichessState.opponentName, OUR-208) -- undefined
+    // outside Lichess mode entirely, and null within it for an AI game
+    // (level is what identifies that case instead).
+    const opponentName=(mode==='lichess'&&lichessState)?lichessState.opponentName:null;
+    lastCompletedGame={mode, pgn, humanColor, level, opponentName, client_key};
     updateReviewButtonVisibility();
     if(!statsDetails.hidden) renderStats();
   }
@@ -4812,11 +4817,13 @@
   // report the exact same eval text as the on-screen review, from one
   // place, rather than a second hand-copied version silently drifting
   // from this one the next time either changes.
-  // OUR-202: `perspective` defaults to 'w' so the TXT/PDF export call
-  // sites below (which never pass it) keep reading as White-canonical
-  // documents regardless of whatever the on-screen toggle is currently
-  // set to -- only showReviewPosition()'s own on-screen call passes
-  // reviewPerspective explicitly. Mate wording ("Mate in N (White)")
+  // OUR-208: `perspective` defaults to 'w' only as a fallback for a
+  // caller that omits it entirely -- every real call site now passes
+  // one explicitly: showReviewPosition() passes the live
+  // reviewPerspective toggle, and both exports pass
+  // reviewGameMeta().perspective (the player's own color, per Adni's
+  // follow-up that "always White" was the wrong export default -- see
+  // that function's own comment). Mate wording ("Mate in N (White)")
   // stays absolute either way -- it already names which color is
   // mating, a fact that doesn't change with viewing angle -- only the
   // +/- sign on a plain centipawn score flips.
@@ -4877,9 +4884,14 @@
     reviewProgress.hidden=true;
     reviewContent.hidden=false;
     const accW=result.accuracy.w, accB=result.accuracy.b;
+    // OUR-208: whiteLabel/blackLabel add a player identifier in
+    // parentheses wherever one's actually known (see reviewPlayerLabel())
+    // -- reviewGameMeta() only returns non-null once reviewResult is
+    // already set, which the line just above guarantees.
+    const meta=reviewGameMeta();
     reviewAccuracy.innerHTML=
-      '<div>White accuracy<b>'+(accW!=null?accW.toFixed(1)+'%':'—')+'</b></div>'
-      +'<div>Black accuracy<b>'+(accB!=null?accB.toFixed(1)+'%':'—')+'</b></div>';
+      '<div>'+meta.whiteLabel+' accuracy<b>'+(accW!=null?accW.toFixed(1)+'%':'—')+'</b></div>'
+      +'<div>'+meta.blackLabel+' accuracy<b>'+(accB!=null?accB.toFixed(1)+'%':'—')+'</b></div>';
     let html='';
     for(let i=0;i<result.perMove.length;i+=2){
       const w=result.perMove[i], b=result.perMove[i+1];
@@ -4963,20 +4975,51 @@
   // person) since that's genuinely all any mode but Lichess/online tracks
   // in lastCompletedGame -- inventing a more specific name than the app
   // actually knows would just be printing something untrue.
+  // OUR-208: what to put in parentheses next to "White"/"Black" -- null
+  // means omit the parentheses entirely, which happens whenever this app
+  // genuinely has no real identity for that seat rather than ever
+  // printing a guess. Checked per mode, against what onGameEnd()/
+  // openLichessStream() actually capture (see their own comments), not
+  // assumed:
+  //  - computer: the human is always White (startNewGame() forces this
+  //    for every non-online mode) -- 'You' for White, the engine's own
+  //    level name for Black.
+  //  - lichess: 'You' for the human's own seat (lichessState.color, via
+  //    d.humanColor); the other seat is either the AI's level (d.level,
+  //    OUR-203) or the real opponent's own Lichess username
+  //    (d.opponentName, OUR-208) if Lichess sent one -- null (a genuine
+  //    gap, not fabricated) on the rare chance neither is set.
+  //  - online: null for both seats. This app can read ITS OWN signed-in
+  //    identity (see accountDisplayName()) but has no profile lookup for
+  //    the other seat's raw white_id/black_id UUID -- showing a name for
+  //    one seat and nothing for the other would read as broken, not
+  //    honest, so both are omitted rather than half-answered.
+  //  - two-player: null for both -- pass-and-play on one device, no
+  //    seat-level identity exists to show at all.
+  function reviewPlayerLabel(color,d){
+    if(d.mode==='computer') return color===d.humanColor?'You':'Computer, '+((LEVELS[d.level]||{}).name||('Level '+d.level));
+    if(d.mode==='lichess'){
+      if(color===d.humanColor) return 'You';
+      if(d.level) return 'Lichess AI Level '+d.level;
+      return d.opponentName||null;
+    }
+    return null;
+  }
   function reviewGameMeta(){
     if(!lastCompletedGame||!reviewResult) return null;
     const d=lastCompletedGame;
     const entry=loadGamesLog().find(e=>e.client_key===d.client_key)||null;
     const MODE_LABELS={computer:'Vs. computer','two-player':'Two-player (local)',online:'Online multiplayer',lichess:'Lichess'};
     const modeLabel=MODE_LABELS[d.mode]||d.mode;
-    // OUR-203: d.level now carries the Lichess AI's own level too (see
-    // onGameEnd()) -- a real-opponent game has no level, so this only
-    // ever adds "AI Level N" for the AI sub-mode, and reads exactly the
-    // same plain "Lichess" it always did for a real one.
+    // OUR-203/OUR-208: d.level carries the Lichess AI's own level, and
+    // d.opponentName the real opponent's own Lichess username when
+    // Lichess sent one -- a real-opponent game with neither set (a
+    // genuine gap, not fabricated) falls back to the same plain
+    // "Lichess" this always read before either existed.
     const opponent=
       d.mode==='computer'?'Stockfish — '+((LEVELS[d.level]||{}).name||('Level '+d.level))
       :d.mode==='two-player'?'Local two-player'
-      :d.mode==='lichess'?(d.level?'Lichess AI Level '+d.level:'Lichess')
+      :d.mode==='lichess'?(d.level?'Lichess AI Level '+d.level:(d.opponentName?'Lichess ('+d.opponentName+')':'Lichess'))
       :d.mode==='online'?'Online opponent'
       :'—';
     const humanColorLabel=d.humanColor==='w'?'White':'Black';
@@ -4987,7 +5030,19 @@
         :(entry.result==='win'?'You won':entry.result==='loss'?'You lost':'Draw');
     }
     const date=(entry&&entry.endedAt)?new Date(entry.endedAt):new Date();
-    return {modeLabel,opponent,humanColorLabel,resultLabel,date,
+    // OUR-208: on-screen (renderReviewResult()) and both exports all read
+    // these two instead of a bare "White"/"Black" now, so the three
+    // surfaces can't drift into showing different labels for the same
+    // game.
+    const wParen=reviewPlayerLabel('w',d), bParen=reviewPlayerLabel('b',d);
+    const whiteLabel='White'+(wParen?' ('+wParen+')':'');
+    const blackLabel='Black'+(bParen?' ('+bParen+')':'');
+    // OUR-203: exports default to the player's OWN perspective now, same
+    // as the on-screen toggle's own default (see openReviewOverlay()) --
+    // deliberately not "always White" the way OUR-203 first shipped
+    // exports, per Adni's follow-up that this was the wrong default.
+    const perspective=d.humanColor||'w';
+    return {modeLabel,opponent,humanColorLabel,resultLabel,date,whiteLabel,blackLabel,perspective,
       accW:reviewResult.accuracy.w,accB:reviewResult.accuracy.b};
   }
 
@@ -5019,16 +5074,16 @@
       'Opponent: '+meta.opponent,
       'You played: '+meta.humanColorLabel,
       'Result: '+meta.resultLabel,'',
-      'Accuracy — White: '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—')
-        +'   Black: '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—'),
-      '','Moves:'
+      'Accuracy — '+meta.whiteLabel+': '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—')
+        +'   '+meta.blackLabel+': '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—'),
+      '','Moves ('+(meta.perspective==='b'?'Black':'White')+'’s perspective):'
     ];
     for(let i=0;i<pm.length;i+=2){
       const w=pm[i], b=pm[i+1];
-      const evalW=formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1]);
+      const evalW=formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1],meta.perspective);
       lines.push('  '+(i/2+1)+'. '+w.san.padEnd(10)+(w.classification?classificationLabel(w.classification):'').padEnd(12)+'eval '+evalW);
       if(b){
-        const evalB=formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2]);
+        const evalB=formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2],meta.perspective);
         lines.push('      '+b.san.padEnd(10)+(b.classification?classificationLabel(b.classification):'').padEnd(12)+'eval '+evalB);
       }
     }
@@ -5041,10 +5096,12 @@
   // simple enough to draw by hand, and this app already treats "avoid a
   // new dependency when the thing itself is simple" as the default (see
   // Stockfish/Kokoro being vendored files rather than wrapped in yet
-  // another package). Same White-POV Win% conversion the live eval bar
-  // and the accuracy calculation already both use, so the chart can't
-  // disagree with either.
-  function buildEvalChartImage(){
+  // another package).
+  // OUR-208: takes the same `perspective` ('w'/'b') the on-screen toggle
+  // and formatEvalText() already use -- mirrors wp into 100-wp for
+  // Black, identical to showReviewPosition()'s own bar-fill mirroring,
+  // so the line drawn here can't disagree with what's on screen.
+  function buildEvalChartImage(perspective){
     const evals=reviewResult.evals, fens=reviewResult.fens;
     const w=760,h=200;
     const canvas=document.createElement('canvas');
@@ -5056,7 +5113,8 @@
     const n=evals.length;
     if(n>=2){
       const points=evals.map((e,i)=>{
-        const wp=e?winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))):50;
+        const wpWhite=e?winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))):50;
+        const wp=perspective==='b'?100-wpWhite:wpWhite;
         return Math.max(0,Math.min(100,wp));
       });
       ctx.strokeStyle='#c9a25d'; ctx.lineWidth=2.5;
@@ -5100,23 +5158,32 @@
 
     doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20,20,20);
     doc.text('Accuracy',marginX,y); y+=7.5;
-    doc.setFontSize(20);
+    // OUR-208: stacked (was side-by-side at a fixed marginX+80 offset) --
+    // whiteLabel/blackLabel can now carry a player name or level on top
+    // of the plain "White"/"Black" they used to be, and a real opponent
+    // username is exactly the kind of variable-length text a fixed
+    // column offset can't safely assume fits before the next one starts.
+    // One label+value per line, at the full page width, has no such
+    // ceiling to overflow past.
+    doc.setFontSize(14);
     doc.setTextColor(95,168,160);
-    doc.text('White  '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—'),marginX,y);
+    doc.text(pdfSafe(meta.whiteLabel+'  '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—')),marginX,y); y+=7;
     doc.setTextColor(60,60,60);
-    doc.text('Black  '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—'),marginX+80,y);
-    y+=10;
+    doc.text(pdfSafe(meta.blackLabel+'  '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—')),marginX,y); y+=9;
 
     // A chart failure (canvas/addImage throwing) shouldn't cost the rest
     // of the document -- the move list below is the part that actually
     // matters most, so this stays isolated.
+    // OUR-208: meta.perspective (the player's own color, same default as
+    // the on-screen toggle) instead of a hardcoded White POV -- both the
+    // image itself and the caption naming it now agree with each other.
     try{
-      const imgData=buildEvalChartImage();
+      const imgData=buildEvalChartImage(meta.perspective);
       const chartW=pageW-marginX*2, chartH=chartW*(200/760);
       doc.addImage(imgData,'PNG',marginX,y,chartW,chartH);
       y+=chartH+4;
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
-      doc.text('Evaluation across the game (White\'s perspective)',marginX,y);
+      doc.text('Evaluation across the game ('+(meta.perspective==='b'?'Black':'White')+'\'s perspective)',marginX,y);
       y+=8;
     }catch(e){}
 
@@ -5151,8 +5218,8 @@
     for(let i=0;i<pm.length;i+=2){
       ensureRoom();
       const w=pm[i], b=pm[i+1];
-      drawMoveCell(marginX,i/2+1,w.san,w.classification,formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1]));
-      if(b) drawMoveCell(marginX+colW,null,b.san,b.classification,formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2]));
+      drawMoveCell(marginX,i/2+1,w.san,w.classification,formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1],meta.perspective));
+      if(b) drawMoveCell(marginX+colW,null,b.san,b.classification,formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2],meta.perspective));
       y+=rowH;
     }
 
@@ -5666,7 +5733,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r166 (OUR-206: Chatbox as always-visible icon button + modal)';
+  const BUILD='v2-r167 (OUR-208: exports use player perspective, player labels on White/Black)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9681,7 +9748,14 @@
       // move" treatment only to the local vs-AI case, never to a real
       // opponent's Lichess-authoritative clock.
       lichessState.vsAI=!!((evt.white&&evt.white.aiLevel)||(evt.black&&evt.black.aiLevel));
-      const opponent=describeLichessPlayer(lichessState.color==='w'?evt.black:evt.white);
+      // OUR-208: the opponent's own Lichess username, carried through to
+      // onGameEnd()/lastCompletedGame the same way lichessState.aiLevel
+      // already was (OUR-203) -- undefined/no .name for an AI opponent
+      // (see describeLichessPlayer()'s own aiLevel check), so this is
+      // null for exactly the games that don't need it.
+      const opponentObj=lichessState.color==='w'?evt.black:evt.white;
+      lichessState.opponentName=(opponentObj&&opponentObj.name)||null;
+      const opponent=describeLichessPlayer(opponentObj);
       lichessNote('Playing '+describeLichessPlayer(evt.white)+' vs '+describeLichessPlayer(evt.black)+'.');
       log('Board',reconnecting?'Reconnected to your Lichess game.'
         :'Connected to a live Lichess game — you are '+(lichessState.color==='w'?'White':'Black')
