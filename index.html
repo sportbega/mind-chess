@@ -249,9 +249,15 @@
   .popover-panel.wide{width:220px}
   /* OUR-195: board size's own popover -- wider than .wide since it holds
      just the one slider (no multi-field crowding to weigh against extra
-     width, unlike Appearance/Game settings). 280px leaves a ~252px track
-     after the popover's own 14px*2 padding, close to the 240px track
-     width r78 settled on before this control lived in a popover at all. */
+     width, unlike Appearance/Game settings at the time). 280px leaves a
+     ~252px track after the popover's own 14px*2 padding, close to the
+     240px track width r78 settled on before this control lived in a
+     popover at all.
+     OUR-199: Game settings' own popover reuses this same class now --
+     folding the whole Lichess connection UI into it (OUR-198) made
+     #lichessTimeSelect's longest option overflow .wide's narrower
+     220px. Two different reasons landing on the same width class rather
+     than a second one-off. */
   .popover-panel.size-wide{width:280px}
   .popover-fields{display:flex;flex-direction:column;gap:12px}
   /* OUR-160: Appearance's five sliders need the same full-width stretch
@@ -588,6 +594,13 @@
   .board-veil p{font-size:13px;color:var(--text-dim);max-width:30ch;margin:0}
 
   .field{display:flex;flex-direction:column;gap:4px}
+  /* OUR-199: #levelField/#clockField's own hidden attribute (toggled by
+     showLichessPanel()/hideLichessPanel()) was silently losing to this
+     rule -- same specificity as the UA [hidden]{display:none} default,
+     but this one is later in the cascade, so it won and kept both
+     fields visible regardless of the attribute. Same fix already used
+     for .popover-panel[hidden] above. */
+  #levelField[hidden],#clockField[hidden]{display:none}
   .field label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
   select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-family:'Inter',sans-serif}
   .stepper{display:flex;align-items:center;gap:8px;margin-top:4px}
@@ -1029,7 +1042,16 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
-        <div class="popover-panel wide" id="gameSettingsPopover" hidden>
+        <!-- OUR-199: .wide (220px) is where #lichessTimeSelect's own
+             longest option ("Correspondence (3 days/move)") started
+             overflowing past the popover's edge once OUR-198 folded the
+             whole Lichess connection UI in here -- .size-wide (280px,
+             OUR-196's own zoom-popover width) leaves enough room for it
+             comfortably. Reused rather than a new class: same reasoning
+             OUR-196 gave for not just widening .wide itself -- this
+             popover's content is the one that actually needs it, other
+             .wide popovers don't. -->
+        <div class="popover-panel size-wide" id="gameSettingsPopover" hidden>
           <div class="popover-fields">
             <div class="field">
               <label for="modeSelect">Opponent</label>
@@ -1041,7 +1063,17 @@
                 <option value="puzzle">Puzzles</option>
               </select>
             </div>
-            <div class="field">
+            <!-- OUR-199: Level and Clock (this local game's own difficulty
+                 and time control) hidden entirely while Opponent ===
+                 lichess -- Lichess's own AI level/time controls live in
+                 #lichessSettingsField just below, so showing both at once
+                 read as redundant and confusing. Toggled from the exact
+                 same place as #lichessSettingsField itself
+                 (showLichessPanel()/hideLichessPanel(), called from
+                 modeSelect's own 'change' handler), so this reacts live
+                 to a mode switch while the popover is already open, same
+                 as everything else here. -->
+            <div class="field" id="levelField">
               <label for="levelSelect">Level</label>
               <!-- OUR-105: 11 rungs, one engine (Stockfish) — see the LEVELS
                    table in <script> for the actual skill/depth/movetime each
@@ -1073,7 +1105,7 @@
                  parseTimeControlValue() — the same parser the Lichess
                  select uses, so both stay in sync with one source of truth
                  for what a given value string means. -->
-            <div class="field">
+            <div class="field" id="clockField">
               <label for="clockSelect">Clock</label>
               <select id="clockSelect">
                 <option value="0" selected>No clock</option>
@@ -1156,8 +1188,12 @@
            live, not guessed: 10+0/10+5 Rapid reliably found someone,
            15+10 Rapid, 30+0/30+20 Classical and Correspondence often
            didn't, consistent with fewer people willing to sit an open
-           unrated seek for a slower format. -->
-      <p class="lichess-option-hint">10+0 and 10+5 Rapid tend to find someone fastest — slower formats and Correspondence have fewer people waiting, and may not match at all.</p>
+           unrated seek for a slower format.
+           OUR-199: shortened per Adni's ask -- the longer version's own
+           reasoning (above) still holds, just no longer spelled out
+           inline now that this section has to share popover space with
+           everything else OUR-198 folded in here. -->
+      <p class="lichess-option-hint">10+0 and 10+5 Rapid tend to match fastest.</p>
       <!-- OUR-108: full Lichess "Quick Pairing" list plus Correspondence and
            Custom, grouped the same way Lichess's own lobby groups them.
            Option values are "minutes-seconds" — parseTimeControlValue()
@@ -1235,7 +1271,10 @@
             <option value="30-20">30+20 Classical</option>
           </optgroup>
         </select>
-        <button class="btn primary" id="lichessAiBtn" type="button">Play the Lichess computer</button>
+        <!-- OUR-199: shortened from "Play the Lichess computer" -- the
+             section heading right above already says exactly that,
+             per Adni's point that the fuller label was redundant here. -->
+        <button class="btn primary" id="lichessAiBtn" type="button">Play</button>
       </div>
     </div>
     <div class="online-actions">
@@ -2093,7 +2132,7 @@
         copyInviteBtn=$('copyInviteBtn'), rematchBtn=$('rematchBtn'), lobbyBtn=$('lobbyBtn'),
         stopSpectateBtn=$('stopSpectateBtn'), lobbyPanel=$('lobbyPanel'), lobbyList=$('lobbyList'),
         closeLobbyBtn=$('closeLobbyBtn'),
-        lichessSettingsField=$('lichessSettingsField'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
+        lichessSettingsField=$('lichessSettingsField'), levelField=$('levelField'), clockField=$('clockField'), lichessStatusEl=$('lichessStatus'), lichessTokenInput=$('lichessTokenInput'),
         lichessTokenRow=$('lichessTokenRow'),
         lichessSaveTokenBtn=$('lichessSaveTokenBtn'), lichessWatchBtn=$('lichessWatchBtn'), lichessStopBtn=$('lichessStopBtn'),
         lichessTimeSelect=$('lichessTimeSelect'), lichessSeekBtn=$('lichessSeekBtn'), lichessCancelSeekBtn=$('lichessCancelSeekBtn'),
@@ -5467,7 +5506,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r161 (OUR-198: Lichess connection folded into Game settings popover)';
+  const BUILD='v2-r162 (OUR-199: hide Level/Clock in Lichess mode, fix dropdown overflow, trim labels)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9238,8 +9277,12 @@
   // this field's hidden attribute here is what makes switching Opponent to
   // Lichess WHILE the popover happens to already be open reveal the
   // section immediately, with no reopen needed.
+  // OUR-199: Level/Clock (this local game's own difficulty/time control)
+  // hidden the same way, same reason -- Lichess mode has its own AI
+  // level/time controls right below, showing both read as redundant.
   function showLichessPanel(){
     lichessSettingsField.hidden=false;
+    levelField.hidden=true; clockField.hidden=true;
     // Visible, not just enforced silently in tipFor()/askEngine() — a
     // disabled control tells the player the setting can't do anything here,
     // rather than looking live while every answer it would trigger is muted.
@@ -9248,6 +9291,7 @@
   }
   function hideLichessPanel(){
     lichessSettingsField.hidden=true;
+    levelField.hidden=false; clockField.hidden=false;
     coachSelect.disabled=false; tipsSelect.disabled=false;
   }
   function lichessNote(text){ lichessStatusEl.textContent=text; }
