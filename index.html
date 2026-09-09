@@ -79,15 +79,27 @@
      720px floor, the page keeps its original tested width regardless of
      how small the board goes (nothing above 618px board-max ever needed
      lowering it); above that floor, .app == board + the fixed chrome
-     around it (.boardpanel's 16px padding ×2, the .ranks column, its 6px
-     gap, and .board-outer's own clamp(10px,2.7vw,25px) padding ×2) — so
-     .boardpanel stretching to fill .app now means stretching to fill
-     EXACTLY the board plus its frame, with the same near-zero gap at any
-     slider position, not just at 960. No JS change needed: this is a CSS
-     custom property already being set on every slider input, so raising
-     or lowering it recomputes .app's width the same tick .board-grid's
-     own max-width does. */
-  .app{width:100%;max-width:max(720px,calc(var(--board-max,750px) + 52px + (clamp(10px,2.7vw,25px) * 2)));display:flex;flex-direction:column;gap:16px}
+     around it -- so .boardpanel stretching to fill .app now means
+     stretching to fill EXACTLY the board plus its frame, with the same
+     near-zero gap at any slider position, not just at 960. No JS change
+     needed: this is a CSS custom property already being set on every
+     slider input, so raising or lowering it recomputes .app's width the
+     same tick .board-grid's own max-width does.
+
+     OUR-223 Phase 1: dropped the formula's old third term entirely --
+     .board-outer's own clamp(10px,2.7vw,25px) padding ×2 -- now that
+     .board-outer carries no padding of its own. Keeping that term would
+     have left .app sized for chrome that no longer exists, a fixed empty
+     margin that grows with viewport width (clamp scales with vw) rather
+     than shrinking to nothing the way an actually-removed padding should.
+
+     OUR-223 Phase 2: the remaining "+32px" is now JUST .boardpanel's own
+     16px padding ×2 -- it used to also carry the .ranks column's 14px
+     width and its 6px gap to .board-col (32+14+6=52), but rank/file
+     labels are imprinted directly on the grid's own edge squares now
+     (renderBoard()) and .ranks is gone, so there's no separate column
+     width or gap left to account for. */
+  .app{width:100%;max-width:max(720px,calc(var(--board-max,750px) + 32px));display:flex;flex-direction:column;gap:16px}
 
   /* banner */
   .banner{
@@ -505,9 +517,18 @@
      below) is now gone too -- the size slider/Reset moved out of
      .board-head entirely into a popover on a new header icon, same
      "moved out, selector now dead" situation all over again. */
-  .board-outer{display:flex;gap:6px;padding:clamp(10px,2.7vw,25px);border-radius:12px;background:linear-gradient(160deg,var(--wood-2),var(--wood));box-shadow:0 20px 50px #0008}
-  .ranks{display:flex;flex-direction:column;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);width:14px}
-  .ranks div{flex:1;display:flex;align-items:center;justify-content:center}
+  /* OUR-223 Phase 1: destyled in place, not removed as an element -- the
+     element itself still needs to exist and stay a flex row (unchanged
+     display:flex/gap:6px below) so .app.fullscreen-active's own
+     .board-outer{flex:1;min-height:0} rule further down still has
+     something to anchor to without re-wiring that flex chain. Dropping
+     just the decorative padding/gradient/shadow (the wood-textured "frame"
+     around the grid, absent from Game Review's own board -- OUR-222's
+     board-comparison screenshots confirmed this was exactly the visual
+     difference) is what Adni meant by "the background layer". The .app
+     max-width formula below is recalculated to match -- it used to add
+     this padding on both sides, and now there's none to add. */
+  .board-outer{display:flex;gap:6px;padding:0;border-radius:0;background:none;box-shadow:none}
   .board-col{flex:1;min-width:0}
   /* container-type lives on .board-grid itself, not .board-col: .sq's
      font-size below is sized in cqw, and a query container reports its OWN
@@ -652,7 +673,6 @@
      the ghost sits directly under the cursor, exactly where drop-target
      hit-testing needs to see the real square underneath instead. */
   .drag-ghost{position:fixed;top:0;left:0;transform:translate(-50%,-50%);pointer-events:none;z-index:60;line-height:1;-webkit-text-stroke:inherit;paint-order:stroke fill}
-  .files{display:grid;grid-template-columns:repeat(8,1fr);font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin:4px auto 0;text-align:center}
 
   /* inset:0 is relative to .boardpanel (its positioned ancestor), which
      spans .board-head too, not just .board-outer underneath this — so
@@ -1628,11 +1648,13 @@
         <button class="btn" id="reviewGameBtn" type="button" style="display:none">Review game</button>
       </div>
     </div>
+    <!-- OUR-223 Phase 2: rank/file labels now imprinted directly on the
+         grid's own edge squares (renderBoard(), same .sq-coord pattern as
+         Game Review's board) -- the separate .ranks/.files rows this used
+         to also render are gone, along with syncFilesWidth(). -->
     <div class="board-outer">
-      <div class="ranks" id="ranks"></div>
       <div class="board-col">
         <div class="board-grid" id="boardGrid"></div>
-        <div class="files" id="files"></div>
       </div>
     </div>
     <div class="board-veil" id="boardVeil">
@@ -2223,7 +2245,7 @@
   const transcript=$('transcript'), moveStrip=$('moveStrip'),
         turnPill=$('turnPill'), micWrap=$('micWrap'), micBtn=$('micBtn'), micNote=$('micNote'),
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
-        ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
+        boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
         boardOpacityCaretBtn=$('boardOpacityCaretBtn'), boardOpacityPopover=$('boardOpacityPopover'),
         boardThemeBtn=$('boardThemeBtn'), boardThemePopover=$('boardThemePopover'),
         coachTipsBtn=$('coachTipsBtn'), coachTipsPopover=$('coachTipsPopover'),
@@ -3434,7 +3456,7 @@
       ?slideQueue.map(mv=>({to:mv.to,origin:captureSlideOrigin(boardGrid,mv.from)}))
       :[];
     suppressNextBoardSlide=false;
-    boardGrid.innerHTML=''; ranksEl.innerHTML=''; filesEl.innerHTML='';
+    boardGrid.innerHTML='';
     const board=game.board();
     const flipped=isBoardFlipped();
     let checkSq=null;
@@ -3466,11 +3488,27 @@
         if(checkSq&&sq===checkSq) div.classList.add('checked');
         if(sq===selectedSquare) div.classList.add('selected');
         else if(legalTargets.some(m=>m.to===sq)) div.classList.add(cell?'legal-capture':'legal-target');
+        // OUR-223 Phase 2: rank/file labels imprinted on the edge squares
+        // themselves, same .sq-coord pattern already built and verified
+        // for Game Review's own board (OUR-222) -- fi===0 is always the
+        // leftmost rendered column and ri===7 the bottommost rendered row
+        // regardless of `flipped`, since flipping already swapped which
+        // logical rank/file (r/f) land there.
+        if(fi===0){
+          const rankLabel=document.createElement('span');
+          rankLabel.className='sq-coord rank';
+          rankLabel.textContent=rank;
+          div.appendChild(rankLabel);
+        }
+        if(ri===7){
+          const fileLabel=document.createElement('span');
+          fileLabel.className='sq-coord file';
+          fileLabel.textContent=String.fromCharCode(97+f);
+          div.appendChild(fileLabel);
+        }
         boardGrid.appendChild(div);
       }
-      const rl=document.createElement('div'); rl.textContent=8-r; ranksEl.appendChild(rl);
     }
-    (flipped?'hgfedcba':'abcdefgh').split('').forEach(f=>{ const d=document.createElement('div'); d.textContent=f; filesEl.appendChild(d); });
     slideOrigins.forEach(s=>playSlideAnimation(boardGrid,s.to,s.origin));
   }
   function renderMoveStrip(){
@@ -3799,10 +3837,6 @@
     fullscreenBtn.title=on?'Exit fullscreen':'Fullscreen';
     fullscreenBtn.querySelector('.fullscreen-expand').style.display=on?'none':'';
     fullscreenBtn.querySelector('.fullscreen-compress').style.display=on?'':'none';
-    // The board's own width changes size class here (see .board-grid rules
-    // above) — the file labels below it need to be told, not just left to
-    // a ResizeObserver that may not have fired yet by the time this paints.
-    setTimeout(syncFilesWidth,0);
   }
   async function toggleFullscreen(){
     try{
@@ -3854,9 +3888,11 @@
   // press which fires once per discrete step (never more than one per
   // rendered frame — that's the whole reason keyboard never exposed this).
   //
-  // r72 batched syncFilesWidth()'s forced-layout read and the localStorage
-  // write into one requestAnimationFrame per burst, on the theory that the
-  // `--board-max` custom-property write itself was cheap enough to stay
+  // r72 batched a forced-layout read (syncFilesWidth(), since removed by
+  // OUR-223 Phase 2 along with the separate .files row it kept in sync)
+  // and the localStorage write into one requestAnimationFrame per burst,
+  // on the theory that the `--board-max` custom-property write itself was
+  // cheap enough to stay
   // synchronous on every raw event. That was true when it was written —
   // and already false by then, because r71 (shipped one build earlier) had
   // just made `.app`'s own max-width a function of this exact variable
@@ -3886,7 +3922,6 @@
     boardSizeRAF=requestAnimationFrame(()=>{
       boardSizeRAF=null;
       document.documentElement.style.setProperty('--board-max',boardSizePendingPx+'px');
-      syncFilesWidth();
       try{ localStorage.setItem(BOARD_SIZE_KEY,boardSizePendingPx); }catch(e){}
     });
   }
@@ -3930,29 +3965,6 @@
     boardSizeLastApplied=snapped;
     applyBoardSize(snapped);
   });
-  // The file labels ("a"–"h") are a plain block/grid element, not aspect-
-  // ratio-sized like the board grid itself, so they stretch to fill
-  // whatever width their flex/block container gives them — normally that
-  // equals the grid's own width by coincidence, but fullscreen made
-  // .board-col genuinely wider than the (height-constrained) grid inside
-  // it, and the letters spread out to fill the extra room instead of
-  // staying under their columns. Keeping this synced by actual measurement
-  // is more robust than trying to make two independently-sized elements
-  // agree through CSS alone — it's correct in the normal layout too, just
-  // a no-op there since the two widths already happen to match.
-  // An explicit width, not max-width: .files has auto left/right margins for
-  // centering, and an auto margin on a flex item opts it OUT of stretch — it
-  // shrinks to its own (much narrower) content size instead of filling the
-  // space max-width would otherwise cap, which is exactly the wrong
-  // direction for a cap to correct.
-  function syncFilesWidth(){ filesEl.style.width=boardGrid.getBoundingClientRect().width+'px'; }
-  // ResizeObserver as a general catch-all (window resize, zoom, anything
-  // else that changes the grid's size) — but not relied on alone, since a
-  // resize observer's first callback timing isn't something to gate a fix
-  // on sight-unseen. The two known resize triggers (fullscreen toggling,
-  // the size slider) call syncFilesWidth() directly, right below.
-  if(window.ResizeObserver) new ResizeObserver(syncFilesWidth).observe(boardGrid);
-  setTimeout(syncFilesWidth,0);
 
   // ===============================================================
   // Appearance — contrast/saturation/brightness/hue/transparency, layered
