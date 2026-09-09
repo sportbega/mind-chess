@@ -1126,25 +1126,8 @@
           </div>
         </div>
       </div>
-      <!-- OUR-168: Report a problem, restyled from a standalone text
-           button into a round icon (bug glyph) grouped with the other
-           settings/utility icons rather than sitting on its own further
-           down the page. Opens the same #reportPanel as a modal now (see
-           its own comment above the modal markup) instead of an inline
-           block -- openReport()/sendReport() etc. are otherwise
-           unchanged, only reportPanel's own show/hide switched from a
-           .show class toggle to the hidden attribute the modal pattern
-           uses, see the JS below. -->
-      <button class="icon-btn mic-size" id="reportBtn" type="button" aria-label="Report a problem" title="Report a problem — copy a diagnostic report you can paste into a bug report.">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 9V7a3 3 0 1 1 6 0v2"/>
-          <rect x="7" y="9" width="10" height="10" rx="5"/>
-          <path d="M12 9v10"/>
-          <path d="M4 12h3"/><path d="M17 12h3"/>
-          <path d="M4 17l3-2"/><path d="M17 15l3 2"/>
-          <path d="M4 8l3 2"/><path d="M17 10l3-2"/>
-        </svg>
-      </button>
+      <!-- OUR-177: Report a problem moved out of this row entirely, down
+           to the below-board row next to Transcript -- see there. -->
       <!-- OUR-168: Voice commands, restyled from a <details> section into
            a round icon (a head profile with small sound-wave lines at the
            mouth -- the same concentric-arc language #speakerToggleBtn
@@ -1415,6 +1398,20 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6 3h9l3 3v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/>
         <path d="M8 9h8"/><path d="M8 13h8"/><path d="M8 17h5"/>
+      </svg>
+    </button>
+    <!-- OUR-177: Report a problem relocated here from the header icon row,
+         next to Transcript as asked. Same id, same click handler
+         (openReport(), unchanged), same modal it always opened (see
+         #reportPanel, OUR-168) -- position only. -->
+    <button class="icon-btn mic-size" id="reportBtn" type="button" aria-label="Report a problem" title="Report a problem — copy a diagnostic report you can paste into a bug report.">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 9V7a3 3 0 1 1 6 0v2"/>
+        <rect x="7" y="9" width="10" height="10" rx="5"/>
+        <path d="M12 9v10"/>
+        <path d="M4 12h3"/><path d="M17 12h3"/>
+        <path d="M4 17l3-2"/><path d="M17 15l3 2"/>
+        <path d="M4 8l3 2"/><path d="M17 10l3-2"/>
       </svg>
     </button>
   </form>
@@ -5246,7 +5243,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r148 (OUR-175: move+Send below board, Stats/Transcript modals)';
+  const BUILD='v2-r149 (OUR-177: Report a problem moved below board)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
