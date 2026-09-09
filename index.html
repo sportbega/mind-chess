@@ -3132,9 +3132,28 @@
     saveState();
   }
   function applyOpaqueVeil(){ boardVeil.style.opacity='1'; }
+  // OUR-188: the slider's raw 0-100 position and the actual "how visible
+  // is the board" it produces are no longer the same number -- a straight
+  // linear map made the first drag off "fully hidden" reveal the position
+  // about as much as any other equal-sized drag, which read as too
+  // permissive for a control whose whole point is staying hidden by
+  // default. Piecewise instead: 0-60% of the slider's own range is an
+  // eased (cubic) ramp capped at 20% actual visibility, so most of that
+  // range keeps the board solidly dark with only small, slow-building
+  // visibility gains; 60-100% is plain linear from that same 20% up to
+  // fully visible, so the back half of the slider still reaches "fully
+  // see-through" the same way it always did. BREAKPOINT/EASE_CAP meeting
+  // exactly at v=BREAKPOINT (cubic(BREAKPOINT)=EASE_CAP, linear's own
+  // start point) is what keeps the two segments from visibly jumping
+  // against each other.
+  function boardVisibilityCurve(v){
+    const BREAKPOINT=60,EASE_CAP=20;
+    if(v<=BREAKPOINT) return EASE_CAP*Math.pow(v/BREAKPOINT,3);
+    return EASE_CAP+(v-BREAKPOINT)/(100-BREAKPOINT)*(100-EASE_CAP);
+  }
   function setBoardVeilOpacity(v){
     rememberBoardVeilOpacity(v);
-    boardVeil.style.opacity=String((100-v)/100);
+    boardVeil.style.opacity=String((100-boardVisibilityCurve(v))/100);
   }
   // isRestore exists for exactly one caller: restoreState(), which already
   // set the slider to the player's remembered preference via
@@ -5340,7 +5359,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r154 (OUR-186: fix veil alpha, board now fully opaque)';
+  const BUILD='v2-r155 (OUR-188: eased board-opacity slider curve)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
