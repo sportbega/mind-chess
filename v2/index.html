@@ -4204,6 +4204,20 @@
     checkAlert.className='check-alert show '+kind;
     checkAlertTimer=setTimeout(()=>checkAlert.classList.remove('show'),2200);
   }
+  // OUR-221: pure, side-effect-free text for these five conditions against
+  // any already-loaded chess.js position -- the live `game` object here,
+  // or a scratch probe loaded from one of Game Review's own stored FENs
+  // (reviewGameEndSuffix() below). Factored out of endSuffix() so there is
+  // exactly one place that knows these rules, rather than Review asking
+  // chess.js the same five questions a second time.
+  function gameEndText(pos){
+    if(pos.in_checkmate()) return ' Checkmate — '+(pos.turn()==='w'?'Black':'White')+' wins.';
+    if(pos.in_stalemate()) return ' Stalemate — draw.';
+    if(pos.insufficient_material()) return ' Draw — insufficient material.';
+    if(pos.in_threefold_repetition()) return ' Draw by repetition.';
+    if(pos.in_check()) return ' Check.';
+    return '';
+  }
   // endSuffix() is the one place that already asks game.in_checkmate()/
   // in_check() to build the spoken suffix — reusing that same detection here
   // rather than asking chess.js again elsewhere. The visual is muted-only:
@@ -4211,12 +4225,16 @@
   // covers it, and stacking a banner on top of narration that already says
   // the same thing would just be noise.
   function endSuffix(){
-    if(game.in_checkmate()){ if(!voiceOn) flashCheckAlert('checkmate'); return ' Checkmate — '+(game.turn()==='w'?'Black':'White')+' wins.'; }
-    if(game.in_stalemate()) return ' Stalemate — draw.';
-    if(game.insufficient_material()) return ' Draw — insufficient material.';
-    if(game.in_threefold_repetition()) return ' Draw by repetition.';
-    if(game.in_check()){ if(!voiceOn) flashCheckAlert('check'); return ' Check.'; }
-    return '';
+    const text=gameEndText(game);
+    if(!voiceOn){
+      if(game.in_checkmate()) flashCheckAlert('checkmate');
+      // Matches gameEndText()'s own priority order exactly: stalemate,
+      // insufficient material and repetition all pre-empt the plain
+      // "Check." text there, so the flash must be pre-empted by the same
+      // three conditions here rather than firing off in_check() alone.
+      else if(text===' Check.') flashCheckAlert('check');
+    }
+    return text;
   }
 
   // ===============================================================
@@ -5317,13 +5335,45 @@
   function reviewSentenceFor(move){
     return reviewDepth==='deep'?reviewDeepSentence(move):reviewMoveSentence(move);
   }
+  // OUR-221: the actual game-ending condition at Game Review's own final
+  // stored position, reusing gameEndText() (factored out of live play's
+  // endSuffix() above) rather than re-deriving these five rules a second
+  // time. analyzeGame() already leaves classification:null on the very
+  // last move -- Stockfish has nothing to search from a terminal position
+  // -- so reviewMoveSentence()/reviewDeepSentence() fall back to a bare
+  // move phrase with no mention of how the game actually ended. This is
+  // what fills that gap back in.
+  //
+  // Not every game ends in one of gameEndText()'s five chess-rule
+  // conditions -- a resignation or a clock timeout leaves an ordinary,
+  // non-terminal-looking position on the board, undetectable from the FEN
+  // alone. When none of the five apply, this falls back to
+  // reviewGameMeta()'s own resultLabel (the exact "You won"/"You
+  // lost"/"Draw" text OUR-146's exports already show) rather than staying
+  // silent or guessing a specific mechanism the data doesn't actually
+  // support.
+  function reviewGameEndSuffix(){
+    if(!reviewResult||!reviewResult.fens.length) return '';
+    const probe=new Chess();
+    if(!probe.load(reviewResult.fens[reviewResult.fens.length-1])) return '';
+    const text=gameEndText(probe);
+    if(text) return text;
+    const meta=reviewGameMeta();
+    return (meta&&meta.resultLabel&&meta.resultLabel!=='—')?' Game over — '+meta.resultLabel+'.':'';
+  }
   // idx is a POSITION index (0..perMove.length); the move that reaches
   // position idx is perMove[idx-1]. idx 0 (the starting position) has no
-  // move to narrate.
+  // move to narrate. The final position also gets the actual game-ending
+  // result appended -- see reviewGameEndSuffix() -- every time it's
+  // narrated, not just the first, since this recomputes fresh from
+  // reviewResult rather than a one-shot flag.
   function narrateReviewStep(idx){
     if(!reviewResult||idx<=0) return;
     const move=reviewResult.perMove[idx-1];
-    if(move) speak(reviewSentenceFor(move));
+    if(!move) return;
+    let sentence=reviewSentenceFor(move);
+    if(idx===reviewResult.perMove.length) sentence+=reviewGameEndSuffix();
+    speak(sentence);
   }
   reviewDepthSelect.addEventListener('change',()=>{
     reviewDepth=reviewDepthSelect.value;
@@ -5431,7 +5481,15 @@
     reviewMoveList.querySelectorAll('.review-move').forEach(el=>{
       el.addEventListener('click',()=>{
         if(reviewAutoPlaying) stopReviewAutoPlay();
-        showReviewPosition(+el.dataset.idx);
+        const idx=+el.dataset.idx;
+        showReviewPosition(idx);
+        // OUR-221: click-to-jump has never narrated the move itself (only
+        // Prev/Next/auto-play do) -- kept that as-is rather than widening
+        // scope here. But jumping straight to the LAST move, or back to it
+        // after stepping past it, is one of the ways a player reaches the
+        // final position, so it gets the same game-ending announcement
+        // Next/auto-play do, every time, not just the first.
+        if(idx===reviewResult.perMove.length) narrateReviewStep(idx);
       });
     });
     showReviewPosition(result.perMove.length);
@@ -6286,7 +6344,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r172 (OUR-220: fix piece slide animation getting stuck when requestAnimationFrame never fires)';
+  const BUILD='v2-r173 (OUR-221: Game Review announces checkmate/stalemate/draw at the final move)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
