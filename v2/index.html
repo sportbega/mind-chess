@@ -706,26 +706,9 @@
          here is type="button", so none of them can accidentally trigger
          a submit even without a wrapping <form> anymore. -->
       <div class="mic-compact-icons">
-      <!-- OUR-156: both Resign buttons relocated here from .board-head,
-           directly left of the type-a-move pill. They share this one slot
-           rather than getting two -- lichessResignBtn and computerResignBtn
-           are mutually exclusive by mode (Lichess vs. computer), so at most
-           one is ever display:'' at a time; the other stays display:none
-           and takes no layout space, exactly as it did side-by-side in
-           board-head. Same ids, same click handlers (resignLichessGame()/
-           resignComputerGame()), same visibility-gating call sites
-           (untouched, still elsewhere in this file) -- only the position
-           moved, not the logic. -->
-      <button class="icon-btn mic-size" id="lichessResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
-        </svg>
-      </button>
-      <button class="icon-btn mic-size" id="computerResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
-        </svg>
-      </button>
+      <!-- OUR-179: both Resign buttons moved out of this row entirely,
+           down to the below-board row next to the type-a-move pill --
+           see there. -->
       <div class="mic-wrap" id="micWrap">
         <span class="ring"></span><span class="ring"></span><span class="ring"></span>
         <!-- OUR-150: narration verbosity (Terse/Standard/Verbose) folded in
@@ -1137,9 +1120,11 @@
            list content as a modal, see its own comment above. -->
       <button class="icon-btn mic-size" id="voiceCommandsBtn" type="button" aria-label="Voice commands" title="Voice commands">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M7 3a5 5 0 0 1 5 5c0 1.1-.3 1.9-.3 1.9s1.3.3 1.3 1.6c0 1.1-.9 2-2 2 0 2 1 3.5 1 3.5H9v2a1 1 0 0 1-1 1H6v-3.3C4.2 15.8 3 13.9 3 11.5V8a5 5 0 0 1 4-5Z"/>
-          <path d="M15.5 9a3.2 3.2 0 0 1 0 4.4"/>
-          <path d="M17.7 7a6.2 6.2 0 0 1 0 8.4"/>
+          <g transform="translate(12,12) scale(1.3) translate(-12,-12)">
+            <path d="M7 3a5 5 0 0 1 5 5c0 1.1-.3 1.9-.3 1.9s1.3.3 1.3 1.6c0 1.1-.9 2-2 2 0 2 1 3.5 1 3.5H9v2a1 1 0 0 1-1 1H6v-3.3C4.2 15.8 3 13.9 3 11.5V8a5 5 0 0 1 4-5Z"/>
+            <path d="M15.5 9a3.2 3.2 0 0 1 0 4.4"/>
+            <path d="M17.7 7a6.2 6.2 0 0 1 0 8.4"/>
+          </g>
         </svg>
       </button>
       <!-- OUR-162: Log out relocated from the auth bar (where its identity
@@ -1354,6 +1339,27 @@
        Transcript) is type="button", so neither can accidentally trigger
        a submit, same reasoning the header row's icons relied on. -->
   <form class="below-board-row" id="textForm">
+    <!-- OUR-179: both Resign buttons relocated here from the header icon
+         row, positioned next to the type-a-move pill as asked -- same
+         spot relative to the pill they held in the header before this.
+         They still share this one slot rather than getting two --
+         lichessResignBtn and computerResignBtn are mutually exclusive by
+         mode (Lichess vs. computer), so at most one is ever display:'' at
+         a time; the other stays display:none and takes no layout space.
+         Same ids, same click handlers (resignLichessGame()/
+         resignComputerGame()), same visibility-gating call sites
+         (untouched, still elsewhere in this file) -- only the position
+         moved, not the logic. -->
+    <button class="icon-btn mic-size" id="lichessResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+      </svg>
+    </button>
+    <button class="icon-btn mic-size" id="computerResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+      </svg>
+    </button>
     <!-- OUR-154: placeholder shortened from "Type a move" to an example
          move -- the field itself was already a full pill (border-radius:
          999px, see .below-board-row input[type=text] above), this just
@@ -5243,7 +5249,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r149 (OUR-177: Report a problem moved below board)';
+  const BUILD='v2-r150 (OUR-179: Resign below board, bigger Voice commands icon)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
