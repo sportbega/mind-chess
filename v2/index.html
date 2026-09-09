@@ -642,6 +642,15 @@
     <div>
       <p class="eyebrow">Voice / blindfold mode</p>
       <h1>Mind Chess</h1>
+      <!-- OUR-162: the identity line ("via Lichess as X" / "via email as
+           X") reuses .status/#identityLine's exact spot and styling from
+           the old #statusLine ("White to move — board hidden") that r87
+           removed from right here -- same class, same position, just
+           identity content instead of game-state content now. Hidden by
+           default and only ever shown by renderAccount() in the
+           signed-in branch (see below); every other branch there leaves
+           it hidden, so there's one single place this ever turns on. -->
+      <p class="status" id="identityLine" hidden></p>
     </div>
     <!-- One row, five controls, in this order (OUR-93): type-a-move,
          mic, speaker mute, hide/reveal board, Send. Was two separate
@@ -858,6 +867,81 @@
           </g>
         </svg>
       </button>
+      <!-- OUR-162: Voice settings, restyled from its old collapsible
+           <details> section into a round icon button, same
+           .settings-wrap/.popover-panel pattern as Game settings/
+           Appearance just after it -- grouped with them (settings-style
+           icons together) rather than scattered, per the same reasoning
+           OUR-159 placed Appearance next to Game settings. Mic-with-gear
+           glyph: a small gear badge over a shrunk mic icon, distinct from
+           both the plain listening mic in #micWrap and Game settings'
+           own plain gear, since this is specifically the mic/speech
+           SETTINGS, not a third listening control. Every control that
+           lived in the old panel (Speech engine, Hearing source,
+           calibration incl. the confirm-toggle row, Voice, Speed, the
+           three checkboxes, Test voice) is here with its exact id and
+           handler, unmoved -- position/presentation only. -->
+      <div class="settings-wrap">
+        <button class="icon-btn mic-size" id="voiceSettingsBtn" type="button" aria-label="Voice settings" title="Voice settings" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <g transform="translate(-3,-2) scale(0.8)">
+              <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
+              <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
+            </g>
+            <g transform="translate(10,10) scale(0.42)" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </g>
+          </svg>
+        </button>
+        <div class="popover-panel wide" id="voiceSettingsPopover" hidden>
+          <div class="popover-fields">
+            <div class="field">
+              <label for="engineSelect">Speech</label>
+              <select id="engineSelect">
+                <option value="system" selected>System</option>
+                <option value="kokoro">Natural — 326 MB once</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="sttSelect">Hearing (iOS/iPhone only)</label>
+              <select id="sttSelect">
+                <option value="system" selected>Browser</option>
+                <option value="local">On-device — 247 MB once</option>
+              </select>
+            </div>
+            <div class="field" id="voiceProfileField">
+              <label>Voice calibration</label>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="online-status" id="voiceProfileStatus" style="margin:0">Off</span>
+                <button class="btn" id="calibrateBtn" type="button" title="Teach the matcher how you say the files, digits and piece names.">Calibrate my voice</button>
+                <button class="btn" id="resetVoiceProfileBtn" type="button" style="display:none">Reset</button>
+              </div>
+              <label class="toggle" id="voiceProfileConfirmRow" style="display:none;margin-top:6px">
+                <input type="checkbox" id="voiceProfileConfirmToggle" /> This is still me — use my calibration
+              </label>
+            </div>
+            <div class="field">
+              <label for="voiceSelect">Voice</label>
+              <select id="voiceSelect"><option value="">Default</option></select>
+            </div>
+            <div class="field">
+              <label for="rateSelect">Speed</label>
+              <select id="rateSelect">
+                <option value="0.7">Slow</option>
+                <option value="0.9" selected>Measured</option>
+                <option value="1">Normal</option>
+                <option value="1.15">Brisk</option>
+                <option value="1.3">Fast</option>
+              </select>
+            </div>
+            <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
+            <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
+            <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
+            <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
+          </div>
+        </div>
+      </div>
       <!-- OUR-158: Game settings, restyled from the old collapsible
            <details> section (OUR-87) into a round icon button matching
            mic/speaker/etc., opening a popover on click -- same
@@ -1016,6 +1100,20 @@
           </div>
         </div>
       </div>
+      <!-- OUR-162: Log out relocated from the auth bar (where its identity
+           text used to sit next to it) into this row, directly after
+           Appearance as asked -- grouped with the other settings-style
+           icons rather than off on its own. Static button now (was
+           recreated inside accountBody's own innerHTML on every
+           renderAccount() call before this); renderAccount() just toggles
+           style.display and the click handler is bound once, see
+           handleAccountLogout's own comment. Hidden by default -- only
+           shown while actually signed in, same as before. -->
+      <button class="icon-btn mic-size" id="accountLogoutBtn" type="button" style="display:none" aria-label="Log out" title="Log out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>
+        </svg>
+      </button>
       <!-- flex-basis:100% (see .mic-compact .mic-note) drops this onto its
            own line below the button row rather than fighting the five
            controls above for horizontal space — it's status text, not a
@@ -1361,54 +1459,13 @@
     </div>
   </div>
 
-  <details class="help" id="voiceSettingsDetails" open>
-    <summary>Voice settings</summary>
-    <div class="field-grid">
-      <div class="field">
-        <label for="engineSelect">Speech</label>
-        <select id="engineSelect">
-          <option value="system" selected>System</option>
-          <option value="kokoro">Natural — 326 MB once</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="sttSelect">Hearing (iOS/iPhone only)</label>
-        <select id="sttSelect">
-          <option value="system" selected>Browser</option>
-          <option value="local">On-device — 247 MB once</option>
-        </select>
-      </div>
-      <div class="field" id="voiceProfileField">
-        <label>Voice calibration</label>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span class="online-status" id="voiceProfileStatus" style="margin:0">Off</span>
-          <button class="btn" id="calibrateBtn" type="button" title="Teach the matcher how you say the files, digits and piece names.">Calibrate my voice</button>
-          <button class="btn" id="resetVoiceProfileBtn" type="button" style="display:none">Reset</button>
-        </div>
-        <label class="toggle" id="voiceProfileConfirmRow" style="display:none;margin-top:6px">
-          <input type="checkbox" id="voiceProfileConfirmToggle" /> This is still me — use my calibration
-        </label>
-      </div>
-      <div class="field">
-        <label for="voiceSelect">Voice</label>
-        <select id="voiceSelect"><option value="">Default</option></select>
-      </div>
-      <div class="field">
-        <label for="rateSelect">Speed</label>
-        <select id="rateSelect">
-          <option value="0.7">Slow</option>
-          <option value="0.9" selected>Measured</option>
-          <option value="1">Normal</option>
-          <option value="1.15">Brisk</option>
-          <option value="1.3">Fast</option>
-        </select>
-      </div>
-      <label class="toggle"><input type="checkbox" id="handsFreeToggle" checked /> Keep listening</label>
-      <label class="toggle"><input type="checkbox" id="voiceToggle" checked /> Speak aloud</label>
-      <label class="toggle" title="Experimental: leaves the mic open while the app talks so you can cut it off by speaking. Needs a real game to judge — press Escape to interrupt without it."><input type="checkbox" id="bargeInToggle" /> Talk over it</label>
-      <button class="btn" id="testVoiceBtn" type="button" title="Play a sample line and report whether any sound actually reached the speaker.">Test voice</button>
-    </div>
-  </details>
+  <!-- OUR-162: Voice settings' old <details> section is gone -- every
+       control moved into a popover on a new round icon in the header
+       (see #voiceSettingsPopover there). Nothing under
+       #voiceSettingsDetails was referenced by id anywhere in the script,
+       only its child controls by their own ids, so removing the wrapper
+       itself is safe -- same situation OUR-158/OUR-160 already confirmed
+       for #gameSettingsDetails/#appearanceDetails. -->
 
   <details class="help" id="transcriptDetails" open>
     <summary>Transcript</summary>
@@ -1684,6 +1741,7 @@
         verbosityCaretBtn=$('verbosityCaretBtn'), verbosityPopover=$('verbosityPopover'),
         gameSettingsBtn=$('gameSettingsBtn'), gameSettingsPopover=$('gameSettingsPopover'),
         appearanceBtn=$('appearanceBtn'), appearancePopover=$('appearancePopover'),
+        voiceSettingsBtn=$('voiceSettingsBtn'), voiceSettingsPopover=$('voiceSettingsPopover'),
         voiceProfileStatus=$('voiceProfileStatus'), calibrateBtn=$('calibrateBtn'),
         resetVoiceProfileBtn=$('resetVoiceProfileBtn'), voiceProfileConfirmRow=$('voiceProfileConfirmRow'),
         voiceProfileConfirmToggle=$('voiceProfileConfirmToggle'),
@@ -1694,7 +1752,7 @@
         reportSendBtn=$('reportSendBtn'), copyDiagBtn=$('copyDiagBtn'),
         boardThemeSelect=$('boardThemeSelect'), pieceThemeSelect=$('pieceThemeSelect'),
         statsDetails=$('statsDetails'), statsBody=$('statsBody'),
-        accountBody=$('accountBody'),
+        accountBody=$('accountBody'), identityLine=$('identityLine'), accountLogoutBtn=$('accountLogoutBtn'),
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
@@ -4977,7 +5035,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r141 (OUR-160: Appearance split into board-head+popover)';
+  const BUILD='v2-r142 (OUR-162: Voice settings popover, Log out+identity relocated)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -8011,6 +8069,14 @@
   // OUR-126 was careful to keep visible.
   async function renderAccount(){
     if(!accountBody) return;
+    // OUR-162: identityLine/accountLogoutBtn now live outside accountBody
+    // entirely (identityLine under the title, accountLogoutBtn in the
+    // header icon row) -- defaulting both to hidden here, once, covers
+    // every early-return branch below (no Supabase, needs-password,
+    // password-recovery, guest) without having to repeat it in each one;
+    // only the signed-in branch further down turns them back on.
+    identityLine.hidden=true;
+    accountLogoutBtn.style.display='none';
     if(!db){
       accountBody.innerHTML='<p class="empty">Accounts need Supabase configured — see supabase-config.js.</p>';
       return;
@@ -8021,19 +8087,17 @@
       const viaLichess=status.user.app_metadata?.provider==='custom:lichess'
         ||(status.user.identities||[]).some(i=>i.provider==='custom:lichess');
       updateLichessTokenRowVisibility(viaLichess&&!!lichessToken);
-      accountBody.innerHTML='<div class="auth-row"><span>'+(viaLichess?'Signed in via Lichess as ':'Signed in as ')
-        +'<b class="acct-email"></b></span>'
-        // OUR-148: restyled to match the round 48px icon-button set
-        // (New game/Flip board/Hide board) -- same id, same click handler
-        // (handleAccountLogout, bound just below), only the visual
-        // treatment changed. The identity text beside it stays plain text
-        // since it has no icon-able equivalent.
-        +'<button class="icon-btn mic-size" id="accountLogoutBtn" type="button" aria-label="Log out" title="Log out">'
-        +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
-        +'<path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
-        +'</svg></button></div>';
-      accountBody.querySelector('.acct-email').textContent=accountDisplayName(status.user);
-      accountBody.querySelector('#accountLogoutBtn').addEventListener('click',handleAccountLogout);
+      accountBody.innerHTML='';
+      // OUR-162: dropped "Signed in" -- being shown here at all already
+      // implies signed-in status. Lichess is the only OAuth provider this
+      // app actually has (no Google/etc.); everything else is email/
+      // password, so "via email" is the one other real case, not a
+      // placeholder for hypothetical providers. Plain text, no embedded
+      // bold span -- matching the old #statusLine's own uniform styling
+      // exactly, which never had one either.
+      identityLine.textContent='via '+(viaLichess?'Lichess':'email')+' as '+accountDisplayName(status.user);
+      identityLine.hidden=false;
+      accountLogoutBtn.style.display='';
       return;
     }
     updateLichessTokenRowVisibility(false);
@@ -8352,6 +8416,13 @@
     renderAccount();
     if(statsDetails.open) renderStats();
   }
+  // OUR-162: accountLogoutBtn is now a static header button (moved out of
+  // accountBody's own innerHTML, which used to recreate -- and rebind --
+  // it on every renderAccount() call), so its click handler is bound once
+  // here instead. handleAccountLogout() itself is unconditional (just
+  // signs out and re-renders), so there's no state this binding needs to
+  // wait for.
+  accountLogoutBtn.addEventListener('click',handleAccountLogout);
   // Catches the cross-tab case: clicking the confirmation link opens (or
   // reuses) a tab that's a fresh load of this same page, where supabase-js
   // parses the email-change tokens from the URL on its own and fires
@@ -9726,6 +9797,7 @@
     closeVerbosityPopover();
     closeGameSettingsPopover();
     closeAppearancePopover();
+    closeVoiceSettingsPopover();
     volumePopover.hidden=false;
     volumeCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -9760,6 +9832,7 @@
     closeVolumePopover();
     closeGameSettingsPopover();
     closeAppearancePopover();
+    closeVoiceSettingsPopover();
     verbosityPopover.hidden=false;
     verbosityCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -9786,6 +9859,7 @@
     closeVolumePopover();
     closeVerbosityPopover();
     closeAppearancePopover();
+    closeVoiceSettingsPopover();
     gameSettingsPopover.hidden=false;
     gameSettingsBtn.setAttribute('aria-expanded','true');
   }
@@ -9810,6 +9884,7 @@
     closeVolumePopover();
     closeVerbosityPopover();
     closeGameSettingsPopover();
+    closeVoiceSettingsPopover();
     appearancePopover.hidden=false;
     appearanceBtn.setAttribute('aria-expanded','true');
   }
@@ -9825,6 +9900,32 @@
   document.addEventListener('click',()=>{ if(!appearancePopover.hidden) closeAppearancePopover(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!appearancePopover.hidden) closeAppearancePopover();
+  });
+
+  // OUR-162: Voice settings popover -- same open/close-the-others pattern
+  // as Game settings/Appearance just above, same reasoning for the
+  // button's own click opening it directly (nothing else on
+  // #voiceSettingsBtn to protect -- it's a separate element from #micBtn).
+  function openVoiceSettingsPopover(){
+    closeVolumePopover();
+    closeVerbosityPopover();
+    closeGameSettingsPopover();
+    closeAppearancePopover();
+    voiceSettingsPopover.hidden=false;
+    voiceSettingsBtn.setAttribute('aria-expanded','true');
+  }
+  function closeVoiceSettingsPopover(){
+    voiceSettingsPopover.hidden=true;
+    voiceSettingsBtn.setAttribute('aria-expanded','false');
+  }
+  voiceSettingsBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(voiceSettingsPopover.hidden) openVoiceSettingsPopover(); else closeVoiceSettingsPopover();
+  });
+  voiceSettingsPopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!voiceSettingsPopover.hidden) closeVoiceSettingsPopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!voiceSettingsPopover.hidden) closeVoiceSettingsPopover();
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
