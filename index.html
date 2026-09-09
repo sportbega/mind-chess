@@ -802,7 +802,28 @@
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
         </div>
-        <button class="btn" id="fullscreenBtn" type="button" title="Fullscreen">Fullscreen</button>
+        <!-- OUR-148: restyled as a round 48px icon button, same set as New
+             game/Flip board/Hide board. Left in this row rather than moved
+             to the header (unlike Flip board's own OUR-140 move) because
+             lichessAbortBtn/lichessResignBtn/computerResignBtn sit in this
+             same row and Resign is converting to the same round icon in
+             this pass too -- the row was headed toward a mix of pill/select
+             and round-icon controls regardless, so pulling Fullscreen out
+             on its own wouldn't have bought back a uniform row anyway.
+             Icon swaps expand/compress on fullscreen state exactly like
+             Hide board's eye/eye-slash (OUR-143) -- see syncFullscreenUI(). -->
+        <button class="icon-btn mic-size" id="fullscreenBtn" type="button" aria-label="Fullscreen" title="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <g class="fullscreen-expand">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+              <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+            </g>
+            <g class="fullscreen-compress" style="display:none">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+              <path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+            </g>
+          </svg>
+        </button>
         <!-- OUR-107: moved here from the header row (r95/OUR-106) so the
              header can drop back to 6 controls and share one line with the
              title again. Same id, same change handler, same persistence —
@@ -838,7 +859,17 @@
              assuming, and there's nothing to preserve beyond the plain
              click handlers. -->
         <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
-        <button class="btn" id="lichessResignBtn" type="button" style="display:none">Resign</button>
+        <!-- OUR-148: restyled as a round 48px icon button (flag glyph),
+             same set as New game/Flip board/Hide board/Fullscreen. Same id,
+             same click handler (resignLichessGame(), unchanged), same
+             style.display show/hide toggling everywhere below -- .icon-btn
+             already defaults to display:flex, so setting style.display=''
+             falls back to that exactly as it did for .btn's own default. -->
+        <button class="icon-btn mic-size" id="lichessResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+          </svg>
+        </button>
         <!-- OUR-112: local equivalent of lichessResignBtn for the internal
              computer opponent — same plain .btn, same board-head placement,
              visible only mid-game in mode==='computer' (see
@@ -852,7 +883,16 @@
              underway" is just what New game (already in the header) already
              does, so a second button doing the same thing would be
              redundant rather than a real second action. Flagged, not built. -->
-        <button class="btn" id="computerResignBtn" type="button" style="display:none">Resign</button>
+        <!-- OUR-148: same restyle as lichessResignBtn above, same flag
+             glyph, for visual consistency between the two Resign buttons
+             even though they trigger different underlying logic
+             (resignComputerGame() vs. resignLichessGame()). Same id, same
+             click handler, same style.display toggling. -->
+        <button class="icon-btn mic-size" id="computerResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+          </svg>
+        </button>
         <!-- OUR-116: shown for any completed game (computer/two-player/
              online/Lichess), not just computer mode — see
              updateReviewButtonVisibility(), called from updateStatus()
@@ -2797,7 +2837,10 @@
   function syncFullscreenUI(){
     const on=isFullscreen();
     appEl.classList.toggle('fullscreen-active',on);
-    fullscreenBtn.textContent=on?'Exit fullscreen':'Fullscreen';
+    fullscreenBtn.setAttribute('aria-label',on?'Exit fullscreen':'Fullscreen');
+    fullscreenBtn.title=on?'Exit fullscreen':'Fullscreen';
+    fullscreenBtn.querySelector('.fullscreen-expand').style.display=on?'none':'';
+    fullscreenBtn.querySelector('.fullscreen-compress').style.display=on?'':'none';
     // The board's own width changes size class here (see .board-grid rules
     // above) — the file labels below it need to be told, not just left to
     // a ResizeObserver that may not have fired yet by the time this paints.
@@ -4789,7 +4832,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r134 (OUR-146: Game Review TXT/PDF export)';
+  const BUILD='v2-r135 (OUR-148: Log out/Fullscreen/Resign icon restyle)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7835,7 +7878,15 @@
       updateLichessTokenRowVisibility(viaLichess&&!!lichessToken);
       accountBody.innerHTML='<div class="auth-row"><span>'+(viaLichess?'Signed in via Lichess as ':'Signed in as ')
         +'<b class="acct-email"></b></span>'
-        +'<button class="btn" id="accountLogoutBtn" type="button">Log out</button></div>';
+        // OUR-148: restyled to match the round 48px icon-button set
+        // (New game/Flip board/Hide board) -- same id, same click handler
+        // (handleAccountLogout, bound just below), only the visual
+        // treatment changed. The identity text beside it stays plain text
+        // since it has no icon-able equivalent.
+        +'<button class="icon-btn mic-size" id="accountLogoutBtn" type="button" aria-label="Log out" title="Log out">'
+        +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        +'<path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
+        +'</svg></button></div>';
       accountBody.querySelector('.acct-email').textContent=accountDisplayName(status.user);
       accountBody.querySelector('#accountLogoutBtn').addEventListener('click',handleAccountLogout);
       return;
