@@ -657,8 +657,31 @@
            hidden, reachable only by scrolling to (and half-seeing) the
            very thing it's meant to unhide. The header is visible
            regardless of board state, same reasoning as the mic living
-           here since r73. -->
-      <button class="btn" id="boardToggleBtn" type="button">Reveal board</button>
+           here since r73.
+           OUR-142: OUR-95 kept this as a text pill specifically because
+           its label had to change between Hide/Reveal, unlike New game/
+           Flip board's single fixed meaning -- an icon-only button had
+           nowhere to put that. The eye / eye-slash swap (same convention
+           as a password-visibility toggle) carries that exact same
+           information visually instead, via updateBoardToggleIcon()
+           below (mirrors updateSpeakerBtn()'s own show/hide-two-paths
+           pattern exactly), so the text-pill exception no longer applies
+           and this can join the round icon-button set too. aria-label/
+           title carry what the visible text used to say, for anyone not
+           reading the icon. -->
+      <button class="icon-btn mic-size" id="boardToggleBtn" type="button" aria-label="Hide board" title="Hide board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <g class="board-eye-open">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </g>
+          <g class="board-eye-closed" style="display:none">
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-3.35 3.35a3 3 0 1 1-4.24-4.24"/>
+            <path d="M6.1 6.1C3.13 8.14 1 12 1 12s4 7 11 7a10.94 10.94 0 0 0 5.94-1.94"/>
+            <path d="M1 1l22 22"/>
+          </g>
+        </svg>
+      </button>
       <!-- flex-basis:100% (see .mic-compact .mic-note) drops this onto its
            own line below the button row rather than fighting the five
            controls above for horizontal space — it's status text, not a
@@ -2538,10 +2561,20 @@
   computerResignBtn.addEventListener('click',resignComputerGame);
   function renderAll(){ renderBoard(); renderMoveStrip(); updateStatus(); saveState(); }
 
+  // OUR-142: icon (open eye vs. slashed eye) now carries what the button's
+  // own text used to say — open eye means "board's visible, click to
+  // hide", slashed eye means "board's hidden, click to reveal" — plus
+  // aria-label/title kept in sync for anyone not reading the glyph.
+  function updateBoardToggleIcon(h){
+    boardToggleBtn.setAttribute('aria-label',h?'Reveal board':'Hide board');
+    boardToggleBtn.title=h?'Reveal board':'Hide board';
+    boardToggleBtn.querySelector('.board-eye-open').style.display=h?'none':'';
+    boardToggleBtn.querySelector('.board-eye-closed').style.display=h?'':'none';
+  }
   function setBoardHidden(h){
     boardHidden=h;
     boardVeil.style.display=h?'flex':'none';
-    boardToggleBtn.textContent=h?'Reveal board':'Hide board';
+    updateBoardToggleIcon(h);
     if(!h) renderBoard();
     updateStatus();
     saveState();
@@ -4467,7 +4500,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r131 (OUR-140: Flip board relocated as round icon button)';
+  const BUILD='v2-r132 (OUR-142: Hide board as eye/eye-slash icon button)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
