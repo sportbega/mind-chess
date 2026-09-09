@@ -596,6 +596,22 @@
   .sq.white-piece{color:var(--piece-light);-webkit-text-stroke:1.3px var(--piece-light-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
   .sq.black-piece{color:var(--piece-dark);-webkit-text-stroke:1px var(--piece-dark-stroke);paint-order:stroke fill;text-shadow:var(--piece-shadow)}
   .sq.last{background-color:#cbb87c!important;box-shadow:none}
+  /* OUR-222: rank/file labels imprinted directly on the review board's own
+     edge squares (chess.com/Lichess style) instead of a separate row/
+     column outside the grid -- position:absolute takes each label out of
+     .sq's own display:grid flow (plain grid auto-placement would
+     otherwise stack a second child into its own implicit row below the
+     piece, not the corner). Colored with the OPPOSITE square's own
+     --sq-light/--sq-dark variable -- the same two variables .sq.light/
+     .sq.dark already use for their backgrounds -- rather than a new
+     per-theme label color, so this reads correctly against all nine
+     board themes (OUR-69) for free, the same reasoning legal-move
+     highlighting's --accent/--accent-2 reuse already established. */
+  .sq-coord{position:absolute;font-size:clamp(8px,2.2cqw,12px);font-weight:600;line-height:1;pointer-events:none;font-variant-numeric:tabular-nums;z-index:1}
+  .sq-coord.rank{top:3%;left:5%}
+  .sq-coord.file{bottom:3%;right:5%}
+  .sq.light .sq-coord{color:var(--sq-dark)}
+  .sq.dark .sq-coord{color:var(--sq-light)}
   .sq.checked{box-shadow:inset 0 0 0 2px var(--danger)}
   /* Mouse/touch board interaction. var(--accent)/var(--accent-2) rather
      than a fixed color, since both already vary across all nine board
@@ -787,11 +803,17 @@
              OUR-215 Phase B: Play/Pause auto-advance, reusing the same
              showReviewPosition()/narrateReviewStep() as manual stepping.
              OUR-216 Phase C: both of the above narrate at whichever depth
-             #reviewDepthSelect currently holds -- see narrateReviewStep(). -->
+             #reviewDepthSelect currently holds -- see narrateReviewStep().
+             OUR-222: Reload (jump to the start) and +-5 fast-forward/
+             rewind added either side of Prev/Play/Next -- same tape-deck
+             row, same underlying showReviewPosition()/narrateReviewStep(). -->
         <div class="review-step-row">
+          <button type="button" class="btn" id="reviewReloadBtn" title="Back to the start">&#8634; Reload</button>
+          <button type="button" class="btn" id="reviewRewind5Btn" title="Back 5 moves">&minus;5</button>
           <button type="button" class="btn" id="reviewPrevBtn">&larr; Prev</button>
           <button type="button" class="btn" id="reviewPlayBtn">Play</button>
           <button type="button" class="btn" id="reviewNextBtn">Next &rarr;</button>
+          <button type="button" class="btn" id="reviewForward5Btn" title="Forward 5 moves">+5</button>
         </div>
         <div class="review-movelist" id="reviewMoveList"></div>
       </div>
@@ -2247,6 +2269,7 @@
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
         reviewPerspectiveBtn=$('reviewPerspectiveBtn'), reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
+        reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -5064,6 +5087,23 @@
           div.appendChild(glyph);
           div.classList.add(cell.color==='w'?'white-piece':'black-piece');
         }
+        // OUR-222: fi===0 is always the leftmost rendered column and
+        // ri===7 the bottommost rendered row, regardless of `flipped` --
+        // flipping already swapped which logical rank/file (r/f) land
+        // there, so the label text (8-r, the letter for f) is already
+        // correct for whichever orientation is showing.
+        if(fi===0){
+          const rankLabel=document.createElement('span');
+          rankLabel.className='sq-coord rank';
+          rankLabel.textContent=8-r;
+          div.appendChild(rankLabel);
+        }
+        if(ri===7){
+          const fileLabel=document.createElement('span');
+          fileLabel.className='sq-coord file';
+          fileLabel.textContent=String.fromCharCode(97+f);
+          div.appendChild(fileLabel);
+        }
         reviewBoardGrid.appendChild(div);
       }
     }
@@ -5132,6 +5172,9 @@
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
     reviewPrevBtn.disabled=(idx<=0);
     reviewNextBtn.disabled=(idx>=reviewResult.perMove.length);
+    reviewReloadBtn.disabled=(idx<=0);
+    reviewRewind5Btn.disabled=(idx<=0);
+    reviewForward5Btn.disabled=(idx>=reviewResult.perMove.length);
   }
   // OUR-214 Phase A: Simple-tier narration for one stepped-to move --
   // the move itself (reusing describeMove()'s own piece/capture/castle
@@ -5423,6 +5466,35 @@
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
+  // OUR-222: back to the very start, reusing showReviewPosition(0) as-is --
+  // position 0 has no move to narrate (narrateReviewStep() already no-ops
+  // for idx<=0, same as it always has for Prev stepping back to the
+  // start), so there's nothing new to say here, only somewhere new to
+  // look. Works from anywhere, including after auto-play has already
+  // reached the end.
+  reviewReloadBtn.addEventListener('click',()=>{
+    if(!reviewResult||reviewPositionIdx===0) return;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    showReviewPosition(0);
+  });
+  // OUR-222: +-5 step, clamped to the game's own start/end -- same
+  // showReviewPosition()/narrateReviewStep() as single-step Prev/Next, so
+  // whichever move is landed on gets exactly the same narration (including
+  // the final-move game-end announcement, OUR-221, when a jump lands
+  // there). No slide animation queued: jumping several moves at once has
+  // no single origin/destination pair to FLIP between (same reasoning
+  // already applied to the move-list's own click-to-jump), so this is an
+  // instant reposition, narrated same as any other step.
+  function reviewJumpBy(delta){
+    if(!reviewResult) return;
+    const idx=Math.max(0,Math.min(reviewResult.perMove.length,reviewPositionIdx+delta));
+    if(idx===reviewPositionIdx) return;
+    if(reviewAutoPlaying) stopReviewAutoPlay();
+    showReviewPosition(idx);
+    narrateReviewStep(idx);
+  }
+  reviewRewind5Btn.addEventListener('click',()=>reviewJumpBy(-5));
+  reviewForward5Btn.addEventListener('click',()=>reviewJumpBy(5));
   // OUR-215 Phase B: one step of auto-play, reusing Phase A's own
   // showReviewPosition()/narrateReviewStep() -- no separate stepping path.
   // Advances only once whenSpeechIdle() reports the current move's
