@@ -624,6 +624,26 @@
          speaker and hide-board are all type="button", so they can't
          accidentally trigger a submit themselves. -->
     <form class="mic-compact" id="textForm">
+      <!-- OUR-156: both Resign buttons relocated here from .board-head,
+           directly left of the type-a-move pill. They share this one slot
+           rather than getting two -- lichessResignBtn and computerResignBtn
+           are mutually exclusive by mode (Lichess vs. computer), so at most
+           one is ever display:'' at a time; the other stays display:none
+           and takes no layout space, exactly as it did side-by-side in
+           board-head. Same ids, same click handlers (resignLichessGame()/
+           resignComputerGame()), same visibility-gating call sites
+           (untouched, still elsewhere in this file) -- only the position
+           moved, not the logic. -->
+      <button class="icon-btn mic-size" id="lichessResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+      </button>
+      <button class="icon-btn mic-size" id="computerResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+      </button>
       <!-- OUR-154: placeholder shortened from "Type a move" to an example
            move -- the field itself was already a full pill (border-radius:
            999px, see .mic-compact input[type=text] below), this just makes
@@ -899,53 +919,22 @@
         <!-- OUR-109: moved here from the Lichess connection panel (down
              under Game settings, OUR-90) so they're reachable without
              scrolling during an active game — same reasoning Hide board
-             and New puzzle already moved for. Same ids, same click
-             handlers (abortLichessGame()/resignLichessGame(), unchanged),
-             same show/hide-on-active-game toggling (every place that
-             already set lichessAbortBtn/lichessResignBtn.style.display —
-             game start, watch, AI success, leave/stop — still does,
-             untouched); only the position moved. Plain .btn, so they fall
-             back to the row's own 33.5px height (r87) exactly like Flip
-             board/Reset/Fullscreen, with no new CSS needed. No
-             confirmation dialog existed before this move either — checked
-             abortLichessGame()/resignLichessGame() directly rather than
-             assuming, and there's nothing to preserve beyond the plain
-             click handlers. -->
+             and New puzzle already moved for. Same id, same click handler
+             (abortLichessGame(), unchanged), same show/hide-on-active-game
+             toggling (every place that already set
+             lichessAbortBtn.style.display — game start, watch, AI success,
+             leave/stop — still does, untouched); only the position moved.
+             Plain .btn, so it falls back to the row's own 33.5px height
+             (r87) exactly like Reset. No confirmation dialog existed before
+             this move either — checked abortLichessGame() directly rather
+             than assuming, and there's nothing to preserve beyond the plain
+             click handler.
+             OUR-156: lichessResignBtn/computerResignBtn (the round icon
+             pair just below this comment in earlier revisions) moved out
+             of this row entirely, into <form id="textForm"> left of the
+             type-a-move pill -- see there for both buttons and the reasoning.
+             lichessAbortBtn stays here; it wasn't part of that move. -->
         <button class="btn" id="lichessAbortBtn" type="button" style="display:none">Abort game</button>
-        <!-- OUR-148: restyled as a round 48px icon button (flag glyph),
-             same set as New game/Flip board/Hide board/Fullscreen. Same id,
-             same click handler (resignLichessGame(), unchanged), same
-             style.display show/hide toggling everywhere below -- .icon-btn
-             already defaults to display:flex, so setting style.display=''
-             falls back to that exactly as it did for .btn's own default. -->
-        <button class="icon-btn mic-size" id="lichessResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
-          </svg>
-        </button>
-        <!-- OUR-112: local equivalent of lichessResignBtn for the internal
-             computer opponent — same plain .btn, same board-head placement,
-             visible only mid-game in mode==='computer' (see
-             updateComputerResignVisibility(), called from updateStatus() so
-             it tracks gameOver/mode on every render rather than needing its
-             own call site at each place either changes).
-             No local Abort button: Lichess's Abort/Resign split exists
-             because Lichess has real stakes an early cancel should dodge —
-             a rating hit, an opponent left waiting. A local game against the
-             internal engine has neither; "cancel before it's really
-             underway" is just what New game (already in the header) already
-             does, so a second button doing the same thing would be
-             redundant rather than a real second action. Flagged, not built. -->
-        <!-- OUR-148: same restyle as lichessResignBtn above, same flag
-             glyph, for visual consistency between the two Resign buttons
-             even though they trigger different underlying logic
-             (resignComputerGame() vs. resignLichessGame()). Same id, same
-             click handler, same style.display toggling. -->
-        <button class="icon-btn mic-size" id="computerResignBtn" type="button" style="display:none" aria-label="Resign" title="Resign">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
-          </svg>
-        </button>
         <!-- OUR-116: shown for any completed game (computer/two-player/
              online/Lichess), not just computer mode — see
              updateReviewButtonVisibility(), called from updateStatus()
@@ -4886,7 +4875,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r138 (OUR-154: Send icon, type-a-move pill+placeholder)';
+  const BUILD='v2-r139 (OUR-156: Resign relocated left of type-a-move)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
