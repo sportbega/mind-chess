@@ -146,6 +146,11 @@
   .review-evalbar{width:14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
   .review-evalbar-fill{width:100%;background:#f2f2f0;transition:height .2s ease}
   .review-board{flex:0 0 auto}
+  /* OUR-202: sits between .review-board-row and .review-eval-text in
+     source order -- flex:0 0 auto (not 100%) lets it size to its own
+     label rather than stretching the whole row width, same as
+     .review-board-row/.review-board just above. */
+  .review-perspective-btn{flex:0 0 auto}
   .review-eval-text{flex:1 1 100%;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
   .review-movelist{flex:1 1 260px;min-width:220px;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:2px}
   .review-move{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px;background:none;border:0;color:var(--text);text-align:left;width:100%}
@@ -706,6 +711,12 @@
           <div class="review-evalbar" id="reviewEvalBar" title="Evaluation, White's perspective"><div class="review-evalbar-fill" id="reviewEvalFill"></div></div>
           <div class="board-grid review-board" id="reviewBoardGrid" style="--board-max:420px"></div>
         </div>
+        <!-- OUR-202: defaults to whichever color the human played in this
+             game (see openReviewOverlay()), with this button flipping it
+             -- a pure re-render (showReviewPosition() re-signs the SAME
+             evalObj already computed for the current position, nothing
+             here re-analyzes anything). -->
+        <button type="button" class="btn review-perspective-btn" id="reviewPerspectiveBtn">Perspective: White</button>
         <div class="review-eval-text" id="reviewEvalText"></div>
         <div class="review-movelist" id="reviewMoveList"></div>
       </div>
@@ -2136,6 +2147,7 @@
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
         reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'),
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
+        reviewPerspectiveBtn=$('reviewPerspectiveBtn'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -4266,7 +4278,11 @@
     const eco=opening?opening[0]:null, opening_name=opening?opening[1]:null;
     const pgn=game.pgn();
     const endedAt=new Date().toISOString();
-    const level=(mode==='computer')?levelKey:null;
+    // OUR-203: a Lichess AI game now carries its own level through too
+    // (lichessState.aiLevel, set in playLichessAI()/openLichessStream())
+    // -- a real-opponent seek's lichessState.aiLevel is always null, so
+    // this only ever fires for the AI sub-mode, never a real game.
+    const level=(mode==='computer')?levelKey:(mode==='lichess'&&lichessState&&lichessState.aiLevel)?lichessState.aiLevel:null;
     const client_key=computeClientKey(mode,endedAt,pgn);
     // Always local first — the durable write, unconditionally, regardless
     // of mode or network state. Every mode used to skip this for online/
@@ -4695,7 +4711,15 @@
   // #reviewOverlay for why it's not the live boardGrid), a move list
   // with classification badges, and a simple eval bar/text.
   // ---------------------------------------------------------------
-  let reviewToken=0, reviewResult=null, reviewPositionIdx=0;
+  // OUR-202: defaults to whichever color the human actually played in
+  // THIS game (lastCompletedGame.humanColor, set in openReviewOverlay())
+  // rather than always 'w' -- a player who played Black no longer opens
+  // a review that reads every swing in their favor as a negative number.
+  // Purely a display choice: the underlying evalObj per position (from
+  // stockfishAnalyse(), side-to-move POV) is never recomputed when this
+  // flips, only re-signed/re-mirrored at render time in
+  // showReviewPosition()/formatEvalText().
+  let reviewToken=0, reviewResult=null, reviewPositionIdx=0, reviewPerspective='w';
   function renderReviewBoard(fen,flipped){
     reviewBoardGrid.innerHTML='';
     const probe=new Chess(); probe.load(fen);
@@ -4716,7 +4740,15 @@
   // report the exact same eval text as the on-screen review, from one
   // place, rather than a second hand-copied version silently drifting
   // from this one the next time either changes.
-  function formatEvalText(evalObj,fen){
+  // OUR-202: `perspective` defaults to 'w' so the TXT/PDF export call
+  // sites below (which never pass it) keep reading as White-canonical
+  // documents regardless of whatever the on-screen toggle is currently
+  // set to -- only showReviewPosition()'s own on-screen call passes
+  // reviewPerspective explicitly. Mate wording ("Mate in N (White)")
+  // stays absolute either way -- it already names which color is
+  // mating, a fact that doesn't change with viewing angle -- only the
+  // +/- sign on a plain centipawn score flips.
+  function formatEvalText(evalObj,fen,perspective){
     const stm=fenTurn(fen);
     if(!evalObj){
       // Stockfish has no score/bestmove to give at a checkmated (or
@@ -4727,7 +4759,8 @@
     }
     if(evalObj.kind==='mate') return 'Mate in '+Math.abs(evalObj.value)+' ('+(signedCpFromWhite(evalObj,stm)>0?'White':'Black')+')';
     const cpWhite=signedCpFromWhite(evalObj,stm);
-    return (cpWhite>=0?'+':'')+(cpWhite/100).toFixed(2);
+    const cp=perspective==='b'?-cpWhite:cpWhite;
+    return (cp>=0?'+':'')+(cp/100).toFixed(2);
   }
   // Renders the position at reviewResult.perMove/fens index `idx` (0 =
   // starting position, i = the position after move i for i in
@@ -4739,11 +4772,31 @@
     renderReviewBoard(fen,isBoardFlipped());
     const evalObj=reviewResult.evals[idx];
     const wpWhite=evalObj?winPercentFromCpWhite(signedCpFromWhite(evalObj,fenTurn(fen))):50;
-    reviewEvalFill.style.height=Math.max(0,Math.min(100,wpWhite))+'%';
-    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+formatEvalText(evalObj,fen);
+    // OUR-202: the bar's own fill still only ever grows from the bottom
+    // (.review-evalbar-fill's column-reverse) -- mirroring wpWhite into
+    // wpBlack when Black is the selected perspective is what makes that
+    // same growth direction mean "more advantage for whichever side is
+    // currently selected" instead of always "more White advantage".
+    const wp=reviewPerspective==='b'?100-wpWhite:wpWhite;
+    reviewEvalFill.style.height=Math.max(0,Math.min(100,wp))+'%';
+    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+formatEvalText(evalObj,fen,reviewPerspective);
     const items=reviewMoveList.querySelectorAll('.review-move');
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
   }
+  // OUR-202: keeps the button's own label and the bar's title attribute
+  // in sync with reviewPerspective -- called once from openReviewOverlay()
+  // (setting the default) and once from the button's own click handler
+  // below (flipping it).
+  function updateReviewPerspectiveUI(){
+    const label=reviewPerspective==='b'?'Black':'White';
+    reviewPerspectiveBtn.textContent='Perspective: '+label;
+    reviewEvalBar.title='Evaluation, '+label+"'s perspective";
+  }
+  reviewPerspectiveBtn.addEventListener('click',()=>{
+    reviewPerspective=reviewPerspective==='b'?'w':'b';
+    updateReviewPerspectiveUI();
+    showReviewPosition(reviewPositionIdx);
+  });
   function classificationLabel(c){
     return {best:'Best',excellent:'Excellent',good:'Good',inaccuracy:'Inaccuracy',mistake:'Mistake',blunder:'Blunder'}[c]||'';
   }
@@ -4778,6 +4831,13 @@
   function openReviewOverlay(){
     if(!lastCompletedGame) return;
     const descriptor=lastCompletedGame;
+    // OUR-202: defaults the eval bar/text to whichever color the human
+    // played in THIS specific game, not always White -- humanColor is
+    // absent for a puzzle's own descriptor shape but review is never
+    // reachable from puzzle mode, so the 'w' fallback here is just
+    // defensive, not an expected path.
+    reviewPerspective=descriptor.humanColor||'w';
+    updateReviewPerspectiveUI();
     reviewToken++;
     const myToken=reviewToken;
     reviewOverlay.hidden=false;
@@ -4837,10 +4897,14 @@
     const entry=loadGamesLog().find(e=>e.client_key===d.client_key)||null;
     const MODE_LABELS={computer:'Vs. computer','two-player':'Two-player (local)',online:'Online multiplayer',lichess:'Lichess'};
     const modeLabel=MODE_LABELS[d.mode]||d.mode;
+    // OUR-203: d.level now carries the Lichess AI's own level too (see
+    // onGameEnd()) -- a real-opponent game has no level, so this only
+    // ever adds "AI Level N" for the AI sub-mode, and reads exactly the
+    // same plain "Lichess" it always did for a real one.
     const opponent=
       d.mode==='computer'?'Stockfish — '+((LEVELS[d.level]||{}).name||('Level '+d.level))
       :d.mode==='two-player'?'Local two-player'
-      :d.mode==='lichess'?'Lichess'
+      :d.mode==='lichess'?(d.level?'Lichess AI Level '+d.level:'Lichess')
       :d.mode==='online'?'Online opponent'
       :'—';
     const humanColorLabel=d.humanColor==='w'?'White':'Black';
@@ -5530,7 +5594,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r163 (OUR-201: fix real-opponent dropdown overflow, hide Level for all non-computer modes)';
+  const BUILD='v2-r164 (OUR-203: Game Review perspective toggle, capture/show Lichess AI level)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9613,11 +9677,16 @@
     },delay);
   }
 
-  async function openLichessStream(gameId,resumeState){
+  // OUR-203: aiLevel is undefined for every caller except playLichessAI()
+  // itself (a real-opponent seek, or a resumed/reconnected game, has no
+  // engine level to carry) -- stored on lichessState so onGameEnd() can
+  // read it back once the game finishes, the same way levelKey already
+  // carries computer mode's own level through to that same point.
+  async function openLichessStream(gameId,resumeState,aiLevel){
     const controller=new AbortController();
     lichessState=resumeState
       ?Object.assign({},resumeState,{gameId,streamController:controller,lastEventAt:Date.now()})
-      :{gameId,color:null,moveCount:0,wtime:0,btime:0,status:'started',
+      :{gameId,color:null,moveCount:0,wtime:0,btime:0,status:'started',aiLevel:aiLevel||null,
         streamController:controller,lastEventAt:Date.now()};
     lichessNote(resumeState?'Reconnecting…':'Connecting…');
     try{
@@ -9894,9 +9963,14 @@
     // needed when the two selects were shared is gone with it, since
     // there's no longer a way to land here with cfg.days set.
     const cfg=currentLichessAiTimeConfig();
+    // OUR-203: read once, upfront -- the select could in principle change
+    // before the fetch below resolves, and this is the level actually
+    // requested, not whatever happens to be showing once the request
+    // completes.
+    const aiLevel=lichessAiLevelSelect.value;
     try{ await ensureLichessUsername(); }
     catch(err){ lichessNote('Could not connect: '+(err.message||'check your token.')); return; }
-    const body=new URLSearchParams({level:lichessAiLevelSelect.value,
+    const body=new URLSearchParams({level:aiLevel,
       'clock.limit':String(cfg.time*60),'clock.increment':String(cfg.increment)});
     lichessNote('Starting a game against the Lichess computer…');
     try{
@@ -9908,7 +9982,7 @@
       // 0, but let the stream's own gameFull event set it rather than
       // assuming here too, for one consistent source of truth.
       lichessResignBtn.style.display='';
-      openLichessStream(g.id);
+      openLichessStream(g.id,undefined,aiLevel);
     }catch(err){
       lichessNote('Could not start a game: '+(err.message||'try again.'));
     }
