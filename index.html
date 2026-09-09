@@ -293,7 +293,14 @@
      had dropped this to 70px to fit a 7th control (the narration select)
      on the row; that control moved to board-head in OUR-107, so the row
      is back to the 6 controls this floor was originally sized for. */
-  .mic-compact input[type=text]{flex:0 1 150px;min-width:90px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
+  /* OUR-164: 150px/90px (OUR-86 onward) left the row 16px short of fitting
+     Log out (OUR-162's relocation into this same row) on one line at the
+     default board size -- measured directly (forced nowrap, compared
+     scrollWidth to the row's actual available width) rather than guessed.
+     130px/80px frees 20px, a small buffer past that measured 16px rather
+     than the exact minimum, and still leaves comfortable room for the
+     7-character "e.g. e4" placeholder (OUR-154) at this font size. */
+  .mic-compact input[type=text]{flex:0 1 130px;min-width:80px;height:48px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 14px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;text-align:center}
   .mic-compact input[type=text]::placeholder{color:var(--text-dim)}
   /* OUR-95: Send and Hide board used to be forced to 48px to match the
      mic/speaker circles, but that made every button in the header row
@@ -5035,7 +5042,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r142 (OUR-162: Voice settings popover, Log out+identity relocated)';
+  const BUILD='v2-r143 (OUR-164: shrink type-a-move to fit Log out)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
