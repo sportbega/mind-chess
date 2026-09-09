@@ -179,7 +179,14 @@
   }
   .promo-choice:hover, .promo-choice:focus-visible{border-color:var(--accent); outline:none}
 
-  header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  /* OUR-172: column now, not a row that let the title and the controls
+     sit side by side (and only stacked once wrapping forced it at
+     narrower widths) -- title gets its own dedicated top line
+     deterministically, at any width, not as a wrap side effect.
+     #identityLine needed no change for this: it's already the title
+     div's own third child (see below), so it stays directly under the
+     title regardless of how <header> itself stacks its two children. */
+  header{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
   .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2);margin:0 0 4px}
   h1{font-family:'Newsreader',serif;font-weight:500;font-style:italic;font-size:clamp(28px,5vw,38px);margin:0}
   .status{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);margin-top:6px}
@@ -5161,7 +5168,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r146 (OUR-170: header split into icons row + move row)';
+  const BUILD='v2-r147 (OUR-172: title on its own dedicated line)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
