@@ -207,7 +207,14 @@
      and a class named "volume" applying to a verbosity control read
      wrong. Same CSS, same behavior, just shared instead of duplicated. */
   .speaker-wrap,.mic-btn-wrap{position:relative;display:inline-flex}
-  .caret-btn{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;
+  /* OUR-152: z-index:2 -- needed on .mic-btn-wrap specifically: #micBtn
+     carries its own z-index:1 (below, kept so it sits above the sibling
+     .ring pulse elements in #micWrap), and since this caret is now
+     #micBtn's sibling inside .mic-btn-wrap's own stacking context, an
+     unset z-index here lost to that 1 and rendered the caret partly
+     behind the mic button. 2 beats it; harmless on .speaker-wrap, which
+     has no competing z-index at all. */
+  .caret-btn{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;z-index:2;
     background:var(--panel-2);border:1px solid var(--line);color:var(--accent);padding:0;
     display:flex;align-items:center;justify-content:center;cursor:pointer}
   .caret-btn svg{width:10px;height:10px}
@@ -4861,7 +4868,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r136 (OUR-150: mic verbosity popover, Fullscreen to header)';
+  const BUILD='v2-r137 (OUR-152: fix mic verbosity caret stacking)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
