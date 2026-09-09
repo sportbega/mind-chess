@@ -4817,16 +4817,17 @@
   // report the exact same eval text as the on-screen review, from one
   // place, rather than a second hand-copied version silently drifting
   // from this one the next time either changes.
-  // OUR-208: `perspective` defaults to 'w' only as a fallback for a
-  // caller that omits it entirely -- every real call site now passes
-  // one explicitly: showReviewPosition() passes the live
-  // reviewPerspective toggle, and both exports pass
-  // reviewGameMeta().perspective (the player's own color, per Adni's
-  // follow-up that "always White" was the wrong export default -- see
-  // that function's own comment). Mate wording ("Mate in N (White)")
-  // stays absolute either way -- it already names which color is
-  // mating, a fact that doesn't change with viewing angle -- only the
-  // +/- sign on a plain centipawn score flips.
+  // OUR-208/OUR-212: `perspective` defaults to 'w' only as a fallback
+  // for a caller that omits it entirely -- every real call site now
+  // passes one explicitly: showReviewPosition() passes the live
+  // reviewPerspective toggle directly, and both exports pass
+  // reviewGameMeta().perspective, which OUR-212 made read that exact
+  // same live toggle variable too (not an independent re-derivation --
+  // see that function's own comment for why that was the actual bug).
+  // Mate wording ("Mate in N (White)") stays absolute either way -- it
+  // already names which color is mating, a fact that doesn't change
+  // with viewing angle -- only the +/- sign on a plain centipawn score
+  // flips.
   function formatEvalText(evalObj,fen,perspective){
     const stm=fenTurn(fen);
     if(!evalObj){
@@ -5037,11 +5038,18 @@
     const wParen=reviewPlayerLabel('w',d), bParen=reviewPlayerLabel('b',d);
     const whiteLabel='White'+(wParen?' ('+wParen+')':'');
     const blackLabel='Black'+(bParen?' ('+bParen+')':'');
-    // OUR-203: exports default to the player's OWN perspective now, same
-    // as the on-screen toggle's own default (see openReviewOverlay()) --
-    // deliberately not "always White" the way OUR-203 first shipped
-    // exports, per Adni's follow-up that this was the wrong default.
-    const perspective=d.humanColor||'w';
+    // OUR-212: reads the live reviewPerspective toggle directly, not a
+    // fresh d.humanColor re-derivation -- OUR-208's own fix computed
+    // "the player's own color" independently every time, which gave the
+    // right DEFAULT but meant toggling to the other perspective on
+    // screen never actually reached export at all (both TXT and PDF
+    // read reviewGameMeta().perspective, so both had the exact same
+    // gap). reviewPerspective already starts at d.humanColor||'w' the
+    // moment Review opens (see openReviewOverlay()) and only changes
+    // when the toggle button is clicked, so reading it directly here
+    // preserves OUR-208's own default AND makes export track whatever
+    // is currently selected on screen.
+    const perspective=reviewPerspective;
     return {modeLabel,opponent,humanColorLabel,resultLabel,date,whiteLabel,blackLabel,perspective,
       accW:reviewResult.accuracy.w,accB:reviewResult.accuracy.b};
   }
@@ -5174,9 +5182,11 @@
     // A chart failure (canvas/addImage throwing) shouldn't cost the rest
     // of the document -- the move list below is the part that actually
     // matters most, so this stays isolated.
-    // OUR-208: meta.perspective (the player's own color, same default as
-    // the on-screen toggle) instead of a hardcoded White POV -- both the
-    // image itself and the caption naming it now agree with each other.
+    // OUR-208/OUR-212: meta.perspective (the live reviewPerspective
+    // toggle, per OUR-212's own fix) instead of a hardcoded White POV --
+    // both the image itself and the caption naming it now agree with
+    // each other, and both track whatever the on-screen toggle is
+    // actually set to at export time.
     try{
       const imgData=buildEvalChartImage(meta.perspective);
       const chartW=pageW-marginX*2, chartH=chartW*(200/760);
@@ -5733,7 +5743,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r168 (OUR-210: fix Lichess clock backward-jump bug)';
+  const BUILD='v2-r169 (OUR-212: exports track the live perspective toggle)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
