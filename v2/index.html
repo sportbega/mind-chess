@@ -720,6 +720,77 @@
          here is type="button", so none of them can accidentally trigger
          a submit even without a wrapping <form> anymore. -->
       <div class="mic-compact-icons">
+      <!-- OUR-190: Hide/Show board moved to lead this row, ahead of New
+           game -- same id, same click handler and caret-popover behavior
+           (OUR-143/OUR-182/OUR-188, all unchanged), only its position
+           changed. -->
+      <!-- Moved here from .board-head (OUR-90): the button that reveals a
+           hidden board used to live inside the row that's part of what's
+           hidden, reachable only by scrolling to (and half-seeing) the
+           very thing it's meant to unhide. The header is visible
+           regardless of board state, same reasoning as the mic living
+           here since r73.
+           OUR-142: OUR-95 kept this as a text pill specifically because
+           its label had to change between Hide/Reveal, unlike New game/
+           Flip board's single fixed meaning -- an icon-only button had
+           nowhere to put that. The eye / eye-slash swap (same convention
+           as a password-visibility toggle) carries that exact same
+           information visually instead, via updateBoardToggleIcon()
+           below (mirrors updateSpeakerBtn()'s own show/hide-two-paths
+           pattern exactly), so the text-pill exception no longer applies
+           and this can join the round icon-button set too. aria-label/
+           title carry what the visible text used to say, for anyone not
+           reading the icon. -->
+      <!-- OUR-182: caret-popover opacity slider added, same
+           .caret-btn/.popover-panel pattern as the speaker's volume
+           popover (OUR-144/OUR-145) and the mic's verbosity popover
+           (OUR-150) -- wrapped in its own .board-toggle-wrap for the
+           same reason those two needed their own wrappers (independent
+           position:relative anchor for the caret, not tied to this
+           button's own layout). #boardToggleBtn's own click (binary
+           hide/show, OUR-143) is completely untouched -- the caret is a
+           separate button, same click/popover separation OUR-144
+           established. Investigated before building: the Appearance
+           panel's existing Transparency slider (r67/OUR-161) fades
+           #boardOuter's own opacity with a deliberate 40% floor --
+           "aesthetic only, not meant to go fully invisible." This new
+           slider is a genuinely different mechanism controlling a
+           genuinely different element: #boardVeil's own opacity (the
+           opaque covering panel #boardHidden shows/hides, not the board
+           itself), with no floor, because going all the way to fully
+           see-through IS the point here. The two never fight -- one
+           dims the board's own pixels, the other fades the veil that
+           sits on top of them, and #boardHidden's binary click (see
+           setBoardVeilOpacity(0) there) always snaps this back to fully
+           opaque first, so a fresh "Hide" click never lands ambiguous
+           just because the slider was left partway from an earlier
+           session. -->
+      <div class="board-toggle-wrap">
+        <button class="icon-btn mic-size" id="boardToggleBtn" type="button" aria-label="Hide board" title="Hide board">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <g class="board-eye-open">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </g>
+            <g class="board-eye-closed" style="display:none">
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-3.35 3.35a3 3 0 1 1-4.24-4.24"/>
+              <path d="M6.1 6.1C3.13 8.14 1 12 1 12s4 7 11 7a10.94 10.94 0 0 0 5.94-1.94"/>
+              <path d="M1 1l22 22"/>
+            </g>
+          </svg>
+        </button>
+        <button class="caret-btn" id="boardOpacityCaretBtn" type="button" aria-label="Board opacity" title="Board opacity — how much the board shows through while hidden" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 8l5 5 5-5"/>
+          </svg>
+        </button>
+        <div class="popover-panel" id="boardOpacityPopover" hidden>
+          <div class="field">
+            <label for="boardOpacityRange">Board opacity</label>
+            <input type="range" id="boardOpacityRange" min="0" max="100" step="5" value="0" />
+          </div>
+        </div>
+      </div>
       <!-- OUR-181: New game moved to lead this row, ahead of mic -- same
            id, same click handler (newGameBtn.addEventListener below),
            only its position changed. -->
@@ -851,73 +922,6 @@
           <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
         </svg>
       </button>
-      <!-- Moved here from .board-head (OUR-90): the button that reveals a
-           hidden board used to live inside the row that's part of what's
-           hidden, reachable only by scrolling to (and half-seeing) the
-           very thing it's meant to unhide. The header is visible
-           regardless of board state, same reasoning as the mic living
-           here since r73.
-           OUR-142: OUR-95 kept this as a text pill specifically because
-           its label had to change between Hide/Reveal, unlike New game/
-           Flip board's single fixed meaning -- an icon-only button had
-           nowhere to put that. The eye / eye-slash swap (same convention
-           as a password-visibility toggle) carries that exact same
-           information visually instead, via updateBoardToggleIcon()
-           below (mirrors updateSpeakerBtn()'s own show/hide-two-paths
-           pattern exactly), so the text-pill exception no longer applies
-           and this can join the round icon-button set too. aria-label/
-           title carry what the visible text used to say, for anyone not
-           reading the icon. -->
-      <!-- OUR-182: caret-popover opacity slider added, same
-           .caret-btn/.popover-panel pattern as the speaker's volume
-           popover (OUR-144/OUR-145) and the mic's verbosity popover
-           (OUR-150) -- wrapped in its own .board-toggle-wrap for the
-           same reason those two needed their own wrappers (independent
-           position:relative anchor for the caret, not tied to this
-           button's own layout). #boardToggleBtn's own click (binary
-           hide/show, OUR-143) is completely untouched -- the caret is a
-           separate button, same click/popover separation OUR-144
-           established. Investigated before building: the Appearance
-           panel's existing Transparency slider (r67/OUR-161) fades
-           #boardOuter's own opacity with a deliberate 40% floor --
-           "aesthetic only, not meant to go fully invisible." This new
-           slider is a genuinely different mechanism controlling a
-           genuinely different element: #boardVeil's own opacity (the
-           opaque covering panel #boardHidden shows/hides, not the board
-           itself), with no floor, because going all the way to fully
-           see-through IS the point here. The two never fight -- one
-           dims the board's own pixels, the other fades the veil that
-           sits on top of them, and #boardHidden's binary click (see
-           setBoardVeilOpacity(0) there) always snaps this back to fully
-           opaque first, so a fresh "Hide" click never lands ambiguous
-           just because the slider was left partway from an earlier
-           session. -->
-      <div class="board-toggle-wrap">
-        <button class="icon-btn mic-size" id="boardToggleBtn" type="button" aria-label="Hide board" title="Hide board">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <g class="board-eye-open">
-              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </g>
-            <g class="board-eye-closed" style="display:none">
-              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-3.35 3.35a3 3 0 1 1-4.24-4.24"/>
-              <path d="M6.1 6.1C3.13 8.14 1 12 1 12s4 7 11 7a10.94 10.94 0 0 0 5.94-1.94"/>
-              <path d="M1 1l22 22"/>
-            </g>
-          </svg>
-        </button>
-        <button class="caret-btn" id="boardOpacityCaretBtn" type="button" aria-label="Board opacity" title="Board opacity — how much the board shows through while hidden" aria-expanded="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 8l5 5 5-5"/>
-          </svg>
-        </button>
-        <div class="popover-panel" id="boardOpacityPopover" hidden>
-          <div class="field">
-            <label for="boardOpacityRange">Board opacity</label>
-            <input type="range" id="boardOpacityRange" min="0" max="100" step="5" value="0" />
-          </div>
-        </div>
-      </div>
       <!-- OUR-162: Voice settings, restyled from its old collapsible
            <details> section into a round icon button, same
            .settings-wrap/.popover-panel pattern as Game settings/
@@ -5359,7 +5363,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r155 (OUR-188: eased board-opacity slider curve)';
+  const BUILD='v2-r156 (OUR-190: Hide/Show board leads the icon row)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
