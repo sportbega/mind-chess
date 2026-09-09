@@ -3324,6 +3324,28 @@
     const el=gridEl.querySelector('.sq[data-square="'+fromSq+'"] .piece-glyph');
     return el?el.getBoundingClientRect():null;
   }
+  // OUR-220: a piece that goes visually missing after every mouse move was
+  // reported live -- traced to this function trusting requestAnimationFrame
+  // unconditionally for the "commit the offset, then animate it away" step.
+  // rAF does not fire at all in a backgrounded/hidden tab (confirmed in the
+  // dev sandbox itself: document.hidden was true and a bare rAF call never
+  // returned even after several seconds), and a real user's tab can end up
+  // in the same state -- a background window, a minimized browser, certain
+  // power-saving/throttling behavior. When that happens the glyph is left
+  // stuck exactly where it was set two lines below (offset by a full
+  // square, transition:none) with nothing left to ever clear it, which
+  // reads as "the piece vanished" or "didn't move" even though the actual
+  // game state updated correctly underneath. requestAnimationFrame stays
+  // the primary path (it is the one that produces the actual slide most of
+  // the time), but a setTimeout fallback races it: whichever fires first
+  // wins and the other becomes a no-op, so the piece is GUARANTEED to end
+  // up at rest in the right place within SLIDE_FALLBACK_MS even if the
+  // browser never schedules a frame at all. A second, harder timeout
+  // forces the transform/transition back to nothing regardless of whether
+  // the CSS transition's own transitionend ever fires, for the same reason
+  // -- no single browser callback is trusted alone to be the only thing
+  // standing between a move and a permanently misplaced piece.
+  const SLIDE_FALLBACK_MS=400;
   function playSlideAnimation(gridEl,toSq,originRect){
     if(!originRect) return;
     const el=gridEl.querySelector('.sq[data-square="'+toSq+'"] .piece-glyph');
@@ -3334,11 +3356,16 @@
     el.style.transition='none';
     el.style.transform='translate('+dx+'px,'+dy+'px)';
     el.getBoundingClientRect();   // force layout so the line above is committed before the next frame clears it
-    requestAnimationFrame(()=>{
+    let settled=false;
+    const settle=()=>{
+      if(settled) return;
+      settled=true;
       el.style.transition='transform '+SLIDE_MS+'ms ease';
       el.style.transform='';
-      el.addEventListener('transitionend',()=>{ el.style.transition=''; el.style.transform=''; },{once:true});
-    });
+      setTimeout(()=>{ el.style.transition=''; el.style.transform=''; },SLIDE_MS+80);
+    };
+    requestAnimationFrame(settle);
+    setTimeout(settle,SLIDE_FALLBACK_MS);
   }
   // Castling moves two pieces at once (king + rook); every other move is a
   // single {from,to} pair. Shared by the live board and review's own
@@ -6259,7 +6286,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r171 (OUR-218/219: varied commentary phrasing, piece slide animation, board hover highlights)';
+  const BUILD='v2-r172 (OUR-220: fix piece slide animation getting stuck when requestAnimationFrame never fires)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
