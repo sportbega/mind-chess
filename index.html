@@ -351,7 +351,15 @@
   .icon-btn.mic-size{width:48px;height:48px}
   .icon-btn.mic-size svg{width:20px;height:20px}
   .icon-btn.muted{color:var(--text-dim)}
-  .mic-wrap{position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  /* OUR-192: margin:0 -6px cancels out the 6px-per-side the ripple rings
+     need (60px box around a 48px button) -- every other icon in this row
+     is a plain 48px box with no such inset, so without this the flex
+     gap's own uniform 10px looked 16px on both sides of the mic
+     specifically (10px gap + the 6px the mic-wrap box adds), visibly
+     uneven next to every other pair. The 60x60 box itself, and the
+     rings' own full range inside it, are untouched -- only where the box
+     sits relative to its flex siblings moved. */
+  .mic-wrap{position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 -6px}
   .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--accent-2);opacity:0;transform:scale(.6)}
   .mic-wrap.listening .ring{animation:ripple 1.6s ease-out infinite}
   .mic-wrap.listening .ring:nth-child(2){animation-delay:.4s}
@@ -413,18 +421,12 @@
      simple rather than left implying a two-item layout that no longer
      exists. */
   .board-head{display:flex;align-items:center;margin-bottom:10px}
-  /* OUR-150 removed this rule when #verbositySelect (its only user at the
-     time) moved into a popover on the mic button. OUR-158 brings it back:
-     Coach/Tips relocate here from Game settings as plain <select> elements
-     (see .board-head-field below), so the row needs the height match
-     again. */
-  .board-head select{height:33.5px;padding:0 8px}
-  /* OUR-158: wraps each of Coach/Tips in a label+select pair sized to sit
-     comfortably next to Reset/the size slider -- this row has no spare
-     height for the field-grid's stacked label-above-select layout used
-     elsewhere, so the label sits inline instead, plain text rather than
-     the small-caps .field label treatment. */
-  .board-head-field{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim)}
+  /* OUR-192/OUR-192: both the select height-match rule and .board-head-field
+     itself (which lived here from OUR-158 onward for Coach/Tips/Board/
+     Pieces) are gone -- all four moved into popovers in the below-board
+     row, and nothing in .board-head is a <select> or uses that class
+     anymore. Same "verbositySelect all over again" situation OUR-150
+     already hit once for this exact rule. */
   .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
   /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
      enough that a drag felt "chunky" independent of anything r72/r77 fixed,
@@ -512,12 +514,10 @@
      so this rule can actually win the cascade — an inline style always
      beats a stylesheet rule regardless of specificity, which is exactly
      what silently defeated an earlier :has()-based version of this line. */
-  .app.fullscreen-active .board-head .board-size-field,
-  /* OUR-158: Coach/Tips are settings, same category #verbositySelect was
-     in this list for before it moved to a mic popover -- hidden here for
-     the same reason, decluttering fullscreen down to clock/turn(/New
-     puzzle/Abort/Resign/Review), not because anything about them changed. */
-  .app.fullscreen-active .board-head .board-head-field{display:none}
+  /* OUR-192/OUR-192: .board-head-field's own entry here is gone -- same
+     "moved out, selector now dead" situation as #flipBoardBtn's own
+     removal from this list back in OUR-140. */
+  .app.fullscreen-active .board-head .board-size-field{display:none}
   .app.fullscreen-active .board-head{justify-content:center;gap:14px}
   .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
   .app.fullscreen-active .exit-fullscreen-btn{display:block}
@@ -937,15 +937,23 @@
            three checkboxes, Test voice) is here with its exact id and
            handler, unmoved -- position/presentation only. -->
       <div class="settings-wrap">
+        <!-- OUR-192: enlarged via a centered transform wrapping both
+           existing sub-groups together, same technique as OUR-179's own
+           fix and Report a problem's just above -- the mic+gear
+           composition and its two glyphs' relative positions are
+           unchanged, only scaled up as one unit around the viewBox
+           center. -->
         <button class="icon-btn mic-size" id="voiceSettingsBtn" type="button" aria-label="Voice settings" title="Voice settings" aria-expanded="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <g transform="translate(-3,-2) scale(0.8)">
-              <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
-              <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
-            </g>
-            <g transform="translate(10,10) scale(0.42)" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            <g transform="translate(12,12) scale(1.2) translate(-12,-12)">
+              <g transform="translate(-3,-2) scale(0.8)">
+                <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
+                <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
+              </g>
+              <g transform="translate(10,10) scale(0.42)" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </g>
             </g>
           </svg>
         </button>
@@ -1258,52 +1266,12 @@
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
         </div>
-        <!-- OUR-160: Board/Piece theme relocated here from the old
-             Appearance <details> section, grouped with Coach/Tips (OUR-158)
-             next to Reset as asked. Same ids, same change handler
-             (applyTheme(), unchanged), same persistence -- position and
-             presentation only. -->
-        <label class="board-head-field">Board
-          <select id="boardThemeSelect">
-            <option value="wood" selected>Walnut</option>
-            <option value="green">Tournament Green</option>
-            <option value="blue">Ocean Blue</option>
-            <option value="midnight">Midnight</option>
-            <option value="rose">Rosewood</option>
-            <option value="ocean">Ocean Teal</option>
-            <option value="dusk">Dusk</option>
-            <option value="tournament-wood">Tournament Wood</option>
-            <option value="darker">Blackout</option>
-          </select>
-        </label>
-        <label class="board-head-field">Pieces
-          <select id="pieceThemeSelect">
-            <option value="classic" selected>Classic</option>
-            <option value="ivory">Ivory &amp; Onyx</option>
-            <option value="midnight">Midnight</option>
-            <option value="gold">Gold</option>
-            <option value="slate">Slate</option>
-            <option value="ember">Ember</option>
-          </select>
-        </label>
-        <!-- OUR-158: Coach/Tips relocated here from the old Game settings
-             <details> section, next to Reset as asked. Same ids, same
-             change handlers (unchanged, still wired further down), same
-             persistence -- position and (plain-select, no field-grid
-             label-above) presentation only. -->
-        <label class="board-head-field">Coach
-          <select id="coachSelect">
-            <option value="off">Off</option>
-            <option value="hints" selected>Hints</option>
-            <option value="full">Full</option>
-          </select>
-        </label>
-        <label class="board-head-field">Tips
-          <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
-            <option value="on" selected>On</option>
-            <option value="off">Off</option>
-          </select>
-        </label>
+        <!-- OUR-192: Board/Piece theme moved out of this row entirely,
+             into a popover on a new round icon in the below-board row --
+             see there. -->
+        <!-- OUR-192: Coach/Tips moved out of this row entirely, into a
+             popover on a new round icon in the below-board row -- see
+             there. -->
         <!-- OUR-150: #fullscreenBtn moved out to <header> (right after the
              speaker's volume popover), and #verbositySelect folded into a
              popover on the mic button -- neither lives in this row anymore.
@@ -1456,16 +1424,100 @@
          next to Transcript as asked. Same id, same click handler
          (openReport(), unchanged), same modal it always opened (see
          #reportPanel, OUR-168) -- position only. -->
+    <!-- OUR-192: enlarged 30% via a centered transform, same technique
+         OUR-179 used for Voice commands' own glyph -- the outer 48px
+         button/circle is untouched, only the drawn content inside its
+         24x24 viewBox scaled up around the center. -->
     <button class="icon-btn mic-size" id="reportBtn" type="button" aria-label="Report a problem" title="Report a problem — copy a diagnostic report you can paste into a bug report.">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 9V7a3 3 0 1 1 6 0v2"/>
-        <rect x="7" y="9" width="10" height="10" rx="5"/>
-        <path d="M12 9v10"/>
-        <path d="M4 12h3"/><path d="M17 12h3"/>
-        <path d="M4 17l3-2"/><path d="M17 15l3 2"/>
-        <path d="M4 8l3 2"/><path d="M17 10l3-2"/>
+        <g transform="translate(12,12) scale(1.3) translate(-12,-12)">
+          <path d="M9 9V7a3 3 0 1 1 6 0v2"/>
+          <rect x="7" y="9" width="10" height="10" rx="5"/>
+          <path d="M12 9v10"/>
+          <path d="M4 12h3"/><path d="M17 12h3"/>
+          <path d="M4 17l3-2"/><path d="M17 15l3 2"/>
+          <path d="M4 8l3 2"/><path d="M17 10l3-2"/>
+        </g>
       </svg>
     </button>
+    <!-- OUR-192: Board &amp; Pieces theme, restyled from board-head selects
+         into a round icon (a knight standing on a small checkered square --
+         flagged by Adni as a first attempt, easy to revise once seen live)
+         opening a popover with both selects, same pattern as Game
+         settings/Appearance. Same ids, same change handler (applyTheme(),
+         unchanged), same persistence -- position/presentation only. -->
+    <div class="settings-wrap">
+      <button class="icon-btn mic-size" id="boardThemeBtn" type="button" aria-label="Board &amp; pieces" title="Board &amp; pieces">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 17.5c0-1.7.4-2.4.4-4 0-.8-.9-1.3-1.4-2.6-.5-1.5.3-4.9 3-4.9 1.6 0 2.5 1 2.9 2 .3.9-.1 1.6-.7 2.1 1 .4 1.8 1.4 1.8 2.7 0 1.6-.6 2.6-.6 4.7"/>
+          <circle cx="12.3" cy="8.4" r=".5" fill="currentColor" stroke="none"/>
+          <rect x="5.5" y="17.5" width="13" height="3.5" rx=".6"/>
+          <path d="M12 17.5v3.5"/><path d="M5.5 19.25h13"/>
+        </svg>
+      </button>
+      <div class="popover-panel wide" id="boardThemePopover" hidden>
+        <div class="popover-fields">
+          <div class="field">
+            <label for="boardThemeSelect">Board</label>
+            <select id="boardThemeSelect">
+              <option value="wood" selected>Walnut</option>
+              <option value="green">Tournament Green</option>
+              <option value="blue">Ocean Blue</option>
+              <option value="midnight">Midnight</option>
+              <option value="rose">Rosewood</option>
+              <option value="ocean">Ocean Teal</option>
+              <option value="dusk">Dusk</option>
+              <option value="tournament-wood">Tournament Wood</option>
+              <option value="darker">Blackout</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="pieceThemeSelect">Pieces</label>
+            <select id="pieceThemeSelect">
+              <option value="classic" selected>Classic</option>
+              <option value="ivory">Ivory &amp; Onyx</option>
+              <option value="midnight">Midnight</option>
+              <option value="gold">Gold</option>
+              <option value="slate">Slate</option>
+              <option value="ember">Ember</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- OUR-192: Coach &amp; Tips, restyled from board-head selects into a
+         round icon (a whistle -- also flagged as a first attempt) opening
+         a popover with both selects. Same ids, same change handlers
+         (unchanged, still wired further down), same persistence --
+         position/presentation only. -->
+    <div class="settings-wrap">
+      <button class="icon-btn mic-size" id="coachTipsBtn" type="button" aria-label="Coach &amp; tips" title="Coach &amp; tips">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.5 12a4.5 4.5 0 0 1 4.5-4.5h9a5 5 0 1 1 0 10H8a4.5 4.5 0 0 1-4.5-4.5Z"/>
+          <circle cx="7.5" cy="12" r="1.6"/>
+          <path d="M16.5 7.5v-1a2 2 0 1 1 4 0"/>
+        </svg>
+      </button>
+      <div class="popover-panel wide" id="coachTipsPopover" hidden>
+        <div class="popover-fields">
+          <div class="field">
+            <label for="coachSelect">Coach</label>
+            <select id="coachSelect">
+              <option value="off">Off</option>
+              <option value="hints" selected>Hints</option>
+              <option value="full">Full</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="tipsSelect">Tips</label>
+            <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
+              <option value="on" selected>On</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
   </form>
 
   <div class="modal-overlay" id="statsDetails" hidden>
@@ -1939,6 +1991,8 @@
         textForm=$('textForm'), textInput=$('textInput'), boardGrid=$('boardGrid'),
         ranksEl=$('ranks'), filesEl=$('files'), boardVeil=$('boardVeil'), checkAlert=$('checkAlert'),
         boardOpacityCaretBtn=$('boardOpacityCaretBtn'), boardOpacityPopover=$('boardOpacityPopover'),
+        boardThemeBtn=$('boardThemeBtn'), boardThemePopover=$('boardThemePopover'),
+        coachTipsBtn=$('coachTipsBtn'), coachTipsPopover=$('coachTipsPopover'),
         boardOpacityRange=$('boardOpacityRange'),
         promotionPicker=$('promotionPicker'), promoChoices=[...document.querySelectorAll('.promo-choice')],
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
@@ -5363,7 +5417,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r156 (OUR-190: Hide/Show board leads the icon row)';
+  const BUILD='v2-r157 (OUR-192: icon-row spacing fix, new popovers, enlarged glyphs)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10135,6 +10189,8 @@
     closeAppearancePopover();
     closeVoiceSettingsPopover();
     closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
     volumePopover.hidden=false;
     volumeCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -10171,6 +10227,8 @@
     closeAppearancePopover();
     closeVoiceSettingsPopover();
     closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
     verbosityPopover.hidden=false;
     verbosityCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -10199,6 +10257,8 @@
     closeAppearancePopover();
     closeVoiceSettingsPopover();
     closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
     gameSettingsPopover.hidden=false;
     gameSettingsBtn.setAttribute('aria-expanded','true');
   }
@@ -10225,6 +10285,8 @@
     closeGameSettingsPopover();
     closeVoiceSettingsPopover();
     closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
     appearancePopover.hidden=false;
     appearanceBtn.setAttribute('aria-expanded','true');
   }
@@ -10252,6 +10314,8 @@
     closeGameSettingsPopover();
     closeAppearancePopover();
     closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
     voiceSettingsPopover.hidden=false;
     voiceSettingsBtn.setAttribute('aria-expanded','true');
   }
@@ -10281,6 +10345,8 @@
     closeGameSettingsPopover();
     closeAppearancePopover();
     closeVoiceSettingsPopover();
+    closeBoardThemePopover();
+    closeCoachTipsPopover();
     boardOpacityPopover.hidden=false;
     boardOpacityCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -10296,6 +10362,62 @@
   document.addEventListener('click',()=>{ if(!boardOpacityPopover.hidden) closeBoardOpacityPopover(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!boardOpacityPopover.hidden) closeBoardOpacityPopover();
+  });
+
+  // OUR-192: Board & Pieces popover -- same open/close-the-others pattern
+  // as Game settings/Appearance above, same reasoning for the button's
+  // own click opening it directly (nothing else on #boardThemeBtn to
+  // protect).
+  function openBoardThemePopover(){
+    closeVolumePopover();
+    closeVerbosityPopover();
+    closeGameSettingsPopover();
+    closeAppearancePopover();
+    closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
+    closeCoachTipsPopover();
+    boardThemePopover.hidden=false;
+    boardThemeBtn.setAttribute('aria-expanded','true');
+  }
+  function closeBoardThemePopover(){
+    boardThemePopover.hidden=true;
+    boardThemeBtn.setAttribute('aria-expanded','false');
+  }
+  boardThemeBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(boardThemePopover.hidden) openBoardThemePopover(); else closeBoardThemePopover();
+  });
+  boardThemePopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!boardThemePopover.hidden) closeBoardThemePopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!boardThemePopover.hidden) closeBoardThemePopover();
+  });
+
+  // OUR-192: Coach & Tips popover -- same pattern as Board & Pieces just
+  // above.
+  function openCoachTipsPopover(){
+    closeVolumePopover();
+    closeVerbosityPopover();
+    closeGameSettingsPopover();
+    closeAppearancePopover();
+    closeVoiceSettingsPopover();
+    closeBoardOpacityPopover();
+    closeBoardThemePopover();
+    coachTipsPopover.hidden=false;
+    coachTipsBtn.setAttribute('aria-expanded','true');
+  }
+  function closeCoachTipsPopover(){
+    coachTipsPopover.hidden=true;
+    coachTipsBtn.setAttribute('aria-expanded','false');
+  }
+  coachTipsBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(coachTipsPopover.hidden) openCoachTipsPopover(); else closeCoachTipsPopover();
+  });
+  coachTipsPopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!coachTipsPopover.hidden) closeCoachTipsPopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!coachTipsPopover.hidden) closeCoachTipsPopover();
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
