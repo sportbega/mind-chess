@@ -624,8 +624,26 @@
          speaker and hide-board are all type="button", so they can't
          accidentally trigger a submit themselves. -->
     <form class="mic-compact" id="textForm">
-      <input type="text" id="textInput" placeholder="Type a move" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-      <button class="btn primary" type="submit">Send</button>
+      <!-- OUR-154: placeholder shortened from "Type a move" to an example
+           move -- the field itself was already a full pill (border-radius:
+           999px, see .mic-compact input[type=text] below), this just makes
+           the text inside it read as a worked example rather than an
+           instruction, to go with Send's icon losing its own label. -->
+      <input type="text" id="textInput" placeholder="e.g. e4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <!-- OUR-154: restyled from a .btn.primary text pill (OUR-95/OUR-99's
+           33.5px sizing) to the round 48px icon-button set every other
+           control on this row now belongs to. Dropped the accent-gold
+           "primary" fill along with the text label -- every other button in
+           this set (mic, speaker, New game, Flip board, Hide board) is
+           plain .icon-btn, and Send singled out in gold next to them would
+           read as a different kind of control rather than one more member
+           of the same row. Same type="submit", same form, same click/Enter
+           behavior -- only the visual treatment changed. -->
+      <button class="icon-btn mic-size" type="submit" aria-label="Send" title="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2Z"/>
+        </svg>
+      </button>
       <div class="mic-wrap" id="micWrap">
         <span class="ring"></span><span class="ring"></span><span class="ring"></span>
         <!-- OUR-150: narration verbosity (Terse/Standard/Verbose) folded in
@@ -4868,7 +4886,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r137 (OUR-152: fix mic verbosity caret stacking)';
+  const BUILD='v2-r138 (OUR-154: Send icon, type-a-move pill+placeholder)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
