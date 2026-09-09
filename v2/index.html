@@ -206,7 +206,7 @@
      (see .mic-btn-wrap below) reuses this exact same visual treatment,
      and a class named "volume" applying to a verbosity control read
      wrong. Same CSS, same behavior, just shared instead of duplicated. */
-  .speaker-wrap,.mic-btn-wrap{position:relative;display:inline-flex}
+  .speaker-wrap,.mic-btn-wrap,.settings-wrap{position:relative;display:inline-flex}
   /* OUR-152: z-index:2 -- needed on .mic-btn-wrap specifically: #micBtn
      carries its own z-index:1 (below, kept so it sits above the sibling
      .ring pulse elements in #micWrap), and since this caret is now
@@ -222,6 +222,15 @@
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;width:150px}
   .popover-panel[hidden]{display:none}
   .popover-panel .field{gap:6px}
+  /* OUR-158: Game settings' popover (Opponent/Level/Clock) needs more room
+     than the 150px default fits three selects into without cramping --
+     .wide opts in rather than widening every popover, so the mic/speaker's
+     single-field ones stay their original compact size. .popover-fields
+     stacks its .field children in a column with breathing room between
+     them; .field-grid's own flex-wrap row layout (built for a full-width
+     settings panel, not a ~220px popover) would just wrap awkwardly here. */
+  .popover-panel.wide{width:220px}
+  .popover-fields{display:flex;flex-direction:column;gap:12px}
   .auth-dropdown .field-grid{margin-top:0}
 
   .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
@@ -357,10 +366,18 @@
      simple rather than left implying a two-item layout that no longer
      exists. */
   .board-head{display:flex;align-items:center;margin-bottom:10px}
-  /* OUR-150: the "board-head select{}" height-match rule that lived here
-     (OUR-107, matching the row's .btn controls at 33.5px) is gone --
-     #verbositySelect was the only select in this row and it moved into a
-     popover on the mic button, so nothing here needs it anymore. */
+  /* OUR-150 removed this rule when #verbositySelect (its only user at the
+     time) moved into a popover on the mic button. OUR-158 brings it back:
+     Coach/Tips relocate here from Game settings as plain <select> elements
+     (see .board-head-field below), so the row needs the height match
+     again. */
+  .board-head select{height:33.5px;padding:0 8px}
+  /* OUR-158: wraps each of Coach/Tips in a label+select pair sized to sit
+     comfortably next to Reset/the size slider -- this row has no spare
+     height for the field-grid's stacked label-above-select layout used
+     elsewhere, so the label sits inline instead, plain text rather than
+     the small-caps .field label treatment. */
+  .board-head-field{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim)}
   .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
   /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
      enough that a drag felt "chunky" independent of anything r72/r77 fixed,
@@ -448,7 +465,12 @@
      so this rule can actually win the cascade — an inline style always
      beats a stylesheet rule regardless of specificity, which is exactly
      what silently defeated an earlier :has()-based version of this line. */
-  .app.fullscreen-active .board-head .board-size-field{display:none}
+  .app.fullscreen-active .board-head .board-size-field,
+  /* OUR-158: Coach/Tips are settings, same category #verbositySelect was
+     in this list for before it moved to a mic popover -- hidden here for
+     the same reason, decluttering fullscreen down to clock/turn(/New
+     puzzle/Abort/Resign/Review), not because anything about them changed. */
+  .app.fullscreen-active .board-head .board-head-field{display:none}
   .app.fullscreen-active .board-head{justify-content:center;gap:14px}
   .exit-fullscreen-btn{display:none;position:fixed;top:14px;right:14px;z-index:50}
   .app.fullscreen-active .exit-fullscreen-btn{display:block}
@@ -831,6 +853,111 @@
           </g>
         </svg>
       </button>
+      <!-- OUR-158: Game settings, restyled from the old collapsible
+           <details> section (OUR-87) into a round icon button matching
+           mic/speaker/etc., opening a popover on click -- same
+           .settings-wrap/.popover-panel pattern as the mic's verbosity
+           popover and speaker's volume popover (OUR-144/OUR-150), except
+           there's no separate caret badge: unlike mic/speaker, this button
+           has no OTHER click behavior to keep separate from opening the
+           popover, so its own click just toggles it directly. Placed last
+           in the row rather than up near New game -- mic/speaker/
+           Fullscreen/New game/Flip board/Hide board are all controls used
+           DURING play, this is pre-game setup, and "settings icon at the
+           end of a toolbar" is the more familiar convention anyway. Same
+           three ids (modeSelect/levelSelect/clockSelect) and custom-clock
+           stepper, same change handlers and persistence, same field-grid
+           HTML/CSS class each field already used -- .popover-panel.wide
+           and .popover-fields (see CSS) just adapt field-grid's row layout
+           to a narrow column for the popover instead of duplicating it. -->
+      <div class="settings-wrap">
+        <button class="icon-btn mic-size" id="gameSettingsBtn" type="button" aria-label="Game settings" title="Game settings" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <div class="popover-panel wide" id="gameSettingsPopover" hidden>
+          <div class="popover-fields">
+            <div class="field">
+              <label for="modeSelect">Opponent</label>
+              <select id="modeSelect">
+                <option value="computer" selected>Vs. computer</option>
+                <option value="two-player">Pass &amp; play</option>
+                <option value="online">Play online</option>
+                <option value="lichess">Lichess</option>
+                <option value="puzzle">Puzzles</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="levelSelect">Level</label>
+              <!-- OUR-105: 11 rungs, one engine (Stockfish) — see the LEVELS
+                   table in <script> for the actual skill/depth/movetime each
+                   one sets. Numbered rather than four hand-picked names,
+                   since eleven names would be harder to place on a scale
+                   than a number is; short tags keep a numeric-only list from
+                   being opaque without turning the list into a paragraph. -->
+              <select id="levelSelect" title="Every level plays real chess (Stockfish) — 7.3 MB, fetched once and then cached for offline use.">
+                <option value="1" selected>1 — Beginner</option>
+                <option value="2">2 — Novice</option>
+                <option value="3">3 — Casual</option>
+                <option value="4">4 — Club</option>
+                <option value="5">5 — Strong Club</option>
+                <option value="6">6 — Advanced</option>
+                <option value="7">7 — Expert</option>
+                <option value="8">8 — Very Strong</option>
+                <option value="9">9 — Master</option>
+                <option value="10">10 — Elite</option>
+                <option value="capablanca">Capablanca Level</option>
+              </select>
+            </div>
+            <!-- OUR-108: same 11-preset ladder as the Lichess seek panel
+                 below, minus Correspondence — a days-per-move deadline has
+                 no equivalent in a same-session ticking clock (see
+                 CLOCK_PRESETS' own comment), so it's Lichess-only by
+                 design, not an oversight. Option values are
+                 "minutes-seconds" (matching how Lichess itself writes a
+                 time control, e.g. "10+5"), parsed by
+                 parseTimeControlValue() — the same parser the Lichess
+                 select uses, so both stay in sync with one source of truth
+                 for what a given value string means. -->
+            <div class="field">
+              <label for="clockSelect">Clock</label>
+              <select id="clockSelect">
+                <option value="0" selected>No clock</option>
+                <optgroup label="Bullet">
+                  <option value="1-0">1+0</option>
+                  <option value="2-1">2+1</option>
+                </optgroup>
+                <optgroup label="Blitz">
+                  <option value="3-0">3+0</option>
+                  <option value="3-2">3+2</option>
+                  <option value="5-0">5+0</option>
+                  <option value="5-3">5+3</option>
+                </optgroup>
+                <optgroup label="Rapid">
+                  <option value="10-0">10+0</option>
+                  <option value="10-5">10+5</option>
+                  <option value="15-10">15+10</option>
+                </optgroup>
+                <optgroup label="Classical">
+                  <option value="30-0">30+0</option>
+                  <option value="30-20">30+20</option>
+                </optgroup>
+                <option value="custom">Custom…</option>
+              </select>
+              <div class="stepper" id="customClockRow" style="display:none">
+                <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
+                <span id="customClockLabel">15 min</span>
+                <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
+                <button class="btn" id="customClockIncMinus" type="button" aria-label="Subtract 1 second increment">&minus;</button>
+                <span id="customClockIncLabel">0 sec</span>
+                <button class="btn" id="customClockIncPlus" type="button" aria-label="Add 1 second increment">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <!-- flex-basis:100% (see .mic-compact .mic-note) drops this onto its
            own line below the button row rather than fighting the five
            controls above for horizontal space — it's status text, not a
@@ -902,6 +1029,24 @@
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
         </div>
+        <!-- OUR-158: Coach/Tips relocated here from the old Game settings
+             <details> section, next to Reset as asked. Same ids, same
+             change handlers (unchanged, still wired further down), same
+             persistence -- position and (plain-select, no field-grid
+             label-above) presentation only. -->
+        <label class="board-head-field">Coach
+          <select id="coachSelect">
+            <option value="off">Off</option>
+            <option value="hints" selected>Hints</option>
+            <option value="full">Full</option>
+          </select>
+        </label>
+        <label class="board-head-field">Tips
+          <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
+            <option value="on" selected>On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
         <!-- OUR-150: #fullscreenBtn moved out to <header> (right after the
              speaker's volume popover), and #verbositySelect folded into a
              popover on the mic button -- neither lives in this row anymore.
@@ -1039,101 +1184,13 @@
     <div id="statsBody"><p class="empty">Loading…</p></div>
   </details>
 
-  <details class="help" id="gameSettingsDetails" open>
-    <summary>Game settings</summary>
-    <div class="field-grid">
-      <div class="field">
-        <label for="modeSelect">Opponent</label>
-        <select id="modeSelect">
-          <option value="computer" selected>Vs. computer</option>
-          <option value="two-player">Pass &amp; play</option>
-          <option value="online">Play online</option>
-          <option value="lichess">Lichess</option>
-          <option value="puzzle">Puzzles</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="levelSelect">Level</label>
-        <!-- OUR-105: 11 rungs, one engine (Stockfish) — see the LEVELS
-             table in <script> for the actual skill/depth/movetime each one
-             sets. Numbered rather than four hand-picked names, since eleven
-             names would be harder to place on a scale than a number is;
-             short tags keep a numeric-only list from being opaque without
-             turning the list into a paragraph. -->
-        <select id="levelSelect" title="Every level plays real chess (Stockfish) — 7.3 MB, fetched once and then cached for offline use.">
-          <option value="1" selected>1 — Beginner</option>
-          <option value="2">2 — Novice</option>
-          <option value="3">3 — Casual</option>
-          <option value="4">4 — Club</option>
-          <option value="5">5 — Strong Club</option>
-          <option value="6">6 — Advanced</option>
-          <option value="7">7 — Expert</option>
-          <option value="8">8 — Very Strong</option>
-          <option value="9">9 — Master</option>
-          <option value="10">10 — Elite</option>
-          <option value="capablanca">Capablanca Level</option>
-        </select>
-      </div>
-      <!-- OUR-108: same 11-preset ladder as the Lichess seek panel below,
-           minus Correspondence — a days-per-move deadline has no
-           equivalent in a same-session ticking clock (see CLOCK_PRESETS'
-           own comment), so it's Lichess-only by design, not an oversight.
-           Option values are "minutes-seconds" (matching how Lichess itself
-           writes a time control, e.g. "10+5"), parsed by
-           parseTimeControlValue() — the same parser the Lichess select
-           uses, so both stay in sync with one source of truth for what a
-           given value string means. -->
-      <div class="field">
-        <label for="clockSelect">Clock</label>
-        <select id="clockSelect">
-          <option value="0" selected>No clock</option>
-          <optgroup label="Bullet">
-            <option value="1-0">1+0</option>
-            <option value="2-1">2+1</option>
-          </optgroup>
-          <optgroup label="Blitz">
-            <option value="3-0">3+0</option>
-            <option value="3-2">3+2</option>
-            <option value="5-0">5+0</option>
-            <option value="5-3">5+3</option>
-          </optgroup>
-          <optgroup label="Rapid">
-            <option value="10-0">10+0</option>
-            <option value="10-5">10+5</option>
-            <option value="15-10">15+10</option>
-          </optgroup>
-          <optgroup label="Classical">
-            <option value="30-0">30+0</option>
-            <option value="30-20">30+20</option>
-          </optgroup>
-          <option value="custom">Custom…</option>
-        </select>
-        <div class="stepper" id="customClockRow" style="display:none">
-          <button class="btn" id="customClockMinus" type="button" aria-label="Subtract 1 minute">&minus;</button>
-          <span id="customClockLabel">15 min</span>
-          <button class="btn" id="customClockPlus" type="button" aria-label="Add 1 minute">+</button>
-          <button class="btn" id="customClockIncMinus" type="button" aria-label="Subtract 1 second increment">&minus;</button>
-          <span id="customClockIncLabel">0 sec</span>
-          <button class="btn" id="customClockIncPlus" type="button" aria-label="Add 1 second increment">+</button>
-        </div>
-      </div>
-      <div class="field">
-        <label for="coachSelect">Coach</label>
-        <select id="coachSelect">
-          <option value="off">Off</option>
-          <option value="hints" selected>Hints</option>
-          <option value="full">Full</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="tipsSelect">Tips</label>
-        <select id="tipsSelect" title="Occasional spoken facts a sighted player would see anyway — queens coming off, a repeated position, the fifty-move count. Never advice, and never a move.">
-          <option value="on" selected>On</option>
-          <option value="off">Off</option>
-        </select>
-      </div>
-    </div>
-  </details>
+  <!-- OUR-158: Game settings' old <details> section is gone -- Opponent/
+       Level/Clock moved into a popover on a new round gear icon in the
+       header (see #gameSettingsPopover there), Coach/Tips moved to
+       board-head next to Reset (see .board-head-field above). Nothing
+       under #gameSettingsDetails is referenced by id anywhere in the
+       script, only its three child controls by their own ids, so removing
+       the wrapper itself is safe. -->
 
   <!-- OUR-98: moved here from just under the header (was grouped with
        onlinePanel/lobbyPanel there) so it sits directly under Game
@@ -1582,6 +1639,7 @@
         voiceToggle=$('voiceToggle'), speakerToggleBtn=$('speakerToggleBtn'),
         volumeCaretBtn=$('volumeCaretBtn'), volumePopover=$('volumePopover'), narrationVolumeRange=$('narrationVolumeRange'),
         verbosityCaretBtn=$('verbosityCaretBtn'), verbosityPopover=$('verbosityPopover'),
+        gameSettingsBtn=$('gameSettingsBtn'), gameSettingsPopover=$('gameSettingsPopover'),
         voiceProfileStatus=$('voiceProfileStatus'), calibrateBtn=$('calibrateBtn'),
         resetVoiceProfileBtn=$('resetVoiceProfileBtn'), voiceProfileConfirmRow=$('voiceProfileConfirmRow'),
         voiceProfileConfirmToggle=$('voiceProfileConfirmToggle'),
@@ -4875,7 +4933,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r139 (OUR-156: Resign relocated left of type-a-move)';
+  const BUILD='v2-r140 (OUR-158: Game settings popover, Coach/Tips to board-head)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9622,6 +9680,7 @@
   }
   function openVolumePopover(){
     closeVerbosityPopover();
+    closeGameSettingsPopover();
     volumePopover.hidden=false;
     volumeCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -9654,6 +9713,7 @@
   // untouched -- this caret is #verbosityCaretBtn, a separate element.
   function openVerbosityPopover(){
     closeVolumePopover();
+    closeGameSettingsPopover();
     verbosityPopover.hidden=false;
     verbosityCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -9669,6 +9729,31 @@
   document.addEventListener('click',()=>{ if(!verbosityPopover.hidden) closeVerbosityPopover(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!verbosityPopover.hidden) closeVerbosityPopover();
+  });
+
+  // OUR-158: Game settings popover -- same open/close-the-others pattern as
+  // volume/verbosity above, except the trigger button itself (not a
+  // separate caret) opens it: unlike mic/speaker, #gameSettingsBtn has no
+  // other click behavior of its own to protect from being overloaded, so
+  // there was nothing to keep separate.
+  function openGameSettingsPopover(){
+    closeVolumePopover();
+    closeVerbosityPopover();
+    gameSettingsPopover.hidden=false;
+    gameSettingsBtn.setAttribute('aria-expanded','true');
+  }
+  function closeGameSettingsPopover(){
+    gameSettingsPopover.hidden=true;
+    gameSettingsBtn.setAttribute('aria-expanded','false');
+  }
+  gameSettingsBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(gameSettingsPopover.hidden) openGameSettingsPopover(); else closeGameSettingsPopover();
+  });
+  gameSettingsPopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!gameSettingsPopover.hidden) closeGameSettingsPopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!gameSettingsPopover.hidden) closeGameSettingsPopover();
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
