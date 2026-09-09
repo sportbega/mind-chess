@@ -189,6 +189,19 @@
   .auth-or{text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);opacity:.7}
   .auth-lichess-note{font-size:11px;opacity:.75}
   .auth-link{background:none;border:none;padding:0;font-size:12px;color:var(--accent-2);text-decoration:underline;cursor:pointer;align-self:flex-start}
+
+  /* OUR-144: narration volume popover, anchored to the speaker button's
+     own wrapper rather than the button itself, so the popover's
+     position:absolute is independent of #speakerToggleBtn's own layout. */
+  .speaker-wrap{position:relative;display:inline-flex}
+  .volume-caret-btn{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--accent);padding:0;
+    display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .volume-caret-btn svg{width:10px;height:10px}
+  .volume-popover{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:8px;z-index:40;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;width:150px}
+  .volume-popover[hidden]{display:none}
+  .volume-popover .field{gap:6px}
   .auth-dropdown .field-grid{margin-top:0}
 
   .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
@@ -602,15 +615,36 @@
            (OUR-42) are a separate Audio() call inside applyMove() with no
            dependency on voiceOn at all, so this never touches them.
            Sized to exactly match #micBtn (OUR-93), not the smaller
-           general .icon-btn size. -->
-      <button class="icon-btn mic-size" id="speakerToggleBtn" type="button" aria-label="Mute narration" title="Mute narration — move/capture sounds stay on.">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 9v6h4l5 4V5L8 9H4Z"/>
-          <path class="speaker-wave-1" d="M16.5 8.5a5 5 0 0 1 0 7"/>
-          <path class="speaker-wave-2" d="M19 6a9 9 0 0 1 0 12"/>
-          <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
-        </svg>
-      </button>
+           general .icon-btn size.
+           OUR-144: wrapped in .speaker-wrap so a small volume-popover
+           trigger can anchor to this button's corner without disturbing
+           its own click handler at all — the icon itself still does
+           exactly what it always did (mute/unmute, setVoiceOn()), on
+           purpose: overloading that same click to also open a popover
+           risked making the one gesture players already rely on for
+           silence harder to trust. The caret is a genuinely separate,
+           always-available affordance instead. -->
+      <div class="speaker-wrap">
+        <button class="icon-btn mic-size" id="speakerToggleBtn" type="button" aria-label="Mute narration" title="Mute narration — move/capture sounds stay on.">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9v6h4l5 4V5L8 9H4Z"/>
+            <path class="speaker-wave-1" d="M16.5 8.5a5 5 0 0 1 0 7"/>
+            <path class="speaker-wave-2" d="M19 6a9 9 0 0 1 0 12"/>
+            <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
+          </svg>
+        </button>
+        <button class="volume-caret-btn" id="volumeCaretBtn" type="button" aria-label="Narration volume" title="Narration volume" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 8l5 5 5-5"/>
+          </svg>
+        </button>
+        <div class="volume-popover" id="volumePopover" hidden>
+          <div class="field">
+            <label for="narrationVolumeRange">Narration volume</label>
+            <input type="range" id="narrationVolumeRange" min="0" max="100" step="5" value="100" />
+          </div>
+        </div>
+      </div>
       <!-- OUR-100: moved here from Game settings, between speaker mute and
            Hide board as asked. Same id, same click handler (see
            newGameBtn.addEventListener below) — only the visual treatment
@@ -1314,6 +1348,14 @@
   let sttDevice = 'wasm';          // upgraded to webgpu when it is really there
   let sttRemote = true;            // weights from the HF CDN unless self-hosted
   let voiceOn = true;
+  // OUR-144: narration-only volume (0-1) — separate from voiceOn's on/off
+  // mute and untouched by playMoveSound()/playEventSound()'s own fixed
+  // .92, exactly the same "sound effects stay independent of narration"
+  // boundary OUR-42/OUR-92 already drew for the mute toggle. Applied at
+  // the two actual places narration audio gets created (speakChunkKokoro's
+  // <audio> element, speakChunkSystem's SpeechSynthesisUtterance) — see
+  // setNarrationVolume() below.
+  let narrationVolume = 1;
   let handsFree = true;
   let bargeIn = false;        // experimental: keep the mic open while narrating (Phase B)
   let lastMove = null;
@@ -1441,6 +1483,7 @@
         voiceSelect=$('voiceSelect'), rateSelect=$('rateSelect'), engineSelect=$('engineSelect'),
         sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'), speakerToggleBtn=$('speakerToggleBtn'),
+        volumeCaretBtn=$('volumeCaretBtn'), volumePopover=$('volumePopover'), narrationVolumeRange=$('narrationVolumeRange'),
         voiceProfileStatus=$('voiceProfileStatus'), calibrateBtn=$('calibrateBtn'),
         resetVoiceProfileBtn=$('resetVoiceProfileBtn'), voiceProfileConfirmRow=$('voiceProfileConfirmRow'),
         voiceProfileConfirmToggle=$('voiceProfileConfirmToggle'),
@@ -1936,6 +1979,7 @@
       if(myGeneration!==speechGeneration||myChunk!==chunkToken){ URL.revokeObjectURL(url); return; }
       primeAhead();
       const el=new Audio(url);
+      el.volume=narrationVolume;
       currentAudio=el;
       const finish=()=>{
         URL.revokeObjectURL(url);
@@ -2176,7 +2220,7 @@
     if(v) u.voice=v;
     u.rate=speechRate;
     u.pitch=0.98;
-    u.volume=1;
+    u.volume=narrationVolume;
     u.onstart=()=>{ lastAudioStartAt=Date.now(); };
     u.onend=advance;
     u.onerror=advance;
@@ -4500,7 +4544,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r132 (OUR-142: Hide board as eye/eye-slash icon button)';
+  const BUILD='v2-r133 (OUR-144: narration volume popover)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9219,6 +9263,48 @@
   }
   voiceToggle.addEventListener('change',()=>setVoiceOn(voiceToggle.checked));
   speakerToggleBtn.addEventListener('click',()=>setVoiceOn(!voiceOn));
+
+  // OUR-144: narration-only volume popover. Applied at the two actual
+  // points narration audio gets created (speakChunkKokoro's <audio>
+  // element, speakChunkSystem's SpeechSynthesisUtterance) -- move/capture/
+  // check/castle sound effects are separate Audio() calls with their own
+  // fixed .92 volume and never read this variable, same boundary OUR-42/
+  // OUR-92 already drew for the mute toggle.
+  //
+  // Kokoro can be adjusted live (currentAudio is a real, already-playing
+  // <audio> element -- setting .volume on it takes effect immediately).
+  // The system voice cannot: a SpeechSynthesisUtterance's volume is fixed
+  // once speak() is called, a real Web Speech API limitation, not a bug
+  // here -- a mid-sentence drag only changes what plays next.
+  function setNarrationVolume(v){
+    narrationVolume=v;
+    if(currentAudio) currentAudio.volume=v;
+    saveState();
+  }
+  function openVolumePopover(){
+    volumePopover.hidden=false;
+    volumeCaretBtn.setAttribute('aria-expanded','true');
+  }
+  function closeVolumePopover(){
+    volumePopover.hidden=true;
+    volumeCaretBtn.setAttribute('aria-expanded','false');
+  }
+  volumeCaretBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(volumePopover.hidden) openVolumePopover(); else closeVolumePopover();
+  });
+  narrationVolumeRange.addEventListener('input',()=>{
+    setNarrationVolume(Number(narrationVolumeRange.value)/100);
+  });
+  // Click-outside and Escape close it, same dismissal convention as the
+  // auth bar's own dropdowns -- clicking inside the popover itself (e.g.
+  // dragging the slider) must not close it mid-drag, hence the popover's
+  // own listener stopping propagation.
+  volumePopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!volumePopover.hidden) closeVolumePopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!volumePopover.hidden) closeVolumePopover();
+  });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
     if(mode==='puzzle'){ startPuzzle(nextPuzzle()); return; }
@@ -9294,7 +9380,7 @@
   function saveState(){
     try{
       localStorage.setItem(SAVE_KEY,JSON.stringify({
-        pgn:game.pgn(),mode,levelKey,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,handsFree,bargeIn,humanColor,boardHidden,boardFlippedOverride,
+        pgn:game.pgn(),mode,levelKey,verbosity,coach,tips,puzzleId:puzzle?puzzle.id:null,speechRate,voiceURI,ttsEngine,kokoroVoice,sttEngine,voiceOn,narrationVolume,handsFree,bargeIn,humanColor,boardHidden,boardFlippedOverride,
         // Spectating rides someone else's game, not the reader's own — a
         // reload just drops back to vs-computer rather than resuming as if
         // this client held a seat (reconnectOnline() assumes a real color).
@@ -9347,6 +9433,8 @@
       // runs, so it only has to be remembered here — not acted on.
       if(saved.sttEngine==='local'){ sttEngine='local'; sttSelect.value='local'; }
       voiceOn=saved.voiceOn!==false; voiceToggle.checked=voiceOn; updateSpeakerBtn();
+      narrationVolume=(typeof saved.narrationVolume==='number')?saved.narrationVolume:1;
+      narrationVolumeRange.value=String(Math.round(narrationVolume*100));
       handsFree=saved.handsFree!==false; handsFreeToggle.checked=handsFree;
       bargeIn=saved.bargeIn===true; bargeInToggle.checked=bargeIn;
       clockPreset=saved.clockPreset||0; clockIncrement=saved.clockIncrement||0; syncClockUI();
