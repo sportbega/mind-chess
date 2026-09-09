@@ -706,6 +706,14 @@
          here is type="button", so none of them can accidentally trigger
          a submit even without a wrapping <form> anymore. -->
       <div class="mic-compact-icons">
+      <!-- OUR-181: New game moved to lead this row, ahead of mic -- same
+           id, same click handler (newGameBtn.addEventListener below),
+           only its position changed. -->
+      <button class="icon-btn mic-size" id="newGameBtn" type="button" aria-label="New game" title="New game">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
       <!-- OUR-179: both Resign buttons moved out of this row entirely,
            down to the below-board row next to the type-a-move pill --
            see there. -->
@@ -805,25 +813,8 @@
           </g>
         </svg>
       </button>
-      <!-- OUR-100: moved here from Game settings, between speaker mute and
-           Hide board as asked. Same id, same click handler (see
-           newGameBtn.addEventListener below) — only the visual treatment
-           has changed since.
-           OUR-138: restyled as a round 48px icon button (.icon-btn.mic-size,
-           the exact same class already shared by #speakerToggleBtn/#micBtn)
-           with a plain "+" glyph instead of text, since "New game" is a
-           single fixed action with no dynamic label to carry — unlike
-           Hide board (toggles its own text between Hide/Reveal) or Send
-           (a real form submit), which is why THOSE stay exactly as OUR-95
-           left them (33.5px text pills) rather than also converting to
-           icons here: a static icon would have cost Hide board's toggle
-           its only way of showing which state a click leads to, for no
-           benefit New game actually needed. -->
-      <button class="icon-btn mic-size" id="newGameBtn" type="button" aria-label="New game" title="New game">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-          <path d="M12 5v14M5 12h14"/>
-        </svg>
-      </button>
+      <!-- OUR-181: New game moved out of this position entirely, to lead
+           the icon row instead (ahead of mic) -- see there. -->
       <!-- OUR-140: moved here from .board-head (OUR-86), same restyle
            reasoning as New game just above -- a single fixed action with
            no dynamic label, so the icon-only treatment costs nothing.
@@ -5249,7 +5240,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r150 (OUR-179: Resign below board, bigger Voice commands icon)';
+  const BUILD='v2-r151 (OUR-181: New game leads the icon row)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
