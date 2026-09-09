@@ -200,16 +200,21 @@
 
   /* OUR-144: narration volume popover, anchored to the speaker button's
      own wrapper rather than the button itself, so the popover's
-     position:absolute is independent of #speakerToggleBtn's own layout. */
-  .speaker-wrap{position:relative;display:inline-flex}
-  .volume-caret-btn{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;
+     position:absolute is independent of #speakerToggleBtn's own layout.
+     OUR-150: renamed from .volume-caret-btn/.volume-popover to these
+     generic names -- the mic button's own narration-verbosity popover
+     (see .mic-btn-wrap below) reuses this exact same visual treatment,
+     and a class named "volume" applying to a verbosity control read
+     wrong. Same CSS, same behavior, just shared instead of duplicated. */
+  .speaker-wrap,.mic-btn-wrap{position:relative;display:inline-flex}
+  .caret-btn{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;
     background:var(--panel-2);border:1px solid var(--line);color:var(--accent);padding:0;
     display:flex;align-items:center;justify-content:center;cursor:pointer}
-  .volume-caret-btn svg{width:10px;height:10px}
-  .volume-popover{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:8px;z-index:40;
+  .caret-btn svg{width:10px;height:10px}
+  .popover-panel{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:8px;z-index:40;
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;width:150px}
-  .volume-popover[hidden]{display:none}
-  .volume-popover .field{gap:6px}
+  .popover-panel[hidden]{display:none}
+  .popover-panel .field{gap:6px}
   .auth-dropdown .field-grid{margin-top:0}
 
   .movestrip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-dim);overflow-x:auto;white-space:nowrap}
@@ -345,10 +350,10 @@
      simple rather than left implying a two-item layout that no longer
      exists. */
   .board-head{display:flex;align-items:center;margin-bottom:10px}
-  /* OUR-107: matches the row's .btn controls (33.5px, r87) rather than the
-     page-wide select{} rule's own padding-driven height — same reasoning
-     r95/OUR-106 had for this select when it briefly lived in the header. */
-  .board-head select{height:33.5px;padding:0 8px}
+  /* OUR-150: the "board-head select{}" height-match rule that lived here
+     (OUR-107, matching the row's .btn controls at 33.5px) is gone --
+     #verbositySelect was the only select in this row and it moved into a
+     popover on the mic button, so nothing here needs it anymore. */
   .board-size-field{display:flex;align-items:center;gap:6px;min-width:0}
   /* 110px meant ~4px per step across the 420-960 range (27 steps) — coarse
      enough that a drag felt "chunky" independent of anything r72/r77 fixed,
@@ -427,13 +432,11 @@
   /* OUR-140: #flipBoardBtn's own entry here is gone -- it moved out of
      .board-head into <header>, which is already fully hidden in
      fullscreen by the blanket rule above, so this selector would never
-     have matched anything again. */
-  .app.fullscreen-active .board-head #fullscreenBtn,
-  /* OUR-107: narration joined this row, next to Fullscreen — hidden here
-     too so fullscreen stays the same decluttered clock/turn(/New puzzle)
-     view it was before, rather than gaining a stray control the other
-     two rung-mates lost. */
-  .app.fullscreen-active .board-head #verbositySelect,
+     have matched anything again. OUR-150: #fullscreenBtn and
+     #verbositySelect joined it for the same reason -- both moved out of
+     .board-head (Fullscreen to <header>, verbosity into a popover on the
+     mic button), so neither selector could still match anything here
+     either. */
   /* .board-size-field as a class (not an inline style on the wrapper div)
      so this rule can actually win the cascade — an inline style always
      beats a stylesheet rule regardless of specificity, which is exactly
@@ -618,12 +621,42 @@
       <button class="btn primary" type="submit">Send</button>
       <div class="mic-wrap" id="micWrap">
         <span class="ring"></span><span class="ring"></span><span class="ring"></span>
-        <button id="micBtn" type="button" aria-label="Speak your move" title="Tap and speak — try &quot;e4&quot;, &quot;knight to f3&quot;, &quot;queen takes e5&quot;, &quot;castle kingside&quot;.">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-            <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
-            <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
-          </svg>
-        </button>
+        <!-- OUR-150: narration verbosity (Terse/Standard/Verbose) folded in
+             here as a popover, moved out of its old board-head <select>
+             (OUR-96/r95's relocation). Same .caret-btn/.popover-panel
+             pattern as the speaker's volume popover just above (OUR-144) --
+             wrapped in its own .mic-btn-wrap rather than reusing
+             #micWrap's own position:relative directly, since #micWrap is
+             60x60 with the button centered inside a 6px inset (for the
+             listening rings) while the caret needs to anchor flush to the
+             button's own 48x48 corner, exactly like .speaker-wrap does for
+             #speakerToggleBtn. #micBtn's own click (listening toggle) is
+             completely untouched -- the caret is a separate button next to
+             it, not layered onto the same click, same separation OUR-144
+             already established for mute-vs-volume. -->
+        <div class="mic-btn-wrap">
+          <button id="micBtn" type="button" aria-label="Speak your move" title="Tap and speak — try &quot;e4&quot;, &quot;knight to f3&quot;, &quot;queen takes e5&quot;, &quot;castle kingside&quot;.">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
+              <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
+            </svg>
+          </button>
+          <button class="caret-btn" id="verbosityCaretBtn" type="button" aria-label="Narration verbosity" title="Narration verbosity" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 8l5 5 5-5"/>
+            </svg>
+          </button>
+          <div class="popover-panel" id="verbosityPopover" hidden>
+            <div class="field">
+              <label for="verbositySelect">Narration verbosity</label>
+              <select id="verbositySelect">
+                <option value="terse" selected>Terse</option>
+                <option value="standard">Standard</option>
+                <option value="verbose">Verbose</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
       <!-- Same underlying flag as Voice settings' "Speak aloud" toggle —
            see setVoiceOn() — not a second setting. Sound effects
@@ -648,18 +681,40 @@
             <path class="speaker-mute" d="M16 9l5 5M21 9l-5 5" style="display:none"/>
           </svg>
         </button>
-        <button class="volume-caret-btn" id="volumeCaretBtn" type="button" aria-label="Narration volume" title="Narration volume" aria-expanded="false">
+        <button class="caret-btn" id="volumeCaretBtn" type="button" aria-label="Narration volume" title="Narration volume" aria-expanded="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5 8l5 5 5-5"/>
           </svg>
         </button>
-        <div class="volume-popover" id="volumePopover" hidden>
+        <div class="popover-panel" id="volumePopover" hidden>
           <div class="field">
             <label for="narrationVolumeRange">Narration volume</label>
             <input type="range" id="narrationVolumeRange" min="0" max="100" step="5" value="100" />
           </div>
         </div>
       </div>
+      <!-- OUR-150: relocated here from .board-head (OUR-96/r95's original
+           move, restyled as a round icon in OUR-148) -- header order is now
+           mic (verbosity popover) -> speaker (volume popover) -> Fullscreen
+           -> New game/Flip board/Hide board, as asked. Same id, same click
+           handler (toggleFullscreen(), unchanged), same fullscreenchange
+           listener syncing the expand/compress icon -- only the position
+           moved. Still hidden in fullscreen via the same blanket
+           ".app.fullscreen-active>*{display:none}" rule <header> already
+           falls under, same mechanism Flip board's own OUR-140 move relied
+           on -- no new CSS needed for that part either. -->
+      <button class="icon-btn mic-size" id="fullscreenBtn" type="button" aria-label="Fullscreen" title="Fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <g class="fullscreen-expand">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+            <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+          </g>
+          <g class="fullscreen-compress" style="display:none">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+            <path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+          </g>
+        </svg>
+      </button>
       <!-- OUR-100: moved here from Game settings, between speaker mute and
            Hide board as asked. Same id, same click handler (see
            newGameBtn.addEventListener below) — only the visual treatment
@@ -802,40 +857,13 @@
           <button class="btn" id="boardSizeResetBtn" type="button" title="Reset to default">Reset</button>
           <input type="range" id="boardSizeRange" min="420" max="960" step="30" value="750" />
         </div>
-        <!-- OUR-148: restyled as a round 48px icon button, same set as New
-             game/Flip board/Hide board. Left in this row rather than moved
-             to the header (unlike Flip board's own OUR-140 move) because
-             lichessAbortBtn/lichessResignBtn/computerResignBtn sit in this
-             same row and Resign is converting to the same round icon in
-             this pass too -- the row was headed toward a mix of pill/select
-             and round-icon controls regardless, so pulling Fullscreen out
-             on its own wouldn't have bought back a uniform row anyway.
-             Icon swaps expand/compress on fullscreen state exactly like
-             Hide board's eye/eye-slash (OUR-143) -- see syncFullscreenUI(). -->
-        <button class="icon-btn mic-size" id="fullscreenBtn" type="button" aria-label="Fullscreen" title="Fullscreen">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <g class="fullscreen-expand">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
-              <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
-            </g>
-            <g class="fullscreen-compress" style="display:none">
-              <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
-              <path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
-            </g>
-          </svg>
-        </button>
-        <!-- OUR-107: moved here from the header row (r95/OUR-106) so the
-             header can drop back to 6 controls and share one line with the
-             title again. Same id, same change handler, same persistence —
-             only the position moved a second time; no duplicate left in
-             the header or Voice settings (see the CSS below for the
-             33.5px height match, same reasoning as .mic-compact select
-             had in r95). -->
-        <select id="verbositySelect">
-          <option value="terse" selected>Terse</option>
-          <option value="standard">Standard</option>
-          <option value="verbose">Verbose</option>
-        </select>
+        <!-- OUR-150: #fullscreenBtn moved out to <header> (right after the
+             speaker's volume popover), and #verbositySelect folded into a
+             popover on the mic button -- neither lives in this row anymore.
+             Left behind deliberately, same "dead selector, explained" habit
+             OUR-140 set for #flipBoardBtn: see the two now-dead entries in
+             the .app.fullscreen-active .board-head list above, and the
+             removed .board-head select{} height-match rule. -->
         <!-- OUR-104: only ever shown while mode==='puzzle' AND a puzzle is
              actually loaded (see updateNewPuzzleBtn()) — reuses the exact
              same startPuzzle(nextPuzzle()) call the "next puzzle" voice/
@@ -1539,6 +1567,7 @@
         sttSelect=$('sttSelect'),
         voiceToggle=$('voiceToggle'), speakerToggleBtn=$('speakerToggleBtn'),
         volumeCaretBtn=$('volumeCaretBtn'), volumePopover=$('volumePopover'), narrationVolumeRange=$('narrationVolumeRange'),
+        verbosityCaretBtn=$('verbosityCaretBtn'), verbosityPopover=$('verbosityPopover'),
         voiceProfileStatus=$('voiceProfileStatus'), calibrateBtn=$('calibrateBtn'),
         resetVoiceProfileBtn=$('resetVoiceProfileBtn'), voiceProfileConfirmRow=$('voiceProfileConfirmRow'),
         voiceProfileConfirmToggle=$('voiceProfileConfirmToggle'),
@@ -4832,7 +4861,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r135 (OUR-148: Log out/Fullscreen/Resign icon restyle)';
+  const BUILD='v2-r136 (OUR-150: mic verbosity popover, Fullscreen to header)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9578,6 +9607,7 @@
     saveState();
   }
   function openVolumePopover(){
+    closeVerbosityPopover();
     volumePopover.hidden=false;
     volumeCaretBtn.setAttribute('aria-expanded','true');
   }
@@ -9600,6 +9630,31 @@
   document.addEventListener('click',()=>{ if(!volumePopover.hidden) closeVolumePopover(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!volumePopover.hidden) closeVolumePopover();
+  });
+
+  // OUR-150: narration-verbosity popover on the mic button -- same
+  // caret/popover pattern as narration volume just above (down to closing
+  // whichever OTHER popover is open first, so the two never stack), except
+  // this one wraps the existing #verbositySelect rather than a new range
+  // input. #micBtn's own click handler (listening toggle, see below) is
+  // untouched -- this caret is #verbosityCaretBtn, a separate element.
+  function openVerbosityPopover(){
+    closeVolumePopover();
+    verbosityPopover.hidden=false;
+    verbosityCaretBtn.setAttribute('aria-expanded','true');
+  }
+  function closeVerbosityPopover(){
+    verbosityPopover.hidden=true;
+    verbosityCaretBtn.setAttribute('aria-expanded','false');
+  }
+  verbosityCaretBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(verbosityPopover.hidden) openVerbosityPopover(); else closeVerbosityPopover();
+  });
+  verbosityPopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!verbosityPopover.hidden) closeVerbosityPopover(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!verbosityPopover.hidden) closeVerbosityPopover();
   });
   newGameBtn.addEventListener('click',()=>{
     if(mode==='online'){ leaveOnline(); mode='computer'; modeSelect.value='computer'; }
