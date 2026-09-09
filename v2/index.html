@@ -143,14 +143,38 @@
   .review-export-row{flex:1 1 100%;display:flex;gap:8px}
   .review-accuracy b{font-size:20px;display:block}
   .review-board-row{display:flex;gap:8px;align-items:stretch;flex:0 0 auto}
-  .review-evalbar{width:14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
+  .review-evalbar{width:14px;flex:0 0 14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
   .review-evalbar-fill{width:100%;background:#f2f2f0;transition:height .2s ease}
-  .review-board{flex:0 0 auto}
+  /* OUR-204: longstanding bug, found incidentally while testing OUR-203 --
+     .board-grid's own width:100% (used by the LIVE board too) needs a
+     definite width to resolve against. The live board gets one from
+     .board-col{flex:1;min-width:0} inside a .board-outer row that's
+     itself a normal block box under .app{width:100%} -- every ancestor
+     in that chain is either a definite block width or an explicit
+     flex:1. Here, .review-card down to .review-board was flex:0 0 auto
+     (shrink-to-fit) at every level, so nothing ever became definite:
+     .board-grid's width:100% had nothing to resolve against, collapsed
+     to its own min-content, and .review-evalbar's explicit 14px got
+     squeezed toward 0 fighting for space in the same collapsed row
+     (default flex-shrink:1, while .review-board's flex-shrink:0 refused
+     to give up its own, unrelated collapse). A fixed 420px -- matching
+     the --board-max:420px already set inline on #reviewBoardGrid, this
+     board is a read-only reference thumbnail, never resized by the
+     player -- ends the circularity outright rather than chasing it
+     through more flex-basis tuning. */
+  .review-board{width:420px;flex:0 0 420px}
   /* OUR-202: sits between .review-board-row and .review-eval-text in
      source order -- flex:0 0 auto (not 100%) lets it size to its own
      label rather than stretching the whole row width, same as
-     .review-board-row/.review-board just above. */
-  .review-perspective-btn{flex:0 0 auto}
+     .review-board-row/.review-board just above.
+     OUR-204: align-self:flex-start -- .review-content has no explicit
+     align-items, so its default (stretch) was quietly matching this
+     button's height to whatever review-board-row's own height happened
+     to be, on whichever wrapped flex line the two land on together.
+     Invisible while that row was ~0px tall (the OUR-204 bug just above
+     this comment); fixing the board's real 420px height turned the same
+     stretch into an actually-visible full-height pill button. */
+  .review-perspective-btn{flex:0 0 auto;align-self:flex-start}
   .review-eval-text{flex:1 1 100%;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
   .review-movelist{flex:1 1 260px;min-width:220px;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:2px}
   .review-move{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px;background:none;border:0;color:var(--text);text-align:left;width:100%}
@@ -5594,7 +5618,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r164 (OUR-203: Game Review perspective toggle, capture/show Lichess AI level)';
+  const BUILD='v2-r165 (OUR-204: fix Game Review board/eval bar sizing)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
