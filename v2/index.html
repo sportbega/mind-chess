@@ -3048,8 +3048,29 @@
   // already handle that) for the alternative, which is a mic that never
   // opens again for the rest of the game.
   function speakingBlocksMic(){ return speaking&&speechEndTrusted; }
+  // OUR-244: the "nothing to wait for" branch defers fn() by one macrotask
+  // (setTimeout 0) instead of calling it synchronously in-line. Found via a
+  // real Game Review hang: once speechEndTrusted goes false (a single
+  // narration genuinely running past maxWaitMs -- newly possible after
+  // OUR-242 stacked a transition phrase onto an already-marginal Deep
+  // sentence budget, see the note above reviewDeepSentence()), EVERY later
+  // call in the same session takes this branch. Review's own auto-advance
+  // (reviewAutoAdvance()) calls whenSpeechIdle() from inside its own fn --
+  // with a synchronous fn(), that recurses through the ENTIRE REST OF THE
+  // GAME in one uninterrupted call stack the instant the flag flips,
+  // cancelling each move's speak() with the next before any of it is ever
+  // heard and silently landing reviewPositionIdx on the final move --
+  // which is exactly "narrates once, then nothing further is ever
+  // announced, auto-play looks frozen." Reload/Next/Prev were never
+  // actually broken (confirmed: they work correctly the instant the
+  // avalanche finishes) -- a real browser doing that much DOM/TTS work
+  // in one tick can render the whole page unresponsive for its duration,
+  // which is what made Reload look stuck too. A deferred fn() still runs
+  // effectively immediately (one tick later, imperceptible) but lets the
+  // event loop turn between recursive steps, which is all recursive
+  // auto-advance needs to stop being a synchronous stack.
   function whenSpeechIdle(fn,maxWaitMs,force){
-    if(!speaking||(!voiceOn&&!force)||!speechEndTrusted){ fn(); return; }
+    if(!speaking||(!voiceOn&&!force)||!speechEndTrusted){ setTimeout(fn,0); return; }
     const entry={done:false};
     entry.fire=(why)=>{
       if(entry.done) return;
@@ -6135,13 +6156,30 @@
   }
   reviewRewind5Btn.addEventListener('click',()=>reviewJumpBy(-5));
   reviewForward5Btn.addEventListener('click',()=>reviewJumpBy(5));
+  // OUR-244: Review's own ceiling, NOT live play's REPLY_WAIT_MAX_MS
+  // (12000ms) -- exactly the gap the comment above reviewDeepSentence()
+  // already flagged before this was a real bug ("if real Deep sentences
+  // in practice run past ~10s, that ceiling should be raised for review's
+  // own whenSpeechIdle() call rather than left shared with live play's
+  // shorter replies"). Live play's own replies are one short clause;
+  // Deep commentary can now stack base + a calm-opening/transition phrase
+  // (OUR-242) + a tactic note + the best-move suggestion + a line
+  // continuation into one sentence -- measured up to ~33 words on a real
+  // transition-moment Blunder in testing, and the theoretical worst case
+  // (every clause firing at once) runs longer still. At natural spoken
+  // pace (~2.2-2.5 words/sec, the same estimate that comment used), 12s
+  // only covers ~26-30 words -- already tight before OUR-242, genuinely
+  // insufficient after it. 26s covers every realistic case with real
+  // margin to spare, without being so long that a truly stuck engine
+  // leaves Play looking dead for half a minute.
+  const REVIEW_REPLY_WAIT_MAX_MS=26000;
   // OUR-215 Phase B: one step of auto-play, reusing Phase A's own
   // showReviewPosition()/narrateReviewStep() -- no separate stepping path.
   // Advances only once whenSpeechIdle() reports the current move's
-  // narration has actually finished (or given up after REPLY_WAIT_MAX_MS,
-  // the same ceiling live play already trusts for this exact wait), never
-  // on a fixed timer -- a Blunder's longer sentence gets exactly as long
-  // to finish as a short "Best move" one.
+  // narration has actually finished (or given up after
+  // REVIEW_REPLY_WAIT_MAX_MS), never on a fixed timer -- a Blunder's
+  // longer sentence gets exactly as long to finish as a short "Best move"
+  // one.
   function reviewAutoAdvance(myToken){
     if(myToken!==reviewAutoToken||!reviewResult) return;
     // OUR-237: the position on screen (move 1, opened or Reloaded) hasn't
@@ -6150,7 +6188,7 @@
     // move the player is already looking at.
     if(reviewNeedsNarration){
       narrateReviewStep(reviewPositionIdx);
-      whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REPLY_WAIT_MAX_MS);
+      whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REVIEW_REPLY_WAIT_MAX_MS);
       return;
     }
     if(reviewPositionIdx>=reviewResult.perMove.length){ stopReviewAutoPlay(); return; }
@@ -6164,7 +6202,7 @@
     }
     showReviewPosition(idx);
     narrateReviewStep(idx);
-    whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REPLY_WAIT_MAX_MS);
+    whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REVIEW_REPLY_WAIT_MAX_MS);
   }
   reviewPlayBtn.addEventListener('click',()=>{
     if(!reviewResult) return;
@@ -7291,7 +7329,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r193 (OUR-243: Game Review auto-scrolls board into view on navigation)';
+  const BUILD='v2-r194 (OUR-244: fix Game Review auto-play synchronous-avalanche hang)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
