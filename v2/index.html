@@ -1111,22 +1111,31 @@
            three checkboxes, Test voice) is here with its exact id and
            handler, unmoved -- position/presentation only. -->
       <div class="settings-wrap">
-        <!-- OUR-192: enlarged via a centered transform wrapping both
-           existing sub-groups together, same technique as OUR-179's own
-           fix and Report a problem's just above -- the mic+gear
+        <!-- OUR-192/OUR-231: enlarged via a centered transform wrapping
+           both existing sub-groups together, same technique as OUR-179's
+           own fix and Report a problem's just above -- the mic+gear
            composition and its two glyphs' relative positions are
            unchanged, only scaled up as one unit around the viewBox
-           center. -->
+           center. OUR-231: the mic+gear composite's own drawn bounding box
+           was never actually centered on the viewBox to begin with (mic
+           top-left, gear bottom-right), so scaling it around the viewBox
+           center alone made it drift further off-center as it grew --
+           per Adni it still read as both off-center and not big enough
+           after OUR-192. An inner translate re-centers the composite to
+           (12,12) first, then the existing centered-scale wrapper enlarges
+           it further (1.2 to 1.4) from its now-true center. -->
         <button class="icon-btn mic-size" id="voiceSettingsBtn" type="button" aria-label="Voice settings" title="Voice settings" aria-expanded="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <g transform="translate(12,12) scale(1.2) translate(-12,-12)">
-              <g transform="translate(-3,-2) scale(0.8)">
-                <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
-                <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
-              </g>
-              <g transform="translate(10,10) scale(0.42)" stroke-width="2">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            <g transform="translate(12,12) scale(1.4) translate(-12,-12)">
+              <g transform="translate(1.5,2.6)">
+                <g transform="translate(-3,-2) scale(0.8)">
+                  <path d="M12 3c1.1 0 2 .9 2 2v6a2 2 0 1 1-4 0V5c0-1.1.9-2 2-2Z"/>
+                  <path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/>
+                </g>
+                <g transform="translate(10,10) scale(0.42)" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </g>
               </g>
             </g>
           </svg>
@@ -1744,19 +1753,23 @@
       </svg>
     </button>
     <!-- OUR-175: Statistics, restyled from a collapsible <details> section
-         (OUR-114/OUR-115) into a round icon (three ascending bars) opening
-         the same content as a modal -- tables and an openings list want
-         real room, same reasoning OUR-168 chose a modal for Report a
-         problem over a popover. renderStats() still only runs when this
-         is actually opened (openStats() below calls it directly, same
-         "don't pay for a Supabase round trip nobody asked for" reasoning
-         the old toggle listener had) -- every renderStats()/statsBody
-         call site elsewhere in the file switches from checking
-         statsDetails.open to !statsDetails.hidden, since #statsDetails is
-         a modal-overlay div now, not a <details>. -->
+         (OUR-114/OUR-115) into a round icon opening the same content as a
+         modal -- tables and an openings list want real room, same
+         reasoning OUR-168 chose a modal for Report a problem over a
+         popover. renderStats() still only runs when this is actually
+         opened (openStats() below calls it directly, same "don't pay for a
+         Supabase round trip nobody asked for" reasoning the old toggle
+         listener had) -- every renderStats()/statsBody call site elsewhere
+         in the file switches from checking statsDetails.open to
+         !statsDetails.hidden, since #statsDetails is a modal-overlay div
+         now, not a <details>.
+         OUR-231: glyph swapped from three ascending bars (read as a wifi/
+         signal icon at a glance, per Adni) to a plain up-right trending
+         arrow -- the more universal "growth/stats" symbol. Already
+         centered on the 24x24 viewBox as drawn, no transform needed. -->
     <button class="icon-btn mic-size" id="statsBtn" type="button" aria-label="Statistics" title="Statistics">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/>
+        <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
       </svg>
     </button>
     <!-- OUR-175: Transcript, restyled from a collapsible <details> section
@@ -1813,13 +1826,19 @@
          head (OUR-194's revision of OUR-192's original knight-on-square)
          still wasn't recognizable at this size per Adni -- a pawn's much
          simpler round-top-and-base silhouette reads more clearly small.
-         Same button/popover/change-handler behavior, glyph swap only. -->
+         Same button/popover/change-handler behavior, glyph swap only.
+         OUR-231: enlarged 30% via a centered transform, same technique
+         OUR-192 used for Report a problem's own glyph -- the outer 48px
+         button/circle is untouched, only the drawn content inside its
+         24x24 viewBox scaled up around the center. -->
     <div class="settings-wrap">
       <button class="icon-btn mic-size" id="boardThemeBtn" type="button" aria-label="Board &amp; pieces" title="Board &amp; pieces">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="7.5" r="3"/>
-          <path d="M10 11c-1.3 1.6-1.3 3.4 0 5H8.5l-1.2 4h9.4l-1.2-4H14c1.3-1.6 1.3-3.4 0-5"/>
-          <path d="M6.5 20h11"/>
+          <g transform="translate(12,12) scale(1.3) translate(-12,-12)">
+            <circle cx="12" cy="7.5" r="3"/>
+            <path d="M10 11c-1.3 1.6-1.3 3.4 0 5H8.5l-1.2 4h9.4l-1.2-4H14c1.3-1.6 1.3-3.4 0-5"/>
+            <path d="M6.5 20h11"/>
+          </g>
         </svg>
       </button>
       <div class="popover-panel wide" id="boardThemePopover" hidden>
@@ -1855,14 +1874,25 @@
     <!-- OUR-194: Coach &amp; Tips -- glyph swapped from a whistle (OUR-192's
          first attempt, flagged by Adni for revision) to a graduation cap,
          reading more clearly as "coaching/teaching". Same button/
-         popover/change-handler behavior, glyph swap only. -->
+         popover/change-handler behavior, glyph swap only.
+         OUR-231: enlarged via a centered transform, same technique as the
+         pawn/bug glyphs above. The cap's own drawn bounding box (x:2-20,
+         y:5-16.2) isn't centered on the 24x24 viewBox to start with, so an
+         inner translate re-centers it to (12,12) first -- scaling an
+         already-off-center glyph straight from the viewBox center would
+         have pushed it further off and clipped the left edge at any real
+         enlargement. -->
     <div class="settings-wrap">
       <button class="icon-btn mic-size" id="coachTipsBtn" type="button" aria-label="Coach &amp; tips" title="Coach &amp; tips">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M2 9l10-4 10 4-10 4-10-4Z"/>
-          <path d="M6 11v4c0 1.5 2.5 3 6 3s6-1.5 6-3v-4"/>
-          <path d="M20 9v5"/>
-          <circle cx="20" cy="15.3" r=".9" fill="currentColor" stroke="none"/>
+          <g transform="translate(12,12) scale(1.2) translate(-12,-12)">
+            <g transform="translate(1,1.4)">
+              <path d="M2 9l10-4 10 4-10 4-10-4Z"/>
+              <path d="M6 11v4c0 1.5 2.5 3 6 3s6-1.5 6-3v-4"/>
+              <path d="M20 9v5"/>
+              <circle cx="20" cy="15.3" r=".9" fill="currentColor" stroke="none"/>
+            </g>
+          </g>
         </svg>
       </button>
       <div class="popover-panel wide" id="coachTipsPopover" hidden>
@@ -6732,7 +6762,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r178 (OUR-230: Game Review import — browse past games tab)';
+  const BUILD='v2-r179 (OUR-231: icon glyph adjustments — stats arrow, pawn/cap enlarge, voice settings re-center)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
