@@ -1947,23 +1947,44 @@
     </div>
   </div>
 
-  <!-- OUR-229: standalone Game Review import modal -- Phase 1 (PGN paste/
-       upload only; a browsable past-games list is deferred, see the
-       scoping report). Same modal-overlay/modal-card/review-head shell as
-       #statsDetails and #transcriptDetails above, click-outside/Escape
-       dismissal wired the same way in JS. -->
+  <!-- OUR-230 (Phase 2): the same modal from OUR-229 (Phase 1), now two
+       ways into the same review engine rather than a second entry point --
+       both end at the identical openReviewOverlay(descriptor) call, so a
+       unified modal with tabs is more coherent than a separate button/modal
+       that would just duplicate this shell. Same modal-overlay/modal-card/
+       review-head structure as #statsDetails/#transcriptDetails, same
+       click-outside/Escape dismissal. Tab state is just which section is
+       hidden and which tab button carries .primary -- no new CSS, reuses
+       the existing .btn/.btn.primary vocabulary the rest of the app
+       already renders tabs-adjacent things with (e.g. Send buttons). -->
   <div class="modal-overlay" id="importReviewDetails" hidden>
     <div class="modal-card">
       <div class="review-head">
         <h3>Review a game</h3>
         <button type="button" class="btn" id="importReviewCloseBtn">Close</button>
       </div>
-      <p style="font-size:13px;color:var(--text-dim);margin-top:0">Paste PGN text, or upload a .pgn/.txt file, then click Review.</p>
-      <textarea id="importReviewTextarea" rows="10" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px" placeholder="[Event &quot;?&quot;]&#10;1. e4 e5 2. Nf3 Nc6 ..."></textarea>
-      <input type="file" id="importReviewFileInput" accept=".pgn,.txt" style="margin-top:8px" />
-      <div id="importReviewError" style="font-size:13px;color:var(--danger);display:none;margin-top:8px"></div>
-      <div class="review-head" style="margin-top:12px">
-        <button type="button" class="btn primary" id="importReviewSubmitBtn">Review</button>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button type="button" class="btn primary" id="importTabPasteBtn">Paste PGN</button>
+        <button type="button" class="btn" id="importTabBrowseBtn">Browse past games</button>
+      </div>
+      <div id="importPasteSection">
+        <p style="font-size:13px;color:var(--text-dim);margin-top:0">Paste PGN text, or upload a .pgn/.txt file, then click Review.</p>
+        <textarea id="importReviewTextarea" rows="10" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px" placeholder="[Event &quot;?&quot;]&#10;1. e4 e5 2. Nf3 Nc6 ..."></textarea>
+        <input type="file" id="importReviewFileInput" accept=".pgn,.txt" style="margin-top:8px" />
+        <div id="importReviewError" style="font-size:13px;color:var(--danger);display:none;margin-top:8px"></div>
+        <div class="review-head" style="margin-top:12px">
+          <button type="button" class="btn primary" id="importReviewSubmitBtn">Review</button>
+        </div>
+      </div>
+      <!-- OUR-230: the list itself renders as plain rows, not a <table> --
+           #statsDetails' own table (renderStatsTable()) is fixed-width
+           aggregate columns; a real game per row wants variable-width text
+           (opponent names vary a lot) and a button, which is what
+           .stats-openings' <li> layout already handles elsewhere in this
+           same modal family, adapted here instead of introducing a second
+           layout primitive for one screen. -->
+      <div id="importBrowseSection" hidden>
+        <div id="importBrowseList" style="max-height:360px;overflow-y:auto"><p class="empty">Loading…</p></div>
       </div>
     </div>
   </div>
@@ -2339,6 +2360,9 @@
         importReviewCloseBtn=$('importReviewCloseBtn'), importReviewTextarea=$('importReviewTextarea'),
         importReviewFileInput=$('importReviewFileInput'), importReviewSubmitBtn=$('importReviewSubmitBtn'),
         importReviewError=$('importReviewError'),
+        importTabPasteBtn=$('importTabPasteBtn'), importTabBrowseBtn=$('importTabBrowseBtn'),
+        importPasteSection=$('importPasteSection'), importBrowseSection=$('importBrowseSection'),
+        importBrowseList=$('importBrowseList'),
         accountBody=$('accountBody'), identityLine=$('identityLine'), accountLogoutBtn=$('accountLogoutBtn'),
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
@@ -4838,38 +4862,47 @@
     return '<h4 style="margin:14px 0 4px;font-size:12px;color:var(--text-dim);font-weight:500">Accuracy trend (last '+points.length+' reviewed games, avg '+avg.toFixed(1)+'%)</h4>'
       +'<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" style="display:block"><path d="'+path+'" fill="none" stroke="var(--accent-2)" stroke-width="1.5"/>'+dots+'</svg>';
   }
-  function renderStats(){
+  // OUR-230: factored out of renderStats() unchanged (not rewritten) so the
+  // past-games browse list (Phase 2 of the Review-import feature) merges
+  // local+remote entries through the exact same rules Statistics already
+  // established, rather than a second, potentially-drifting copy of this
+  // logic. Returns the merged list only -- callers that don't need userId
+  // (everything but this function itself) never see it.
+  async function fetchMergedGamesLog(){
     const localAll=normalizedGamesLog();
-    statsBody.innerHTML='<p class="empty">Loading…</p>';
-    // Opening Stats is an explicit action, same as it always was — this
-    // still creates a session on demand if none exists yet (unlike
-    // onGameEnd()'s own opportunistic sync, which never does), and that's
-    // pre-existing behavior, not new here. onlineUser() piggybacks the
-    // local-stats backfill on this too, so opening Stats is itself one of
-    // the "opportunistic" moments a first sync can happen.
-    const remoteFetch=(db?onlineUser().then(user=>db.from('mind_chess_results').select('*').eq('user_id',user.id)
+    // Opening Stats (or the past-games browser) is an explicit action, same
+    // as it always was -- this still creates a session on demand if none
+    // exists yet (unlike onGameEnd()'s own opportunistic sync, which never
+    // does), and that's pre-existing behavior, not new here. onlineUser()
+    // piggybacks the local-stats backfill on this too, so opening either
+    // modal is itself one of the "opportunistic" moments a first sync can
+    // happen.
+    const {userId,remote}=await (db?onlineUser().then(user=>db.from('mind_chess_results').select('*').eq('user_id',user.id)
       .order('created_at',{ascending:false}).limit(500).then(r=>({userId:user.id,remote:r.data||null})))
       .catch(()=>({userId:null,remote:null})):Promise.resolve({userId:null,remote:null}));
-    remoteFetch.then(({userId,remote})=>{
-      // One unified list (OUR-124 Phase A): trust the live remote view for
-      // whatever it already has, and add only the local entries NOT yet
-      // synced — a synced local entry has a remote twin already in
-      // `remote`, so including it too would double-count. Offline, or no
-      // session yet, falls back to the full local log, synced or not
-      // (nothing to double against).
-      //
-      // OUR-126 Phase B: when there IS a remote view to merge into, a local
-      // entry already attributed to a DIFFERENT identity (logged_under
-      // set, doesn't match this session) is excluded from the merge too —
-      // it belongs to whichever account it was actually logged under, not
-      // to whoever happens to be signed in when Statistics gets opened
-      // next. See stampLocalEntry() above. No remote to merge into (offline,
-      // no session, a failed fetch) falls back to the full local log
-      // exactly as before Phase B — there's no risk of attributing it to
-      // the wrong account when there's no account view to contaminate.
-      const all=remote
-        ?remote.concat(localAll.filter(e=>!e.synced&&(e.logged_under==null||e.logged_under===userId)))
-        :localAll;
+    // One unified list (OUR-124 Phase A): trust the live remote view for
+    // whatever it already has, and add only the local entries NOT yet
+    // synced — a synced local entry has a remote twin already in
+    // `remote`, so including it too would double-count. Offline, or no
+    // session yet, falls back to the full local log, synced or not
+    // (nothing to double against).
+    //
+    // OUR-126 Phase B: when there IS a remote view to merge into, a local
+    // entry already attributed to a DIFFERENT identity (logged_under
+    // set, doesn't match this session) is excluded from the merge too —
+    // it belongs to whichever account it was actually logged under, not
+    // to whoever happens to be signed in when Statistics gets opened
+    // next. See stampLocalEntry() above. No remote to merge into (offline,
+    // no session, a failed fetch) falls back to the full local log
+    // exactly as before Phase B — there's no risk of attributing it to
+    // the wrong account when there's no account view to contaminate.
+    return remote
+      ?remote.concat(localAll.filter(e=>!e.synced&&(e.logged_under==null||e.logged_under===userId)))
+      :localAll;
+  }
+  function renderStats(){
+    statsBody.innerHTML='<p class="empty">Loading…</p>';
+    fetchMergedGamesLog().then(all=>{
       const personalized=all.filter(e=>e.mode!=='two-player');
       const totalPlayed=all.length;
       const wins=personalized.filter(e=>e.result==='win').length;
@@ -4925,16 +4958,106 @@
     if(e.key==='Escape'&&!transcriptDetails.hidden) closeTranscript();
   });
 
-  // OUR-229: standalone Game Review import modal -- Phase 1 (paste/upload
-  // only, no past-games list yet). Same dismissal pattern as Statistics/
-  // Transcript above. The file input just reads its file into the same
-  // textarea the paste path uses, so Review only ever has one text source
-  // to read regardless of how the PGN got there.
+  // OUR-229/OUR-230: standalone Game Review import modal -- two tabs into
+  // the same review engine (Paste PGN from OUR-229, Browse past games from
+  // OUR-230) rather than two separate entry points, since both end at the
+  // identical openReviewOverlay(descriptor) call. Same dismissal pattern as
+  // Statistics/Transcript above. The file input just reads its file into
+  // the same textarea the paste path uses, so Review only ever has one
+  // text source to read regardless of how the PGN got there.
+  // OUR-230: always reopens on the Paste tab -- same "starts fresh every
+  // time" choice OUR-215/OUR-216 already made for Review's own depth/
+  // autoplay state, rather than remembering which tab was open last.
   function openImportReview(){
     importReviewError.style.display='none';
+    switchImportTab('paste');
     importReviewDetails.hidden=false;
   }
   function closeImportReview(){ importReviewDetails.hidden=true; }
+  function switchImportTab(tab){
+    const paste=tab==='paste';
+    importTabPasteBtn.className='btn'+(paste?' primary':'');
+    importTabBrowseBtn.className='btn'+(paste?'':' primary');
+    importPasteSection.hidden=!paste;
+    importBrowseSection.hidden=paste;
+    // Only fetched on actually switching to this tab -- same "don't pay for
+    // a Supabase round trip nobody asked for" reasoning openStats() already
+    // uses for renderStats().
+    if(!paste) renderImportBrowseList();
+  }
+  importTabPasteBtn.addEventListener('click',()=>switchImportTab('paste'));
+  importTabBrowseBtn.addEventListener('click',()=>switchImportTab('browse'));
+  // OUR-230: cached per fetch (not re-queried on every "Load more" click)
+  // -- fetchMergedGamesLog() already caps the remote side at 500 rows,
+  // which is a page-load-once-and-slice case, not one worth re-fetching
+  // for. IMPORT_BROWSE_PAGE keeps the modal itself from ever rendering
+  // hundreds of rows at once regardless of how large that 500-row cap
+  // grows into over time.
+  let importBrowseCache=null, importBrowseShown=0;
+  const IMPORT_BROWSE_PAGE=20;
+  // OUR-230: the exact same descriptor shape Phase 1's paste path builds
+  // ({pgn, humanColor, mode, level, client_key}) -- openReviewOverlay()
+  // itself needs no changes at all, only real stored data feeding it
+  // instead of a pasted string. opponentName is deliberately omitted (left
+  // undefined): neither the local games log nor mind_chess_results ever
+  // stored a real Lichess opponent's username per game (only lastCompleted
+  // Game does, session-only, per OUR-116) -- describeOpponent()/
+  // reviewPlayerLabel() already treat a missing opponentName as a genuine
+  // gap, not an error, falling back to plain "Lichess" exactly as OUR-208
+  // intended.
+  function pastGameDescriptor(e){
+    return {pgn:e.pgn, humanColor:e.color||'w', mode:e.mode||null, level:e.level||null, client_key:e.client_key||null};
+  }
+  function paintImportBrowseRows(){
+    const sorted=importBrowseCache||[];
+    if(!sorted.length){
+      importBrowseList.innerHTML='<p class="empty">No past games yet — play one, or paste a PGN instead.</p>';
+      return;
+    }
+    const shown=sorted.slice(0,importBrowseShown);
+    let html='';
+    shown.forEach((e,i)=>{
+      const date=new Date(e.endedAt||e.created_at);
+      const modeLabel=e.mode?(MODE_LABELS[e.mode]||e.mode):'—';
+      const opponent=describeOpponent({mode:e.mode,humanColor:e.color,level:e.level,opponentName:null});
+      const resultLabel=e.result?resultLabelForEntry(e.mode,e.result):'—';
+      const accText=e.accuracy!=null?e.accuracy.toFixed(1)+'%':'—';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">'
+        +'<div style="min-width:0"><div style="font-size:13px">'+modeLabel+' vs '+opponent+'</div>'
+        +'<div style="font-size:12px;color:var(--text-dim)">'+date.toLocaleDateString()+' · '+resultLabel+' · Accuracy '+accText+'</div></div>'
+        +'<button type="button" class="btn" data-review-idx="'+i+'">Review</button>'
+        +'</div>';
+    });
+    if(importBrowseShown<sorted.length){
+      html+='<div style="text-align:center;margin-top:8px"><button type="button" class="btn" id="importBrowseLoadMoreBtn">Load more ('+(sorted.length-importBrowseShown)+' more)</button></div>';
+    }
+    importBrowseList.innerHTML=html;
+    importBrowseList.querySelectorAll('[data-review-idx]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const e=shown[+btn.dataset.reviewIdx];
+        closeImportReview();
+        openReviewOverlay(pastGameDescriptor(e));
+      });
+    });
+    const loadMoreBtn=document.getElementById('importBrowseLoadMoreBtn');
+    if(loadMoreBtn) loadMoreBtn.addEventListener('click',()=>{
+      importBrowseShown=Math.min(importBrowseShown+IMPORT_BROWSE_PAGE,sorted.length);
+      paintImportBrowseRows();
+    });
+  }
+  // OUR-230: sorted most-recent-first -- same field-fallback (endedAt for a
+  // local entry, created_at for a remote-only one) accuracyTrendPoints()
+  // already established for the exact same local/remote shape mismatch.
+  function renderImportBrowseList(){
+    importBrowseList.innerHTML='<p class="empty">Loading…</p>';
+    fetchMergedGamesLog().then(all=>{
+      importBrowseCache=all.slice().sort((a,b)=>new Date(b.endedAt||b.created_at)-new Date(a.endedAt||a.created_at));
+      importBrowseShown=Math.min(IMPORT_BROWSE_PAGE,importBrowseCache.length);
+      paintImportBrowseRows();
+    }).catch(()=>{
+      importBrowseList.innerHTML='<p class="empty">Could not load past games.</p>';
+    });
+  }
   importReviewBtn.addEventListener('click',openImportReview);
   importReviewCloseBtn.addEventListener('click',closeImportReview);
   importReviewDetails.addEventListener('click',e=>{ if(e.target===importReviewDetails) closeImportReview(); });
@@ -5849,29 +5972,40 @@
     const m=/\[Result\s+"([^"]*)"\]/.exec(pgn||'');
     return m?m[1]:null;
   }
-  function reviewGameMeta(){
-    const d=currentReviewDescriptor;
-    if(!d||!reviewResult) return null;
-    const entry=(d.client_key&&loadGamesLog().find(e=>e.client_key===d.client_key))||null;
-    const MODE_LABELS={computer:'Vs. computer','two-player':'Two-player (local)',online:'Online multiplayer',lichess:'Lichess'};
-    const modeLabel=d.mode?(MODE_LABELS[d.mode]||d.mode):'Imported game';
-    // OUR-203/OUR-208: d.level carries the Lichess AI's own level, and
-    // d.opponentName the real opponent's own Lichess username when
-    // Lichess sent one -- a real-opponent game with neither set (a
-    // genuine gap, not fabricated) falls back to the same plain
-    // "Lichess" this always read before either existed.
-    const opponent=
-      d.mode==='computer'?'Stockfish — '+((LEVELS[d.level]||{}).name||('Level '+d.level))
+  // OUR-230: MODE_LABELS/describeOpponent()/resultLabelForEntry() factored
+  // out of reviewGameMeta() (unchanged in substance, only lifted to module
+  // scope) so the past-games browse list renders the exact same mode/
+  // opponent/result text Review's own meta panel and TXT/PDF exports do --
+  // one definition of "how a game reads," not a second copy that could
+  // drift the moment either place changes.
+  const MODE_LABELS={computer:'Vs. computer','two-player':'Two-player (local)',online:'Online multiplayer',lichess:'Lichess'};
+  // OUR-203/OUR-208: d.level carries the Lichess AI's own level, and
+  // d.opponentName the real opponent's own Lichess username when
+  // Lichess sent one -- a real-opponent game with neither set (a
+  // genuine gap, not fabricated) falls back to the same plain
+  // "Lichess" this always read before either existed.
+  function describeOpponent(d){
+    return d.mode==='computer'?'Stockfish — '+((LEVELS[d.level]||{}).name||('Level '+d.level))
       :d.mode==='two-player'?'Local two-player'
       :d.mode==='lichess'?(d.level?'Lichess AI Level '+d.level:(d.opponentName?'Lichess ('+d.opponentName+')':'Lichess'))
       :d.mode==='online'?'Online opponent'
       :'—';
+  }
+  function resultLabelForEntry(mode,result){
+    return (mode==='two-player')
+      ?(result==='win'?'White won':result==='loss'?'Black won':'Draw')
+      :(result==='win'?'You won':result==='loss'?'You lost':'Draw');
+  }
+  function reviewGameMeta(){
+    const d=currentReviewDescriptor;
+    if(!d||!reviewResult) return null;
+    const entry=(d.client_key&&loadGamesLog().find(e=>e.client_key===d.client_key))||null;
+    const modeLabel=d.mode?(MODE_LABELS[d.mode]||d.mode):'Imported game';
+    const opponent=describeOpponent(d);
     const humanColorLabel=d.humanColor==='w'?'White':'Black';
     let resultLabel='—';
     if(entry&&entry.result){
-      resultLabel=(d.mode==='two-player')
-        ?(entry.result==='win'?'White won':entry.result==='loss'?'Black won':'Draw')
-        :(entry.result==='win'?'You won':entry.result==='loss'?'You lost':'Draw');
+      resultLabel=resultLabelForEntry(d.mode,entry.result);
     }else{
       // No games-log entry to key off of (an import, correctly found
       // nothing) -- fall back to the PGN's own [Result] tag, phrased from
@@ -6598,7 +6732,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r177 (OUR-229: standalone Game Review import — PGN paste/upload)';
+  const BUILD='v2-r178 (OUR-230: Game Review import — browse past games tab)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
