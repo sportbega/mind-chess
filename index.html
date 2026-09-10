@@ -1795,6 +1795,20 @@
         </g>
       </svg>
     </button>
+    <!-- OUR-229: standalone Game Review import -- lets a player review ANY
+         PGN, not just lastCompletedGame (which OUR-116 keeps session-only
+         on purpose). Folder-with-magnifier glyph, distinct from Transcript's
+         lines-on-a-page so the two aren't confused at a glance. Opens
+         #importReviewDetails (paste/upload), never lastCompletedGame
+         directly -- see openReviewOverlay(descriptor) below. -->
+    <button class="icon-btn mic-size" id="importReviewBtn" type="button" aria-label="Review a game" title="Review a game — paste or upload a PGN from any past game">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 3h9l3 3v6.5"/>
+        <path d="M8 9h8"/><path d="M8 13h4"/>
+        <circle cx="14.5" cy="16.5" r="3.5"/>
+        <path d="M17.2 19.2 20 22"/>
+      </svg>
+    </button>
     <!-- OUR-195: Board &amp; Pieces theme -- glyph swapped again, knight
          head (OUR-194's revision of OUR-192's original knight-on-square)
          still wasn't recognizable at this size per Adni -- a pawn's much
@@ -1930,6 +1944,27 @@
         <button type="button" class="btn" id="transcriptCloseBtn">Close</button>
       </div>
       <div class="transcript" id="transcript" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <!-- OUR-229: standalone Game Review import modal -- Phase 1 (PGN paste/
+       upload only; a browsable past-games list is deferred, see the
+       scoping report). Same modal-overlay/modal-card/review-head shell as
+       #statsDetails and #transcriptDetails above, click-outside/Escape
+       dismissal wired the same way in JS. -->
+  <div class="modal-overlay" id="importReviewDetails" hidden>
+    <div class="modal-card">
+      <div class="review-head">
+        <h3>Review a game</h3>
+        <button type="button" class="btn" id="importReviewCloseBtn">Close</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-dim);margin-top:0">Paste PGN text, or upload a .pgn/.txt file, then click Review.</p>
+      <textarea id="importReviewTextarea" rows="10" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px" placeholder="[Event &quot;?&quot;]&#10;1. e4 e5 2. Nf3 Nc6 ..."></textarea>
+      <input type="file" id="importReviewFileInput" accept=".pgn,.txt" style="margin-top:8px" />
+      <div id="importReviewError" style="font-size:13px;color:var(--danger);display:none;margin-top:8px"></div>
+      <div class="review-head" style="margin-top:12px">
+        <button type="button" class="btn primary" id="importReviewSubmitBtn">Review</button>
+      </div>
     </div>
   </div>
 
@@ -2300,6 +2335,10 @@
         statsBtn=$('statsBtn'), statsCloseBtn=$('statsCloseBtn'),
         transcriptDetails=$('transcriptDetails'), transcriptBtn=$('transcriptBtn'),
         transcriptCloseBtn=$('transcriptCloseBtn'),
+        importReviewBtn=$('importReviewBtn'), importReviewDetails=$('importReviewDetails'),
+        importReviewCloseBtn=$('importReviewCloseBtn'), importReviewTextarea=$('importReviewTextarea'),
+        importReviewFileInput=$('importReviewFileInput'), importReviewSubmitBtn=$('importReviewSubmitBtn'),
+        importReviewError=$('importReviewError'),
         accountBody=$('accountBody'), identityLine=$('identityLine'), accountLogoutBtn=$('accountLogoutBtn'),
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
@@ -4685,6 +4724,12 @@
     if(!statsDetails.hidden) renderStats();
   }
   let lastCompletedGame=null;
+  // OUR-229: whichever descriptor Review is CURRENTLY open with -- the
+  // just-finished game (lastCompletedGame) by default, or an imported
+  // descriptor from #importReviewDetails. reviewGameMeta() reads this
+  // instead of lastCompletedGame directly, so an import never has to fake
+  // an entry in lastCompletedGame just to be shown correctly.
+  let currentReviewDescriptor=null;
 
   // ---------------------------------------------------------------
   // Stats aggregation and rendering. Reads the local log synchronously;
@@ -4878,6 +4923,52 @@
   transcriptDetails.addEventListener('click',e=>{ if(e.target===transcriptDetails) closeTranscript(); });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&!transcriptDetails.hidden) closeTranscript();
+  });
+
+  // OUR-229: standalone Game Review import modal -- Phase 1 (paste/upload
+  // only, no past-games list yet). Same dismissal pattern as Statistics/
+  // Transcript above. The file input just reads its file into the same
+  // textarea the paste path uses, so Review only ever has one text source
+  // to read regardless of how the PGN got there.
+  function openImportReview(){
+    importReviewError.style.display='none';
+    importReviewDetails.hidden=false;
+  }
+  function closeImportReview(){ importReviewDetails.hidden=true; }
+  importReviewBtn.addEventListener('click',openImportReview);
+  importReviewCloseBtn.addEventListener('click',closeImportReview);
+  importReviewDetails.addEventListener('click',e=>{ if(e.target===importReviewDetails) closeImportReview(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!importReviewDetails.hidden) closeImportReview();
+  });
+  importReviewFileInput.addEventListener('change',()=>{
+    const file=importReviewFileInput.files&&importReviewFileInput.files[0];
+    if(!file) return;
+    file.text().then(text=>{ importReviewTextarea.value=text; })
+      .catch(()=>{
+        importReviewError.textContent='Could not read that file.';
+        importReviewError.style.display='';
+      });
+  });
+  importReviewSubmitBtn.addEventListener('click',()=>{
+    const pgn=importReviewTextarea.value.trim();
+    if(!pgn){
+      importReviewError.textContent='Paste some PGN text or upload a file first.';
+      importReviewError.style.display='';
+      return;
+    }
+    // A quick, cheap sanity check (chess.js itself is the real validator,
+    // inside analyzeGame() -- this just avoids opening the overlay at all
+    // for an obviously-not-PGN paste, e.g. someone pasting a FEN or plain
+    // prose by mistake) before committing to the overlay + analysis run.
+    if(!/[NBRQK]?[a-h][1-8]|O-O/.test(pgn)){
+      importReviewError.textContent='That doesn’t look like PGN move text.';
+      importReviewError.style.display='';
+      return;
+    }
+    importReviewError.style.display='none';
+    closeImportReview();
+    openReviewOverlay({pgn, humanColor:'w', mode:null, level:null, client_key:null});
   });
 
   // OUR-206: Chatbox modal -- #chatBtn itself is never hidden, but chat
@@ -5632,10 +5723,18 @@
   // fullscreened element. Reuses toggleFullscreen() itself (checks
   // isFullscreen() and takes its own exit branch) rather than duplicating
   // the exit call here -- one function still owns entering/exiting.
-  async function openReviewOverlay(){
-    if(!lastCompletedGame) return;
+  // OUR-229: descriptor defaults to lastCompletedGame so the existing
+  // "just finished a game" call site (reviewGameBtn's click handler,
+  // unchanged below) keeps working exactly as before -- only a caller that
+  // actually passes one (the import modal) gets something else reviewed.
+  // Stashed in currentReviewDescriptor so reviewGameMeta() below can read
+  // whichever descriptor THIS review session is actually showing, not
+  // whatever lastCompletedGame happens to hold by the time the player
+  // opens the perspective toggle or an export.
+  async function openReviewOverlay(descriptor=lastCompletedGame){
+    if(!descriptor) return;
     if(isFullscreen()) await toggleFullscreen();
-    const descriptor=lastCompletedGame;
+    currentReviewDescriptor=descriptor;
     // OUR-202: defaults the eval bar/text to whichever color the human
     // played in THIS specific game, not always White -- humanColor is
     // absent for a puzzle's own descriptor shape but review is never
@@ -5741,12 +5840,21 @@
     }
     return null;
   }
+  // OUR-229: an imported PGN has no client_key to look up in loadGamesLog()
+  // -- correctly finds nothing there -- so its own [Result "..."] tag is
+  // the only place a result can honestly come from. Standard PGN values
+  // only ('1-0'/'0-1'/'1/2-1/2'/'*'); anything else (missing tag, a
+  // malformed paste) falls through to reviewGameMeta()'s existing '—'.
+  function parsePgnResultTag(pgn){
+    const m=/\[Result\s+"([^"]*)"\]/.exec(pgn||'');
+    return m?m[1]:null;
+  }
   function reviewGameMeta(){
-    if(!lastCompletedGame||!reviewResult) return null;
-    const d=lastCompletedGame;
-    const entry=loadGamesLog().find(e=>e.client_key===d.client_key)||null;
+    const d=currentReviewDescriptor;
+    if(!d||!reviewResult) return null;
+    const entry=(d.client_key&&loadGamesLog().find(e=>e.client_key===d.client_key))||null;
     const MODE_LABELS={computer:'Vs. computer','two-player':'Two-player (local)',online:'Online multiplayer',lichess:'Lichess'};
-    const modeLabel=MODE_LABELS[d.mode]||d.mode;
+    const modeLabel=d.mode?(MODE_LABELS[d.mode]||d.mode):'Imported game';
     // OUR-203/OUR-208: d.level carries the Lichess AI's own level, and
     // d.opponentName the real opponent's own Lichess username when
     // Lichess sent one -- a real-opponent game with neither set (a
@@ -5764,6 +5872,13 @@
       resultLabel=(d.mode==='two-player')
         ?(entry.result==='win'?'White won':entry.result==='loss'?'Black won':'Draw')
         :(entry.result==='win'?'You won':entry.result==='loss'?'You lost':'Draw');
+    }else{
+      // No games-log entry to key off of (an import, correctly found
+      // nothing) -- fall back to the PGN's own [Result] tag, phrased from
+      // the reviewer's own perspective toggle rather than "You", since an
+      // import has no real notion of which seat is "you".
+      const tag=parsePgnResultTag(d.pgn);
+      resultLabel=tag==='1-0'?'White won':tag==='0-1'?'Black won':tag==='1/2-1/2'?'Draw':'—';
     }
     const date=(entry&&entry.endedAt)?new Date(entry.endedAt):new Date();
     // OUR-208: on-screen (renderReviewResult()) and both exports all read
@@ -6483,7 +6598,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r176 (OUR-226: fix Game Review opening invisibly when triggered from fullscreen)';
+  const BUILD='v2-r177 (OUR-229: standalone Game Review import — PGN paste/upload)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
