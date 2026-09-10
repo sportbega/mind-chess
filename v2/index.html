@@ -5689,8 +5689,12 @@
   // pick(REVIEW_CLASS_PHRASE.inaccuracy) on consecutive Inaccuracies in the
   // same game (or across games this session) already won't say the same
   // one twice running, for free.
+  // OUR-240: 'exactly what the engine wanted' was this list's own leftover
+  // clinical phrasing (same class of issue reviewBestMoveNote() below also
+  // had) -- 'exactly the right idea' keeps the same three-way shape
+  // without naming the engine.
   const REVIEW_CLASS_PHRASE={
-    best:['the best move','the top choice','exactly what the engine wanted'],
+    best:['the best move','the top choice','exactly the right idea'],
     excellent:['an excellent move','a great choice','very strong'],
     good:['a good move','a solid choice','reasonable'],
     inaccuracy:['an inaccuracy','not quite the best choice','a small slip'],
@@ -5807,9 +5811,15 @@
     if(!move.classification||['best','excellent','good'].indexOf(move.classification)!==-1) return null;
     return reviewHungPieceNote(move)||reviewCheckNote(move)||reviewForkNote(move);
   }
-  // "The engine preferred [piece] to [square] instead" -- evalBefore.bestmove
-  // is the engine's own top choice at the position before this move, exactly
-  // what OUR-115's classification already compares the played move against.
+  // "[Stronger/better try/what a strong player would go with] was [piece] to
+  // [square]" -- evalBefore.bestmove is the engine's own top choice at the
+  // position before this move, exactly what OUR-115's classification already
+  // compares the played move against, but never named as "the engine" in the
+  // sentence itself (OUR-240) -- that clinical framing is what OUR-218
+  // already moved the rest of Deep commentary's clauses away from
+  // (reviewHungPieceNote/reviewCheckNote/reviewForkNote above, three
+  // pick()-varied phrasings apiece, same as here), this one just hadn't
+  // been touched yet. Same three-variant shape as those, not a new pattern.
   function reviewBestMoveNote(move){
     const bestUci=move.evalBefore&&move.evalBefore.bestmove;
     if(!bestUci) return null;
@@ -5819,7 +5829,7 @@
     if(m.flags.indexOf('k')!==-1) phrase='castling kingside';
     else if(m.flags.indexOf('q')!==-1) phrase='castling queenside';
     else phrase=PIECE_NAME[m.piece]+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to);
-    return pick(['The engine preferred '+phrase+' instead.','Stronger was '+phrase+'.','The better try was '+phrase+'.']);
+    return pick(['A strong player would go with '+phrase+' here.','Stronger was '+phrase+'.','The better try was '+phrase+'.']);
   }
   // "The best line continues [move], [move]" -- walks evalBefore.pv past its
   // own first move (already named by reviewBestMoveNote() above) through a
@@ -5851,12 +5861,13 @@
   //
   // 12s narration-length note (OUR-215's whenSpeechIdle() trust
   // deadline): the longest realistic Deep sentence -- Simple base + a
-  // tactic clause + "the engine preferred..." + a 1-ply continuation --
-  // runs roughly 20-28 words. At a natural spoken pace (~2.2-2.5 words/sec)
-  // that is close to but should stay under 12s; it is NOT a wide margin.
-  // The honest-fallback path (no tactic found, the common case for
-  // Inaccuracies) is much shorter -- base + one "preferred X instead"
-  // clause -- and is in no danger. Kept the continuation capped at 1 extra
+  // tactic clause + reviewBestMoveNote()'s own clause + a 1-ply
+  // continuation -- runs roughly 20-28 words. At a natural spoken pace
+  // (~2.2-2.5 words/sec) that is close to but should stay under 12s; it is
+  // NOT a wide margin. The honest-fallback path (no tactic found, the
+  // common case for Inaccuracies) is much shorter -- base + one
+  // reviewBestMoveNote() clause -- and is in no danger. Kept the
+  // continuation capped at 1 extra
   // ply and only ever added alongside a tactic clause (never on its own)
   // specifically to keep the worst case bounded; if real Deep sentences in
   // practice run past ~10s, that ceiling should be raised for review's own
@@ -7181,7 +7192,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r189 (OUR-239: Game Review Highlights mode - skip to notable/critical moves)';
+  const BUILD='v2-r190 (OUR-240: Deep commentary drops "the engine" phrasing)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
