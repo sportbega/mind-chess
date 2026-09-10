@@ -5650,11 +5650,31 @@
   // Renders the position at reviewResult.perMove/fens index `idx` (0 =
   // starting position, i = the position after move i for i in
   // 1..perMove.length).
+  // OUR-243: after two exhaustive investigations (real clicks, real DOM
+  // verification, multiple entry points) turned up no actual state bug
+  // behind reports of Reload desyncing the board from the move-list --
+  // the board was always correct -- the remaining plausible explanation
+  // is scroll position: on a shorter viewport, scrolling down toward the
+  // move list before clicking Reload/Next/Prev/+-5 can leave the (already
+  // correctly updated) board off-screen, which reads as "the list
+  // changed but the board didn't" without anything actually being wrong.
+  // block:'nearest' is deliberate -- scrolls the minimum distance to
+  // bring the board back into view, or does nothing at all if it's
+  // already visible, rather than always snapping it to a fixed position.
+  function reviewScrollBoardIntoView(){
+    reviewBoardGrid.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
   function showReviewPosition(idx){
     if(!reviewResult) return;
     reviewPositionIdx=idx;
     const fen=reviewResult.fens[idx];
     renderReviewBoard(fen,isBoardFlipped());
+    // Skipped during auto-play's own repeated steps -- Play already
+    // implies the player is watching/listening along, and re-scrolling
+    // on every single move as it advances (rather than once, for the
+    // manual action that started or interrupted it) would be the jarring
+    // outcome this was written to avoid, not fix.
+    if(!reviewAutoPlaying) reviewScrollBoardIntoView();
     const evalObj=reviewResult.evals[idx];
     const wpWhite=evalObj?winPercentFromCpWhite(signedCpFromWhite(evalObj,fenTurn(fen))):50;
     // OUR-202: the bar's own fill still only ever grows from the bottom
@@ -7271,7 +7291,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r192 (OUR-242: Game Review calm-opening phase for Deep commentary)';
+  const BUILD='v2-r193 (OUR-243: Game Review auto-scrolls board into view on navigation)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
