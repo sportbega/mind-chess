@@ -2840,6 +2840,16 @@
   // comfortably below REVIEW_REPLY_WAIT_MAX_MS/REPLY_WAIT_MAX_MS so this
   // catches the failure long before either of those has to.
   const KOKORO_STALL_MS=6000;
+  // OUR-248: how long a single clip's GENERATION (kokoro.generate(), not
+  // playback -- see speakChunkKokoro()'s own comment on the distinction)
+  // is allowed to run before it's treated as failed. Generation normally
+  // costs 0.7-3.6s a line (see primeAhead()'s own comment); this is a
+  // generous multiple of that, not a tight bound. Exists because a broken
+  // or lost WebGPU device -- the kind a hard page reload can leave behind
+  // -- makes kokoro.generate() hang rather than reject, and a promise that
+  // never settles sails straight past speakChunkKokoro()'s existing
+  // .catch() fallback (which only runs once something actually rejects).
+  const KOKORO_GENERATE_MS=10000;
   let kokoroPriming=false;
 
   // The reserve: one clip rendered for a narration that hasn't started yet.
@@ -2965,7 +2975,15 @@
   function speakChunkKokoro(chunk,myGeneration,myChunk,advance){
     const started=Date.now();
     const pending=takeAhead(chunk);
-    pending.then(url=>{
+    // OUR-248: a hung generate() call never resolves AND never rejects, so
+    // racing it against a plain timeout is the only way to give the
+    // existing .catch(err=>{...}) fallback below something to catch --
+    // without this, a broken model silently produces no audio, no error,
+    // and no fallback, all the way out to whenSpeechIdle()'s own much
+    // longer ceiling (see KOKORO_GENERATE_MS's own comment).
+    const timedPending=Promise.race([pending,new Promise((_,reject)=>
+      setTimeout(()=>reject(new Error('kokoro generation timed out after '+KOKORO_GENERATE_MS+'ms')),KOKORO_GENERATE_MS))]);
+    timedPending.then(url=>{
       if(myGeneration!==speechGeneration||myChunk!==chunkToken){ URL.revokeObjectURL(url); return; }
       primeAhead();
       const el=new Audio(url);
@@ -7433,7 +7451,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r197 (OUR-247: Kokoro stall watchdog for speakChunkKokoro)';
+  const BUILD='v2-r198 (OUR-248: Kokoro generation timeout, catches a hung model)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
