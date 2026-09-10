@@ -1840,7 +1840,7 @@
          OUR-192 used for Report a problem's own glyph -- the outer 48px
          button/circle is untouched, only the drawn content inside its
          24x24 viewBox scaled up around the center.
-         OUR-234: pawn swapped for a queen -- a classic 3-point crown
+         OUR-235: pawn swapped for a queen -- a classic 3-point crown
          silhouette (flared base wider than the crown's own rim, same
          "flared base" shape the old pawn's own base line hinted at)
          rather than the pawn's round head. Drawn as a single path with
@@ -5973,7 +5973,7 @@
     reviewOverlay.hidden=true;
     reviewResult=null;
   }
-  // OUR-236: NOT openReviewOverlay directly -- a click listener is always
+  // OUR-234: NOT openReviewOverlay directly -- a click listener is always
   // called with the click Event as its first argument, which clobbers
   // descriptor's own `=lastCompletedGame` default (a default only applies
   // to an omitted/undefined argument, and a real DOM event is neither).
@@ -6942,7 +6942,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r184 (OUR-236: Review game listener was passing the click Event as its descriptor)';
+  const BUILD='v2-r185 (OUR-234: Review game listener was passing the click Event as its descriptor)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
