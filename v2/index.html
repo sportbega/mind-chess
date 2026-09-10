@@ -7050,7 +7050,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r187 (OUR-237: Game Review opens on move 1, Reload/Play made consistent)';
+  const BUILD='v2-r188 (OUR-238: Review game survives a page reload; lastCompletedGame/gameOver restored)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -12350,6 +12350,39 @@
       if(mode==='computer'&&!game.history().length&&humanColor!=='w') humanColor='w';
       lastMove=game.history({verbose:true}).slice(-1)[0]||null;
       gameOver=game.game_over();
+      // OUR-238: lastCompletedGame (what "Review game" reads -- see
+      // onGameEnd()) is a plain in-memory variable, never written to
+      // SAVE_KEY, so it was always null again after a reload -- the
+      // button's click handler just silently did nothing, no matter how
+      // recently the game had actually finished. Restored here from the
+      // games log's own last entry (GAMES_LOG_KEY, already persisted by
+      // logCompletedGame() at the same real game-end onGameEnd() reaches
+      // lastCompletedGame from) rather than inventing a second, redundant
+      // save slot for data logCompletedGame() already durably writes.
+      // Reshaped to lastCompletedGame's own field names (color->
+      // humanColor; opponentName can't be recovered from the log, but
+      // it's only ever used for a live Lichess opponent's display name --
+      // null here is the same value every non-Lichess game already used).
+      //
+      // Only trusted when its own pgn+mode match what was JUST restored
+      // above -- a stale entry from a completely different, older game
+      // must never masquerade as "the game that just finished".
+      //
+      // gameOver itself is also corrected here, not just the button: the
+      // line above only recognizes chess-RULE endings (checkmate/
+      // stalemate/etc) -- a resigned or clock-timeout game leaves an
+      // otherwise perfectly ordinary position chess.js has no way to
+      // flag on its own, so this restored as gameOver=false even though
+      // the game genuinely ended. The games log entry only ever exists
+      // because a real onGameEnd() completion wrote it, so its pgn
+      // matching the just-restored live game is proof enough that this
+      // one ended too, regardless of how.
+      const lastLoggedGame=loadGamesLog().slice(-1)[0];
+      if(lastLoggedGame&&lastLoggedGame.pgn===game.pgn()&&lastLoggedGame.mode===mode){
+        lastCompletedGame={mode:lastLoggedGame.mode, pgn:lastLoggedGame.pgn, humanColor:lastLoggedGame.color,
+          level:lastLoggedGame.level, opponentName:null, client_key:lastLoggedGame.client_key};
+        gameOver=true;
+      }
       pendingAction=null;
       transcript.innerHTML='';
       // OUR-112: a save can genuinely be at/past checkmate — the player made
