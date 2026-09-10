@@ -5447,6 +5447,16 @@
   // flips, only re-signed/re-mirrored at render time in
   // showReviewPosition()/formatEvalText().
   let reviewToken=0, reviewResult=null, reviewPositionIdx=0, reviewPerspective='w';
+  // OUR-238: true whenever the position on screen has a move that hasn't
+  // been spoken yet -- set wherever a position is shown WITHOUT also
+  // narrating it (the fresh-open and Reload landing on move 1, see
+  // renderReviewResult()/reviewReloadBtn below), cleared by
+  // narrateReviewStep() itself so every place that actually narrates
+  // clears it for free. reviewAutoAdvance() checks this before its own
+  // step-forward-then-narrate logic so pressing Play right after opening
+  // narrates the move ALREADY on screen first, instead of skipping past
+  // it to narrate the next one.
+  let reviewNeedsNarration=false;
   // OUR-215 Phase B: auto-play. reviewAutoToken is bumped on every stop (by
   // Pause, a manual Prev/Next, the game ending, or closing the overlay) so
   // a whenSpeechIdle() waiter already in flight from a step before the stop
@@ -5565,7 +5575,11 @@
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
     reviewPrevBtn.disabled=(idx<=0);
     reviewNextBtn.disabled=(idx>=reviewResult.perMove.length);
-    reviewReloadBtn.disabled=(idx<=0);
+    // OUR-238: disabled at move 1 (the new default open/Reload position),
+    // not move 0 -- Reload's own job is "back to the ready position",
+    // which now IS move 1, so it stays clickable at move 0 (reached only
+    // via Prev/-5 past it) to bring the player back to move 1 again.
+    reviewReloadBtn.disabled=(idx===Math.min(1,reviewResult.perMove.length));
     reviewRewind5Btn.disabled=(idx<=0);
     reviewForward5Btn.disabled=(idx>=reviewResult.perMove.length);
   }
@@ -5804,6 +5818,7 @@
   // narrated, not just the first, since this recomputes fresh from
   // reviewResult rather than a one-shot flag.
   function narrateReviewStep(idx){
+    reviewNeedsNarration=false;
     if(!reviewResult||idx<=0) return;
     const move=reviewResult.perMove[idx-1];
     if(!move) return;
@@ -5859,16 +5874,21 @@
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
-  // OUR-222: back to the very start, reusing showReviewPosition(0) as-is --
-  // position 0 has no move to narrate (narrateReviewStep() already no-ops
-  // for idx<=0, same as it always has for Prev stepping back to the
-  // start), so there's nothing new to say here, only somewhere new to
-  // look. Works from anywhere, including after auto-play has already
-  // reached the end.
+  // OUR-222: back to the ready-to-go position.
+  // OUR-238: that's now move 1, not move 0 -- matching wherever a fresh
+  // review now opens (renderReviewResult()), so Reload and a freshly
+  // opened review always land the same place and behave the same way
+  // afterward (see reviewNeedsNarration: Play right after Reload
+  // narrates move 1 immediately, exactly like Play right after opening).
+  // True move 0 (the actual starting position) is still one Prev/-5 away
+  // from here -- Reload never removed that, only changed its own target.
   reviewReloadBtn.addEventListener('click',()=>{
-    if(!reviewResult||reviewPositionIdx===0) return;
+    if(!reviewResult) return;
+    const target=Math.min(1,reviewResult.perMove.length);
+    if(reviewPositionIdx===target) return;
     if(reviewAutoPlaying) stopReviewAutoPlay();
-    showReviewPosition(0);
+    showReviewPosition(target);
+    reviewNeedsNarration=(target>0);
   });
   // OUR-222: +-5 step, clamped to the game's own start/end -- same
   // showReviewPosition()/narrateReviewStep() as single-step Prev/Next, so
@@ -5897,6 +5917,15 @@
   // to finish as a short "Best move" one.
   function reviewAutoAdvance(myToken){
     if(myToken!==reviewAutoToken||!reviewResult) return;
+    // OUR-238: the position on screen (move 1, opened or Reloaded) hasn't
+    // been spoken yet -- narrate exactly what's already shown instead of
+    // stepping past it, so Play's first press is never silent about the
+    // move the player is already looking at.
+    if(reviewNeedsNarration){
+      narrateReviewStep(reviewPositionIdx);
+      whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REPLY_WAIT_MAX_MS);
+      return;
+    }
     if(reviewPositionIdx>=reviewResult.perMove.length){ stopReviewAutoPlay(); return; }
     const idx=reviewPositionIdx+1;
     pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
@@ -5907,7 +5936,11 @@
   reviewPlayBtn.addEventListener('click',()=>{
     if(!reviewResult) return;
     if(reviewAutoPlaying){ stopReviewAutoPlay(); return; }
-    if(reviewPositionIdx>=reviewResult.perMove.length) return;   // already at the end -- nothing to play
+    // OUR-238: a not-yet-narrated position at the very end (a one-move
+    // game opens AND ends on move 1) still has that one narration left
+    // to give, so reviewNeedsNarration keeps this from bailing out the
+    // same way "already at the end" normally would.
+    if(reviewPositionIdx>=reviewResult.perMove.length&&!reviewNeedsNarration) return;
     reviewAutoPlaying=true;
     reviewPlayBtn.textContent='Pause';
     reviewAutoAdvance(reviewAutoToken);
@@ -5957,7 +5990,19 @@
         if(idx===reviewResult.perMove.length) narrateReviewStep(idx);
       });
     });
-    showReviewPosition(result.perMove.length);
+    // OUR-238: opens on move 1 (the position right after the game's own
+    // first move), not the last move -- landing on the final position by
+    // default made the player click Prev/-5/a move-list entry repeatedly
+    // just to see the game from the start, and gave no obvious "press
+    // Play to hear this game" moment the way starting at move 1 does.
+    // Math.min guards a theoretical 0-move perMove (nothing to open on
+    // past the starting position) rather than requesting an out-of-range
+    // fens/evals index.
+    const openIdx=Math.min(1,result.perMove.length);
+    showReviewPosition(openIdx);
+    // Shown, not yet spoken -- reviewAutoAdvance() narrates exactly this
+    // position, without stepping past it, on Play's first press.
+    reviewNeedsNarration=(openIdx>0);
   }
   // OUR-226: #reviewOverlay is a direct child of .app (same level as
   // #checkAlert, #originBanner), and .app.fullscreen-active>*{display:none}
@@ -7005,7 +7050,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r186 (OUR-236: Report a problem textarea enlarged; Chatbox modal to popover)';
+  const BUILD='v2-r187 (OUR-237: Game Review opens on move 1, Reload/Play made consistent)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
