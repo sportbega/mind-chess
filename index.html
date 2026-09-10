@@ -800,12 +800,18 @@
       <div id="reviewProgress" class="review-progress"></div>
       <div id="reviewContent" class="review-content" hidden>
         <div class="review-accuracy" id="reviewAccuracy"></div>
-        <!-- OUR-146: export the finished review -- same reviewResult this
-             screen already renders from, so nothing here can show
-             different numbers than what's on screen. -->
+        <!-- OUR-146/OUR-232: export the finished review -- same reviewResult
+             this screen already renders from, so nothing here can show
+             different numbers than what's on screen. PGN (OUR-232) is the
+             one export format a real chess program can re-import: standard
+             tag pairs, ??/?/?!/! move-suffix annotations from the same
+             classification badges shown above, and Lichess's own
+             [%eval ...] comment syntax (the de facto standard other
+             software also reads) rather than an invented comment format. -->
         <div class="review-export-row">
           <button type="button" class="btn" id="reviewExportTxtBtn">Export as TXT</button>
           <button type="button" class="btn" id="reviewExportPdfBtn">Export as PDF</button>
+          <button type="button" class="btn" id="reviewExportPgnBtn">Export as PGN</button>
         </div>
         <div class="review-board-row">
           <div class="review-evalbar" id="reviewEvalBar" title="Evaluation, White's perspective"><div class="review-evalbar-fill" id="reviewEvalFill"></div></div>
@@ -2399,6 +2405,7 @@
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
         reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'),
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
+        reviewExportPgnBtn=$('reviewExportPgnBtn'),
         reviewPerspectiveBtn=$('reviewPerspectiveBtn'), reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
         reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
@@ -6085,6 +6092,108 @@
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 
+  // ===============================================================
+  // OUR-232: PGN export -- a real, re-importable annotated PGN, not the
+  // TXT report's own hand-formatted columns. Two conventions checked
+  // against real chess software rather than invented:
+  //  - Move-suffix annotations (??/?/?!/!) are the traditional PGN symbol
+  //    form, universally supported. NAG numeric codes ($4/$2/$6/$1) are
+  //    the alternative encoding for the same judgments, but every reader
+  //    that understands NAGs also understands the symbol suffixes, and
+  //    the symbols stay human-readable in a plain-text PGN -- no reason
+  //    to prefer the numeric form here.
+  //  - Eval comments use Lichess's own [%eval ...] syntax (confirmed via
+  //    Lichess's actual exported PGNs, e.g. "Bg5?! { [%eval -0.44] }"),
+  //    which chess.com, ChessBase, and SCID all also recognize -- the de
+  //    facto standard, not a format invented for this app. Centipawn
+  //    evals are always from WHITE's own POV per the spec (never the
+  //    reviewer's perspective toggle, which is purely an on-screen/other-
+  //    export display choice) and rendered to 2 decimal places in pawns;
+  //    mate scores use "#N" (White mates) / "#-N" (Black mates).
+  // ===============================================================
+  // Best/Good/null get no suffix at all -- per the same "not every move
+  // gets annotated, only notable ones" convention this app's own
+  // classificationLabel()/badges already follow. Excellent maps to a
+  // single "!" rather than "!!": Brilliant (still deferred, OUR-115) is
+  // reserved for whatever that future tier turns out to mean, and "!!"
+  // traditionally marks a move stronger/rarer than merely a small (<=2
+  // Win%) drop from perfect -- reusing it for Excellent now would leave
+  // nothing left to escalate to once Brilliant actually exists.
+  const PGN_NAG_SYMBOL={blunder:'??',mistake:'?',inaccuracy:'?!',excellent:'!'};
+  // evalObj is already {kind:'cp'|'mate',value} from the mover's opponent's
+  // POV (stockfishAnalyse()'s UCI convention, same shape signedCpFromWhite()
+  // already normalizes elsewhere) -- signedCpFromWhite() only ceils a mate
+  // score to ±CP_CEILING for Win% math, discarding the actual mate count,
+  // so mate distance is read directly off evalObj.value here instead.
+  function pgnEvalTag(evalObj,fen){
+    if(!evalObj) return null;
+    const stm=fenTurn(fen);
+    if(evalObj.kind==='mate'){
+      const mateFromWhite=stm==='w'?evalObj.value:-evalObj.value;
+      return '#'+mateFromWhite;
+    }
+    return (signedCpFromWhite(evalObj,stm)/100).toFixed(2);
+  }
+  // "You" is this app's own on-screen shorthand (reviewPlayerLabel()),
+  // never a real name it actually has on hand synchronously -- printing
+  // "Player" in a PGN header is honest, "You" would read strangely in
+  // someone else's chess software. A genuine gap (two-player's own seats,
+  // online's unlabeled UUIDs) gets PGN's own "?" convention for an unknown
+  // Seven Tag Roster value, never a fabricated name.
+  function pgnHeaderName(color,d){
+    const label=reviewPlayerLabel(color,d);
+    return label==='You'?'Player':(label||'?');
+  }
+  // Mirrors resultLabelForEntry()'s own win/loss-relative-to-color logic
+  // but returns the real PGN code instead of prose, since the two need to
+  // agree about who actually won without a second copy of "did White or
+  // Black win" ever drifting between the prose and the tag value. No
+  // games-log entry (an import, correctly found nothing) falls back to
+  // the PGN's own [Result] tag exactly as reviewGameMeta()'s resultLabel
+  // already does -- parsePgnResultTag() IS the code already, no re-
+  // encoding needed for that path.
+  function pgnResultCode(d,entry){
+    if(entry&&entry.result){
+      if(entry.result==='draw') return '1/2-1/2';
+      const humanIsWhite=(d.mode==='two-player')||d.humanColor==='w';
+      const humanWon=entry.result==='win';
+      return (humanWon===humanIsWhite)?'1-0':'0-1';
+    }
+    const tag=parsePgnResultTag(d.pgn);
+    return (tag==='1-0'||tag==='0-1'||tag==='1/2-1/2')?tag:'*';
+  }
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function buildPgnMovetext(perMove){
+    let text='';
+    for(const m of perMove){
+      if(m.color==='w') text+=(m.ply/2+1)+'. ';
+      const sym=PGN_NAG_SYMBOL[m.classification]||'';
+      const evalTag=pgnEvalTag(m.evalAfter,m.fenAfter);
+      text+=m.san+sym+(evalTag?' { [%eval '+evalTag+'] } ':' ');
+    }
+    return text;
+  }
+  function exportReviewAsPgn(){
+    if(!reviewResult) return;
+    const meta=reviewGameMeta();
+    const d=currentReviewDescriptor;
+    const entry=(d.client_key&&loadGamesLog().find(e=>e.client_key===d.client_key))||null;
+    const resultCode=pgnResultCode(d,entry);
+    const dt=meta.date;
+    const headers=[
+      '[Event "Mind Chess"]',
+      '[Site "?"]',
+      '[Date "'+dt.getFullYear()+'.'+pad2(dt.getMonth()+1)+'.'+pad2(dt.getDate())+'"]',
+      '[Round "?"]',
+      '[White "'+pgnHeaderName('w',d)+'"]',
+      '[Black "'+pgnHeaderName('b',d)+'"]',
+      '[Result "'+resultCode+'"]',
+      '[Annotator "Mind Chess"]'
+    ].join('\n');
+    const pgn=headers+'\n\n'+buildPgnMovetext(reviewResult.perMove)+resultCode+'\n';
+    triggerDownload(new Blob([pgn],{type:'application/x-chess-pgn'}),reviewExportFilename('pgn'));
+  }
+
   function exportReviewAsTxt(){
     if(!reviewResult) return;
     const meta=reviewGameMeta();
@@ -6250,6 +6359,7 @@
     doc.save(reviewExportFilename('pdf'));
   }
 
+  reviewExportPgnBtn.addEventListener('click',exportReviewAsPgn);
   reviewExportTxtBtn.addEventListener('click',exportReviewAsTxt);
   reviewExportPdfBtn.addEventListener('click',exportReviewAsPdf);
 
@@ -6762,7 +6872,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r179 (OUR-231: icon glyph adjustments — stats arrow, pawn/cap enlarge, voice settings re-center)';
+  const BUILD='v2-r180 (OUR-232: Game Review annotated PGN export)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
