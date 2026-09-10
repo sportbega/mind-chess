@@ -5677,29 +5677,63 @@
     reviewRewind5Btn.disabled=(idx<=0);
     reviewForward5Btn.disabled=(idx>=reviewResult.perMove.length);
   }
+  // OUR-241: session-scoped repetition avoidance for Game Review's own
+  // Deep-commentary phrase pools -- separate from pick()'s own plain
+  // "don't say the exact same thing twice in a ROW" rule (still true
+  // here too, layered on top), this additionally keeps a running
+  // per-pool usage count and excludes any phrase that's already been
+  // used more than REVIEW_PHRASE_REPEAT_CAP times from the draw, so a
+  // long game can't lean on one favorite phrase over and over while
+  // its pool-mates sit unused. Falls back to the full pool if every
+  // option in it has equally crossed the cap (never left with zero
+  // candidates). Reset at the start of every fresh review (see
+  // openReviewOverlay()) -- "within a review session" per the request,
+  // not persisted across reviews or games. Keyed by poolKey (a string
+  // identifying WHICH pool -- e.g. 'class:blunder', 'bestMoveNote' --
+  // never the list contents themselves, so two pools that happen to
+  // share a phrase still track independently.
+  const REVIEW_PHRASE_REPEAT_CAP=3;
+  let reviewPhraseUsage={};
+  function reviewResetPhraseUsage(){ reviewPhraseUsage={}; }
+  function reviewPick(poolKey,list){
+    if(list.length===1) return list[0];
+    const counts=reviewPhraseUsage[poolKey]||(reviewPhraseUsage[poolKey]={});
+    let eligible=list.filter(p=>(counts[p]||0)<=REVIEW_PHRASE_REPEAT_CAP);
+    if(!eligible.length) eligible=list;
+    const lastKey='last:'+poolKey;
+    let choice=eligible[Math.floor(Math.random()*eligible.length)];
+    if(eligible.length>1&&choice===reviewPhraseUsage[lastKey]){
+      choice=eligible[(eligible.indexOf(choice)+1)%eligible.length];
+    }
+    reviewPhraseUsage[lastKey]=choice;
+    counts[choice]=(counts[choice]||0)+1;
+    return choice;
+  }
   // OUR-214 Phase A: Simple-tier narration for one stepped-to move --
   // the move itself (reusing describeMove()'s own piece/capture/castle
   // phrasing via describeUci(), same as the live coach builds sentences
   // from a PV move) plus its existing classification (OUR-115), nothing
-  // more.
-  // OUR-218: several phrasings per classification, same pick() mechanism
-  // the live coach already uses for its own answers (C2, see pick() below)
-  // -- reused, not reinvented. pick()'s own "don't repeat the last choice
-  // from this exact list" logic is keyed on the array itself, so calling
-  // pick(REVIEW_CLASS_PHRASE.inaccuracy) on consecutive Inaccuracies in the
-  // same game (or across games this session) already won't say the same
-  // one twice running, for free.
-  // OUR-240: 'exactly what the engine wanted' was this list's own leftover
-  // clinical phrasing (same class of issue reviewBestMoveNote() below also
-  // had) -- 'exactly the right idea' keeps the same three-way shape
-  // without naming the engine.
+  // more. Deep (reviewDeepSentence() below) builds on this same base
+  // sentence rather than duplicating it, so this classification phrase
+  // is shared by both tiers, not Deep-exclusive.
+  // OUR-218: several phrasings per classification -- OUR-241 moved
+  // selection from plain pick() to reviewPick() above (see its own
+  // comment) for the added repetition cap.
+  // OUR-241: full rewrite of the wording itself, previously a lowercase
+  // fragment appended after "[Move], " (e.g. "Pawn to e4, the best
+  // move."). Now full standalone sentences read as their own follow-up
+  // ("Pawn to e4. That's the best move on the board.") -- deliberately
+  // NOT flattened into interchangeable synonyms across tiers: Blunder's
+  // set reads as genuinely more serious than Inaccuracy's, Best more
+  // enthusiastic than Good, matching how a human reviewer's tone
+  // actually shifts with how big a deal the move was.
   const REVIEW_CLASS_PHRASE={
-    best:['the best move','the top choice','exactly the right idea'],
-    excellent:['an excellent move','a great choice','very strong'],
-    good:['a good move','a solid choice','reasonable'],
-    inaccuracy:['an inaccuracy','not quite the best choice','a small slip'],
-    mistake:['a mistake','a real error','off the mark'],
-    blunder:['a blunder','a serious error','a costly mistake']
+    blunder:['That’s a costly one.','This really hurts your position.','That hands the advantage away.','A tough moment right there.','That one stings a little.'],
+    mistake:['That’s a real mistake.','This gives some ground back.','Not quite the move you wanted.','That eases the pressure on your opponent.','A noticeable step back there.'],
+    inaccuracy:['Just a touch off there.','Slightly loose, nothing serious.','Not the cleanest choice, but close.','A minor slip, easy to miss.','That’s a small one.'],
+    best:['That’s the best move on the board.','Perfect choice right there.','You found the top move.','That’s exactly right.','Couldn’t have played that better.'],
+    excellent:['That’s an excellent move.','A really strong choice.','You played that very well.','That’s a sharp find.','Nicely done there.'],
+    good:['That’s a good, solid move.','A reasonable choice there.','That keeps things steady.','Nothing wrong with that.','A safe, sensible move.']
   };
   function reviewMoveSentence(move){
     const m=describeUci(move.fenBefore,move.uci);
@@ -5711,7 +5745,7 @@
       if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
     }else base=move.san;
     const options=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
-    return options?base+', '+pick(options)+'.':base+'.';
+    return options?base+'. '+reviewPick('class:'+move.classification,options):base+'.';
   }
 
   // ---------------------------------------------------------------
@@ -5750,7 +5784,7 @@
     const gained=PIECE_VALUE[reply.captured];
     if(gained<=paid) return null;
     const sq=PIECE_NAME[reply.captured]+' on '+spokenSquare(reply.to);
-    return pick(['That hangs the '+sq+'.','That leaves the '+sq+' hanging.','The '+sq+' is left undefended.']);
+    return reviewPick('hungPiece',['That hangs the '+sq+'.','That leaves the '+sq+' hanging.','The '+sq+' is left undefended.']);
   }
   // Reuses pvGivesCheck() exactly as the live coach's own "is my king safe?"
   // answer does (index.html's matchQuestion) -- just the opponent's first
@@ -5761,7 +5795,7 @@
     const chk=pvGivesCheck(move.fenAfter,pv,1);
     if(!chk) return null;
     const sq=PIECE_NAME[chk.piece]+' on '+spokenSquare(chk.to);
-    return pick(['That allows a check with the '+sq+'.','That opens up a check from the '+sq+'.','Watch out -- that lets the '+sq+' give check.']);
+    return reviewPick('check',['That allows a check with the '+sq+'.','That opens up a check from the '+sq+'.','Watch out -- that lets the '+sq+' give check.']);
   }
   // Same board-reading geometry as attackersOf() above, parameterized on an
   // explicit probe instead of the live `game` -- review analyzes a finished
@@ -5799,7 +5833,7 @@
       .filter(sq=>{ const p=probe.get(sq); return p&&p.type!=='p'; });
     if(targets.length<2) return null;
     const list=joinAnd(targets.map(sq=>'the '+PIECE_NAME[probe.get(sq).type]+' on '+spokenSquare(sq)));
-    return pick(['That forks '+list+'.','That hits '+list+' at once.','A fork -- '+list+' are all under attack.']);
+    return reviewPick('fork',['That forks '+list+'.','That hits '+list+' at once.','A fork -- '+list+' are all under attack.']);
   }
   // Only attempted for Inaccuracy/Mistake/Blunder -- a Best/Excellent/Good
   // move didn't lose meaningful equity, so pattern-matching a "tactic" onto
@@ -5811,15 +5845,18 @@
     if(!move.classification||['best','excellent','good'].indexOf(move.classification)!==-1) return null;
     return reviewHungPieceNote(move)||reviewCheckNote(move)||reviewForkNote(move);
   }
-  // "[Stronger/better try/what a strong player would go with] was [piece] to
-  // [square]" -- evalBefore.bestmove is the engine's own top choice at the
-  // position before this move, exactly what OUR-115's classification already
-  // compares the played move against, but never named as "the engine" in the
-  // sentence itself (OUR-240) -- that clinical framing is what OUR-218
-  // already moved the rest of Deep commentary's clauses away from
-  // (reviewHungPieceNote/reviewCheckNote/reviewForkNote above, three
-  // pick()-varied phrasings apiece, same as here), this one just hadn't
-  // been touched yet. Same three-variant shape as those, not a new pattern.
+  // Names the stronger alternative -- evalBefore.bestmove is the engine's
+  // own top choice at the position before this move, exactly what OUR-115's
+  // classification already compares the played move against, but never
+  // named as "the engine" in the sentence itself (OUR-240). OUR-241: 7
+  // phrasings (up from 3, per OUR-241's request), 2 of them move-FIRST
+  // (the alternative move opens the sentence, so `phrase` needs cap()) and
+  // the rest move-last (the existing lowercase mid/end-of-sentence slot) --
+  // kept as two literal arrays rather than one cap()'d-every-time list so
+  // each phrase's own grammar stays exactly as specified, not
+  // approximated. reviewPick() (OUR-241) rather than plain pick() for the
+  // same session-wide repetition cap every other Deep-commentary pool now
+  // uses.
   function reviewBestMoveNote(move){
     const bestUci=move.evalBefore&&move.evalBefore.bestmove;
     if(!bestUci) return null;
@@ -5829,7 +5866,15 @@
     if(m.flags.indexOf('k')!==-1) phrase='castling kingside';
     else if(m.flags.indexOf('q')!==-1) phrase='castling queenside';
     else phrase=PIECE_NAME[m.piece]+' '+(m.captured?'takes ':'to ')+spokenSquare(m.to);
-    return pick(['A strong player would go with '+phrase+' here.','Stronger was '+phrase+'.','The better try was '+phrase+'.']);
+    return reviewPick('bestMoveNote',[
+      'A better try here was '+phrase+'.',
+      'Worth considering instead: '+phrase+'.',
+      cap(phrase)+' was the sharper choice.',
+      cap(phrase)+' would have kept more chances alive.',
+      'Most players would reach for '+phrase+' here.',
+      'You had '+phrase+' available too.',
+      'A cleaner path was '+phrase+'.'
+    ]);
   }
   // "The best line continues [move], [move]" -- walks evalBefore.pv past its
   // own first move (already named by reviewBestMoveNote() above) through a
@@ -5852,7 +5897,7 @@
     }
     if(!descs.length) return '';
     const list=joinAnd(descs);
-    return ' '+pick(['Continuing '+list+'.','Then likely '+list+'.','Followed by '+list+'.']);
+    return ' '+reviewPick('continuation',['Continuing '+list+'.','Then likely '+list+'.','Followed by '+list+'.']);
   }
   // Deep = Simple's own sentence, plus template-derived reasoning built
   // entirely from analyzeGame()'s existing per-move data. A Best move has
@@ -6185,6 +6230,9 @@
     // reset-per-open convention as Commentary just above.
     reviewHighlightsOn=false;
     updateReviewHighlightsUI();
+    // OUR-241: and a clean phrase-repetition slate -- "within a review
+    // session" means this one, not whatever the last review used up.
+    reviewResetPhraseUsage();
     // OUR-215: a fresh review starts paused, regardless of whether the last
     // one was left auto-playing -- reviewAutoToken orphans any leftover
     // whenSpeechIdle() waiter from that previous session.
@@ -7192,7 +7240,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r190 (OUR-240: Deep commentary drops "the engine" phrasing)';
+  const BUILD='v2-r191 (OUR-241: Deep commentary phrasing overhaul + repetition-avoidance)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
