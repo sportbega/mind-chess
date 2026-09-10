@@ -154,6 +154,15 @@
   .review-accuracy{flex:1 1 100%;display:flex;gap:24px;font-size:14px}
   .review-export-row{flex:1 1 100%;display:flex;gap:8px}
   .review-accuracy b{font-size:20px;display:block}
+  /* OUR-249: ties each accuracy label's text color to the eval chart's
+     own line for the same player -- kept in sync by hand with
+     REVIEW_WHITE_COLOR/REVIEW_BLACK_COLOR in <script>, the same
+     hand-kept-in-sync convention CLASS_PDF_COLORS already uses for the
+     move-badge colors below. */
+  .review-accuracy-white{color:#4f8fd0}
+  .review-accuracy-black{color:#c9a25d}
+  .review-eval-chart{flex:1 1 100%}
+  .review-eval-chart canvas{width:100%;height:auto;display:block;border-radius:6px}
   .review-board-row{display:flex;gap:8px;align-items:stretch;flex:0 0 auto}
   .review-evalbar{width:14px;flex:0 0 14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
   .review-evalbar-fill{width:100%;background:#f2f2f0;transition:height .2s ease}
@@ -175,18 +184,6 @@
      player -- ends the circularity outright rather than chasing it
      through more flex-basis tuning. */
   .review-board{width:420px;flex:0 0 420px}
-  /* OUR-202: sits between .review-board-row and .review-eval-text in
-     source order -- flex:0 0 auto (not 100%) lets it size to its own
-     label rather than stretching the whole row width, same as
-     .review-board-row/.review-board just above.
-     OUR-204: align-self:flex-start -- .review-content has no explicit
-     align-items, so its default (stretch) was quietly matching this
-     button's height to whatever review-board-row's own height happened
-     to be, on whichever wrapped flex line the two land on together.
-     Invisible while that row was ~0px tall (the OUR-204 bug just above
-     this comment); fixing the board's real 420px height turned the same
-     stretch into an actually-visible full-height pill button. */
-  .review-perspective-btn{flex:0 0 auto;align-self:flex-start}
   .review-depth-field{flex:0 0 auto;align-self:flex-start;display:flex;align-items:center;gap:6px;font-size:13px}
   .review-eval-text{flex:1 1 100%;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
   .review-step-row{flex:1 1 100%;display:flex;gap:8px}
@@ -827,6 +824,17 @@
       <div id="reviewProgress" class="review-progress"></div>
       <div id="reviewContent" class="review-content" hidden>
         <div class="review-accuracy" id="reviewAccuracy"></div>
+        <!-- OUR-249: whole-game eval trend, both players at once -- blue
+             for White, gold for Black, mirror images of each other
+             (100-wp), so their correlation reads directly off the shape.
+             Drawn once per review (renderReviewResult() -> the shared
+             drawEvalChart(), also used to build the PDF export's own
+             embedded PNG -- one drawing function, not two copies that
+             could show a different chart for the same game). Replaces
+             the old single-line, perspective-toggled chart -- both
+             perspectives are always visible now, so the toggle (and the
+             button that drove it) is gone. -->
+        <div class="review-eval-chart"><canvas id="reviewEvalChart" width="840" height="200"></canvas></div>
         <!-- OUR-146/OUR-232: export the finished review -- same reviewResult
              this screen already renders from, so nothing here can show
              different numbers than what's on screen. PGN (OUR-232) is the
@@ -844,12 +852,6 @@
           <div class="review-evalbar" id="reviewEvalBar" title="Evaluation, White's perspective"><div class="review-evalbar-fill" id="reviewEvalFill"></div></div>
           <div class="board-grid review-board" id="reviewBoardGrid" style="--board-max:420px"></div>
         </div>
-        <!-- OUR-202: defaults to whichever color the human played in this
-             game (see openReviewOverlay()), with this button flipping it
-             -- a pure re-render (showReviewPosition() re-signs the SAME
-             evalObj already computed for the current position, nothing
-             here re-analyzes anything). -->
-        <button type="button" class="btn review-perspective-btn" id="reviewPerspectiveBtn">Perspective: White</button>
         <!-- OUR-216 Phase C: Simple/Deep commentary depth, switchable at
              any time -- mirrors the existing #coachSelect off/hints/full
              field pattern. Changing it re-narrates whatever move is
@@ -864,7 +866,7 @@
         </div>
         <div class="review-eval-text" id="reviewEvalText"></div>
         <!-- OUR-239: Highlights toggle -- same plain text-changing toggle
-             pattern #reviewPerspectiveBtn already uses (no separate
+             pattern reviewDepthSelect's neighbors use (no separate
              "active" styling), placed just above the tape-deck row it
              changes the meaning of. Off by default on every fresh review
              (see openReviewOverlay()), same as Commentary always
@@ -2467,10 +2469,10 @@
         reviewGameBtn=$('reviewGameBtn'), reviewOverlay=$('reviewOverlay'), reviewCloseBtn=$('reviewCloseBtn'),
         reviewProgress=$('reviewProgress'), reviewContent=$('reviewContent'), reviewAccuracy=$('reviewAccuracy'),
         reviewBoardGrid=$('reviewBoardGrid'), reviewEvalBar=$('reviewEvalBar'), reviewEvalFill=$('reviewEvalFill'),
-        reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'),
+        reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'), reviewEvalChart=$('reviewEvalChart'),
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
         reviewExportPgnBtn=$('reviewExportPgnBtn'),
-        reviewPerspectiveBtn=$('reviewPerspectiveBtn'), reviewDepthSelect=$('reviewDepthSelect'),
+        reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
         reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
         reviewHighlightsBtn=$('reviewHighlightsBtn'),
@@ -5526,15 +5528,19 @@
   // #reviewOverlay for why it's not the live boardGrid), a move list
   // with classification badges, and a simple eval bar/text.
   // ---------------------------------------------------------------
-  // OUR-202: defaults to whichever color the human actually played in
-  // THIS game (lastCompletedGame.humanColor, set in openReviewOverlay())
-  // rather than always 'w' -- a player who played Black no longer opens
-  // a review that reads every swing in their favor as a negative number.
-  // Purely a display choice: the underlying evalObj per position (from
-  // stockfishAnalyse(), side-to-move POV) is never recomputed when this
-  // flips, only re-signed/re-mirrored at render time in
-  // showReviewPosition()/formatEvalText().
-  let reviewToken=0, reviewResult=null, reviewPositionIdx=0, reviewPerspective='w';
+  let reviewToken=0, reviewResult=null, reviewPositionIdx=0;
+  // OUR-249: single source of truth for the eval-trend chart's two line
+  // colors -- blue for White, gold for Black -- shared by the on-screen
+  // canvas and the PDF-embedded PNG (both drawn by the one shared
+  // drawEvalChart() below), and by the accuracy labels' own text color
+  // (.review-accuracy-white/.review-accuracy-black in <style>, hand-kept
+  // in sync the same way CLASS_PDF_COLORS already is with .review-badge).
+  const REVIEW_WHITE_COLOR='#4f8fd0', REVIEW_BLACK_COLOR='#c9a25d';
+  // jsPDF's setTextColor() takes 0-255 RGB components, not a CSS hex
+  // string -- a literal parallel pair rather than a hex parser, since
+  // there are exactly two colors and both already need hand-syncing
+  // with the pair above regardless.
+  const REVIEW_WHITE_RGB=[79,143,208], REVIEW_BLACK_RGB=[201,162,93];
   // OUR-237: true whenever the position on screen has a move that hasn't
   // been spoken yet -- set wherever a position is shown WITHOUT also
   // narrating it (the fresh-open and Reload landing on move 1, see
@@ -5695,18 +5701,13 @@
   // report the exact same eval text as the on-screen review, from one
   // place, rather than a second hand-copied version silently drifting
   // from this one the next time either changes.
-  // OUR-208/OUR-212: `perspective` defaults to 'w' only as a fallback
-  // for a caller that omits it entirely -- every real call site now
-  // passes one explicitly: showReviewPosition() passes the live
-  // reviewPerspective toggle directly, and both exports pass
-  // reviewGameMeta().perspective, which OUR-212 made read that exact
-  // same live toggle variable too (not an independent re-derivation --
-  // see that function's own comment for why that was the actual bug).
-  // Mate wording ("Mate in N (White)") stays absolute either way -- it
-  // already names which color is mating, a fact that doesn't change
-  // with viewing angle -- only the +/- sign on a plain centipawn score
-  // flips.
-  function formatEvalText(evalObj,fen,perspective){
+  // OUR-249: always White's own raw sign -- the on-screen
+  // perspective toggle this used to read is gone now that the trend
+  // chart shows both players at once (see drawEvalChart()), and a
+  // fixed, always-the-same convention for a plain per-move number
+  // reads more predictably than one that used to flip depending on a
+  // toggle state a reader of an export couldn't see.
+  function formatEvalText(evalObj,fen){
     const stm=fenTurn(fen);
     if(!evalObj){
       // Stockfish has no score/bestmove to give at a checkmated (or
@@ -5717,8 +5718,7 @@
     }
     if(evalObj.kind==='mate') return 'Mate in '+Math.abs(evalObj.value)+' ('+(signedCpFromWhite(evalObj,stm)>0?'White':'Black')+')';
     const cpWhite=signedCpFromWhite(evalObj,stm);
-    const cp=perspective==='b'?-cpWhite:cpWhite;
-    return (cp>=0?'+':'')+(cp/100).toFixed(2);
+    return (cpWhite>=0?'+':'')+(cpWhite/100).toFixed(2);
   }
   // Renders the position at reviewResult.perMove/fens index `idx` (0 =
   // starting position, i = the position after move i for i in
@@ -5749,15 +5749,15 @@
     // outcome this was written to avoid, not fix.
     if(!reviewAutoPlaying) reviewScrollBoardIntoView();
     const evalObj=reviewResult.evals[idx];
+    // OUR-249: always White's own advantage (the bar's fill grows from
+    // the bottom via .review-evalbar-fill's column-reverse) -- fixed now
+    // that the perspective toggle is gone, matching formatEvalText()'s
+    // own fixed convention just below and the trend chart's own blue
+    // line, all three always reading "more fill/higher/more positive"
+    // as more White advantage.
     const wpWhite=evalObj?winPercentFromCpWhite(signedCpFromWhite(evalObj,fenTurn(fen))):50;
-    // OUR-202: the bar's own fill still only ever grows from the bottom
-    // (.review-evalbar-fill's column-reverse) -- mirroring wpWhite into
-    // wpBlack when Black is the selected perspective is what makes that
-    // same growth direction mean "more advantage for whichever side is
-    // currently selected" instead of always "more White advantage".
-    const wp=reviewPerspective==='b'?100-wpWhite:wpWhite;
-    reviewEvalFill.style.height=Math.max(0,Math.min(100,wp))+'%';
-    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+formatEvalText(evalObj,fen,reviewPerspective);
+    reviewEvalFill.style.height=Math.max(0,Math.min(100,wpWhite))+'%';
+    reviewEvalText.textContent=(idx===0?'Starting position — ':'After move '+idx+' — ')+formatEvalText(evalObj,fen);
     const items=reviewMoveList.querySelectorAll('.review-move');
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
     reviewPrevBtn.disabled=(idx<=0);
@@ -6162,22 +6162,8 @@
     reviewDepth=reviewDepthSelect.value;
     narrateReviewStep(reviewPositionIdx);   // re-narrate the current move at the new tier, not a replay
   });
-  // OUR-202: keeps the button's own label and the bar's title attribute
-  // in sync with reviewPerspective -- called once from openReviewOverlay()
-  // (setting the default) and once from the button's own click handler
-  // below (flipping it).
-  function updateReviewPerspectiveUI(){
-    const label=reviewPerspective==='b'?'Black':'White';
-    reviewPerspectiveBtn.textContent='Perspective: '+label;
-    reviewEvalBar.title='Evaluation, '+label+"'s perspective";
-  }
-  reviewPerspectiveBtn.addEventListener('click',()=>{
-    reviewPerspective=reviewPerspective==='b'?'w':'b';
-    updateReviewPerspectiveUI();
-    showReviewPosition(reviewPositionIdx);
-  });
-  // OUR-239: same button-label toggle shape as updateReviewPerspectiveUI()
-  // just above. Flipping it doesn't move the position on its own --
+  // OUR-239: same plain label-only toggle shape used elsewhere in this
+  // panel. Flipping it doesn't move the position on its own --
   // reviewHighlightIdxList only changes what Prev/Next/+-5/Play compute
   // as their NEXT target, so nothing needs to happen here beyond the
   // label until the player actually steps.
@@ -6340,9 +6326,13 @@
     // -- reviewGameMeta() only returns non-null once reviewResult is
     // already set, which the line just above guarantees.
     const meta=reviewGameMeta();
+    // OUR-249: colored to match the trend chart's own lines just below
+    // (see REVIEW_WHITE_COLOR/REVIEW_BLACK_COLOR) -- a direct visual tie
+    // between each label and which line is whose data.
     reviewAccuracy.innerHTML=
-      '<div>'+meta.whiteLabel+' accuracy<b>'+(accW!=null?accW.toFixed(1)+'%':'—')+'</b></div>'
-      +'<div>'+meta.blackLabel+' accuracy<b>'+(accB!=null?accB.toFixed(1)+'%':'—')+'</b></div>';
+      '<div class="review-accuracy-white">'+meta.whiteLabel+' accuracy<b>'+(accW!=null?accW.toFixed(1)+'%':'—')+'</b></div>'
+      +'<div class="review-accuracy-black">'+meta.blackLabel+' accuracy<b>'+(accB!=null?accB.toFixed(1)+'%':'—')+'</b></div>';
+    renderReviewEvalChart();
     let html='';
     for(let i=0;i<result.perMove.length;i+=2){
       const w=result.perMove[i], b=result.perMove[i+1];
@@ -6409,18 +6399,11 @@
   // Stashed in currentReviewDescriptor so reviewGameMeta() below can read
   // whichever descriptor THIS review session is actually showing, not
   // whatever lastCompletedGame happens to hold by the time the player
-  // opens the perspective toggle or an export.
+  // opens an export.
   async function openReviewOverlay(descriptor=lastCompletedGame){
     if(!descriptor) return;
     if(isFullscreen()) await toggleFullscreen();
     currentReviewDescriptor=descriptor;
-    // OUR-202: defaults the eval bar/text to whichever color the human
-    // played in THIS specific game, not always White -- humanColor is
-    // absent for a puzzle's own descriptor shape but review is never
-    // reachable from puzzle mode, so the 'w' fallback here is just
-    // defensive, not an expected path.
-    reviewPerspective=descriptor.humanColor||'w';
-    updateReviewPerspectiveUI();
     // OUR-216: a fresh review always starts at Simple, regardless of what
     // the last one was left on.
     reviewDepth='simple';
@@ -6605,9 +6588,9 @@
       resultLabel=resultLabelForEntry(d.mode,entry.result);
     }else{
       // No games-log entry to key off of (an import, correctly found
-      // nothing) -- fall back to the PGN's own [Result] tag, phrased from
-      // the reviewer's own perspective toggle rather than "You", since an
-      // import has no real notion of which seat is "you".
+      // nothing) -- fall back to the PGN's own [Result] tag, phrased as
+      // "White won"/"Black won" rather than "You", since an import has
+      // no real notion of which seat is "you".
       const tag=parsePgnResultTag(d.pgn);
       resultLabel=tag==='1-0'?'White won':tag==='0-1'?'Black won':tag==='1/2-1/2'?'Draw':'—';
     }
@@ -6619,19 +6602,7 @@
     const wParen=reviewPlayerLabel('w',d), bParen=reviewPlayerLabel('b',d);
     const whiteLabel='White'+(wParen?' ('+wParen+')':'');
     const blackLabel='Black'+(bParen?' ('+bParen+')':'');
-    // OUR-212: reads the live reviewPerspective toggle directly, not a
-    // fresh d.humanColor re-derivation -- OUR-208's own fix computed
-    // "the player's own color" independently every time, which gave the
-    // right DEFAULT but meant toggling to the other perspective on
-    // screen never actually reached export at all (both TXT and PDF
-    // read reviewGameMeta().perspective, so both had the exact same
-    // gap). reviewPerspective already starts at d.humanColor||'w' the
-    // moment Review opens (see openReviewOverlay()) and only changes
-    // when the toggle button is clicked, so reading it directly here
-    // preserves OUR-208's own default AND makes export track whatever
-    // is currently selected on screen.
-    const perspective=reviewPerspective;
-    return {modeLabel,opponent,humanColorLabel,resultLabel,date,whiteLabel,blackLabel,perspective,
+    return {modeLabel,opponent,humanColorLabel,resultLabel,date,whiteLabel,blackLabel,
       accW:reviewResult.accuracy.w,accB:reviewResult.accuracy.b};
   }
 
@@ -6666,10 +6637,9 @@
   //    Lichess's actual exported PGNs, e.g. "Bg5?! { [%eval -0.44] }"),
   //    which chess.com, ChessBase, and SCID all also recognize -- the de
   //    facto standard, not a format invented for this app. Centipawn
-  //    evals are always from WHITE's own POV per the spec (never the
-  //    reviewer's perspective toggle, which is purely an on-screen/other-
-  //    export display choice) and rendered to 2 decimal places in pawns;
-  //    mate scores use "#N" (White mates) / "#-N" (Black mates).
+  //    evals are always from WHITE's own POV per the spec, rendered to 2
+  //    decimal places in pawns; mate scores use "#N" (White mates) /
+  //    "#-N" (Black mates).
   // ===============================================================
   // Best/Good/null get no suffix at all -- per the same "not every move
   // gets annotated, only notable ones" convention this app's own
@@ -6767,14 +6737,14 @@
       'Result: '+meta.resultLabel,'',
       'Accuracy — '+meta.whiteLabel+': '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—')
         +'   '+meta.blackLabel+': '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—'),
-      '','Moves ('+(meta.perspective==='b'?'Black':'White')+'’s perspective):'
+      '','Moves (White’s perspective):'
     ];
     for(let i=0;i<pm.length;i+=2){
       const w=pm[i], b=pm[i+1];
-      const evalW=formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1],meta.perspective);
+      const evalW=formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1]);
       lines.push('  '+(i/2+1)+'. '+w.san.padEnd(10)+(w.classification?classificationLabel(w.classification):'').padEnd(12)+'eval '+evalW);
       if(b){
-        const evalB=formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2],meta.perspective);
+        const evalB=formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2]);
         lines.push('      '+b.san.padEnd(10)+(b.classification?classificationLabel(b.classification):'').padEnd(12)+'eval '+evalB);
       }
     }
@@ -6782,40 +6752,91 @@
     triggerDownload(new Blob([lines.join('\n')],{type:'text/plain'}),reviewExportFilename('txt'));
   }
 
-  // Drawn on a plain <canvas> and embedded as a PNG rather than plotted
-  // with a charting library -- a line across evenly-spaced points is
-  // simple enough to draw by hand, and this app already treats "avoid a
-  // new dependency when the thing itself is simple" as the default (see
+  // Drawn on a plain <canvas> rather than plotted with a charting
+  // library -- two lines across evenly-spaced points is simple enough
+  // to draw by hand, and this app already treats "avoid a new
+  // dependency when the thing itself is simple" as the default (see
   // Stockfish/Kokoro being vendored files rather than wrapped in yet
   // another package).
-  // OUR-208: takes the same `perspective` ('w'/'b') the on-screen toggle
-  // and formatEvalText() already use -- mirrors wp into 100-wp for
-  // Black, identical to showReviewPosition()'s own bar-fill mirroring,
-  // so the line drawn here can't disagree with what's on screen.
-  function buildEvalChartImage(perspective){
+  // OUR-249: full-move-number tick spacing for the chart's X-axis --
+  // every move for a short game, thinning out as the game gets longer
+  // so labels don't crowd into each other.
+  function reviewChartTickInterval(totalFullMoves){
+    if(totalFullMoves<=15) return 1;
+    if(totalFullMoves<=40) return 5;
+    return 10;
+  }
+  // OUR-249: replaces the old single-line, perspective-toggled chart --
+  // both players' trajectories are drawn at once now, so there's no
+  // toggle state left to disagree with. Black's line is White's own
+  // win% mirrored (100-wp): a genuine complement, not a second
+  // independent series, so a rise in one is always the exact same-sized
+  // fall in the other and their correlation reads directly off the
+  // shape. Shared by the on-screen canvas (renderReviewEvalChart()) and
+  // the PDF export (buildEvalChartImage(), which draws onto an offscreen
+  // canvas of its own and reads the result back as a PNG) -- one
+  // drawing function, so the two can never show a different chart for
+  // the same game. Draws directly onto whatever 2D context and size
+  // it's given.
+  function drawEvalChart(ctx,w,h){
     const evals=reviewResult.evals, fens=reviewResult.fens;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle='#1b1e27'; ctx.fillRect(0,0,w,h);
+    const n=evals.length;
+    // Background grid: horizontal bands at 0/25/50/75/100%, vertical
+    // lines at the same move-number ticks the X-axis labels use below --
+    // drawn first so both trend lines paint over it, never the reverse.
+    ctx.strokeStyle='#2c3140'; ctx.lineWidth=1;
+    [0,25,50,75,100].forEach(pct=>{
+      const y=h-(pct/100)*h;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+    });
+    if(n>=2){
+      const totalFullMoves=Math.ceil((n-1)/2);
+      const interval=reviewChartTickInterval(totalFullMoves);
+      ctx.fillStyle='#7a8194'; ctx.font='10px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+      for(let ply=1;ply<n;ply+=2){        // White plies land on odd indices (1,3,5,...)
+        const moveNo=(ply+1)/2;
+        if(moveNo!==1&&moveNo%interval!==0) continue;
+        const x=(ply/(n-1))*w;
+        ctx.strokeStyle='#2c3140';
+        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+        ctx.fillText(String(moveNo),x,h-4);
+      }
+      // White's own win% at every position, then its exact mirror for
+      // Black -- the same source data as the eval bar/text and the
+      // per-move numbers elsewhere, so the chart can't disagree with
+      // either.
+      const wpWhite=evals.map((e,i)=>e?Math.max(0,Math.min(100,winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))))):50);
+      const drawLine=(points,color)=>{
+        ctx.strokeStyle=color; ctx.lineWidth=2.5;
+        ctx.beginPath();
+        points.forEach((wp,i)=>{
+          const x=(i/(n-1))*w, y=h-(wp/100)*h;
+          if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        });
+        ctx.stroke();
+      };
+      drawLine(wpWhite,REVIEW_WHITE_COLOR);
+      drawLine(wpWhite.map(wp=>100-wp),REVIEW_BLACK_COLOR);
+    }
+  }
+  // On-screen counterpart to buildEvalChartImage() below -- same
+  // drawEvalChart(), drawn straight onto the visible canvas instead of
+  // an offscreen one. Redrawn once per review (renderReviewResult()) --
+  // the whole-game trend doesn't change as the player steps through
+  // positions, so there's nothing to re-render on every step the way
+  // the eval bar/text is.
+  function renderReviewEvalChart(){
+    if(!reviewResult) return;
+    drawEvalChart(reviewEvalChart.getContext('2d'),reviewEvalChart.width,reviewEvalChart.height);
+  }
+  function buildEvalChartImage(){
     const w=760,h=200;
     const canvas=document.createElement('canvas');
     canvas.width=w; canvas.height=h;
-    const ctx=canvas.getContext('2d');
-    ctx.fillStyle='#1b1e27'; ctx.fillRect(0,0,w,h);
-    ctx.strokeStyle='#2c3140'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
-    const n=evals.length;
-    if(n>=2){
-      const points=evals.map((e,i)=>{
-        const wpWhite=e?winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))):50;
-        const wp=perspective==='b'?100-wpWhite:wpWhite;
-        return Math.max(0,Math.min(100,wp));
-      });
-      ctx.strokeStyle='#c9a25d'; ctx.lineWidth=2.5;
-      ctx.beginPath();
-      points.forEach((wp,i)=>{
-        const x=(i/(n-1))*w, y=h-(wp/100)*h;
-        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-      });
-      ctx.stroke();
-    }
+    drawEvalChart(canvas.getContext('2d'),w,h);
     return canvas.toDataURL('image/png');
   }
 
@@ -6856,27 +6877,29 @@
     // column offset can't safely assume fits before the next one starts.
     // One label+value per line, at the full page width, has no such
     // ceiling to overflow past.
+    // OUR-249: colored to match the trend chart's own two lines just
+    // below (REVIEW_WHITE_RGB/REVIEW_BLACK_RGB) -- a direct visual tie
+    // between each label and which line is whose data, same as the
+    // on-screen .review-accuracy-white/.review-accuracy-black pairing.
     doc.setFontSize(14);
-    doc.setTextColor(95,168,160);
+    doc.setTextColor(REVIEW_WHITE_RGB[0],REVIEW_WHITE_RGB[1],REVIEW_WHITE_RGB[2]);
     doc.text(pdfSafe(meta.whiteLabel+'  '+(meta.accW!=null?meta.accW.toFixed(1)+'%':'—')),marginX,y); y+=7;
-    doc.setTextColor(60,60,60);
+    doc.setTextColor(REVIEW_BLACK_RGB[0],REVIEW_BLACK_RGB[1],REVIEW_BLACK_RGB[2]);
     doc.text(pdfSafe(meta.blackLabel+'  '+(meta.accB!=null?meta.accB.toFixed(1)+'%':'—')),marginX,y); y+=9;
 
     // A chart failure (canvas/addImage throwing) shouldn't cost the rest
     // of the document -- the move list below is the part that actually
     // matters most, so this stays isolated.
-    // OUR-208/OUR-212: meta.perspective (the live reviewPerspective
-    // toggle, per OUR-212's own fix) instead of a hardcoded White POV --
-    // both the image itself and the caption naming it now agree with
-    // each other, and both track whatever the on-screen toggle is
-    // actually set to at export time.
+    // OUR-249: both players' lines drawn at once now (see
+    // drawEvalChart()) -- no more perspective toggle for the image or
+    // its caption to track.
     try{
-      const imgData=buildEvalChartImage(meta.perspective);
+      const imgData=buildEvalChartImage();
       const chartW=pageW-marginX*2, chartH=chartW*(200/760);
       doc.addImage(imgData,'PNG',marginX,y,chartW,chartH);
       y+=chartH+4;
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
-      doc.text('Evaluation across the game ('+(meta.perspective==='b'?'Black':'White')+'\'s perspective)',marginX,y);
+      doc.text('Evaluation across the game (blue = White, gold = Black)',marginX,y);
       y+=8;
     }catch(e){}
 
@@ -6911,8 +6934,8 @@
     for(let i=0;i<pm.length;i+=2){
       ensureRoom();
       const w=pm[i], b=pm[i+1];
-      drawMoveCell(marginX,i/2+1,w.san,w.classification,formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1],meta.perspective));
-      if(b) drawMoveCell(marginX+colW,null,b.san,b.classification,formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2],meta.perspective));
+      drawMoveCell(marginX,i/2+1,w.san,w.classification,formatEvalText(reviewResult.evals[i+1],reviewResult.fens[i+1]));
+      if(b) drawMoveCell(marginX+colW,null,b.san,b.classification,formatEvalText(reviewResult.evals[i+2],reviewResult.fens[i+2]));
       y+=rowH;
     }
 
@@ -7451,7 +7474,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r198 (OUR-248: Kokoro generation timeout, catches a hung model)';
+  const BUILD='v2-r199 (OUR-249: dual-line eval chart, perspective toggle removed)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
