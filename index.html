@@ -315,14 +315,14 @@
      220px. Two different reasons landing on the same width class rather
      than a second one-off. */
   .popover-panel.size-wide{width:280px}
-  /* OUR-237: Chatbox's own popover -- anchored to the RIGHT of #chatBtn
+  /* OUR-236: Chatbox's own popover -- anchored to the RIGHT of #chatBtn
      (top:0;left:100%) instead of the centered-below placement every
      other popover above uses, so the log+input sits beside the button
      rather than dropping down over the board the way a taller
      below-centered popover would. Reuses the exact #chatLog/#chatForm/
      #chatInactiveNote markup and CSS the old #chatModal held --
      container and position change only. */
-  /* OUR-237: position:fixed, not the inherited position:absolute --
+  /* OUR-236: position:fixed, not the inherited position:absolute --
      #chatPopover lives outside #chatWrap in the DOM (a <form> can't
      nest inside the toolbar's own <form>, see the HTML comment above
      #chatPopover), so there's no positioned ancestor left for an
@@ -749,7 +749,7 @@
   .report-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .report-head p{flex:1;min-width:200px}
   .report-panel textarea{width:100%;max-width:100%;box-sizing:border-box;height:260px;resize:vertical;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px;font:12px/1.55 'IBM Plex Mono',ui-monospace,Menlo,monospace}
-  /* OUR-237: #reportOut lost its sizing when OUR-168 restyled the report
+  /* OUR-236: #reportOut lost its sizing when OUR-168 restyled the report
      panel from .report-panel into a modal -- .report-panel textarea
      above no longer matches (the modal markup dropped that class), so
      this was quietly rendering at the browser's bare ~2-row default the
@@ -863,6 +863,14 @@
           </select>
         </div>
         <div class="review-eval-text" id="reviewEvalText"></div>
+        <!-- OUR-239: Highlights toggle -- same plain text-changing toggle
+             pattern #reviewPerspectiveBtn already uses (no separate
+             "active" styling), placed just above the tape-deck row it
+             changes the meaning of. Off by default on every fresh review
+             (see openReviewOverlay()), same as Commentary always
+             resetting to Simple. -->
+        <button type="button" class="btn" id="reviewHighlightsBtn" aria-pressed="false"
+          title="Skip straight between notable moves (Inaccuracy/Mistake/Blunder) and critical Best/Excellent turning points, instead of every move">Highlights: Off</button>
         <!-- OUR-214 Phase A: manual step + Simple narration.
              OUR-215 Phase B: Play/Pause auto-advance, reusing the same
              showReviewPosition()/narrateReviewStep() as manual stepping.
@@ -870,7 +878,13 @@
              #reviewDepthSelect currently holds -- see narrateReviewStep().
              OUR-222: Reload (jump to the start) and +-5 fast-forward/
              rewind added either side of Prev/Play/Next -- same tape-deck
-             row, same underlying showReviewPosition()/narrateReviewStep(). -->
+             row, same underlying showReviewPosition()/narrateReviewStep().
+             OUR-239: every one of these (Prev/Next/+-5/Play) now steps
+             between reviewHighlightIdxList entries instead of every
+             position when Highlights is on -- see reviewHighlightStep().
+             Reload is the one exception: it always targets move 1
+             regardless of Highlights, matching its own "back to the
+             ready position" meaning either way. -->
         <div class="review-step-row">
           <button type="button" class="btn" id="reviewReloadBtn" title="Back to the start">&#8634; Reload</button>
           <button type="button" class="btn" id="reviewRewind5Btn" title="Back 5 moves">&minus;5</button>
@@ -1973,7 +1987,7 @@
          Transcript's own icon already used (OUR-176) -- a plain speech
          bubble reads unambiguously as "chat" without borrowing that
          icon's silhouette.
-         OUR-237: was its own full-screen #chatModal (a .modal-overlay,
+         OUR-236: was its own full-screen #chatModal (a .modal-overlay,
          same pattern as Report a problem/Transcript) -- switched to a
          small popover anchored right off this button instead, same
          .settings-wrap/.popover-panel pattern as Coach & Tips just
@@ -1991,7 +2005,7 @@
     </div>
   </form>
 
-  <!-- OUR-237: #chatPopover lives OUTSIDE the toolbar <form> above (like
+  <!-- OUR-236: #chatPopover lives OUTSIDE the toolbar <form> above (like
        #chatBtn's own old #chatModal did) rather than nested inside
        #chatWrap in place -- #chatForm inside it is itself a <form>, and
        HTML forbids a <form> nested inside another <form> (the toolbar's).
@@ -2459,6 +2473,7 @@
         reviewPerspectiveBtn=$('reviewPerspectiveBtn'), reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
         reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
+        reviewHighlightsBtn=$('reviewHighlightsBtn'),
         clockSelect=$('clockSelect'), clockLine=$('clockLine'),
         customClockRow=$('customClockRow'), customClockLabel=$('customClockLabel'),
         customClockMinus=$('customClockMinus'), customClockPlus=$('customClockPlus'),
@@ -5203,7 +5218,7 @@
   // actual log+form or #chatInactiveNote instead -- computed fresh every
   // open rather than kept live while the popover sits there (mode can't
   // realistically change out from under an open popover either).
-  // OUR-237: same open/close/toggle shape as #gameSettingsBtn/
+  // OUR-236: same open/close/toggle shape as #gameSettingsBtn/
   // #voiceSettingsBtn's own popovers below -- click the button to
   // toggle, click anywhere else in the document or press Escape to
   // close, click inside the popover itself does nothing (stopPropagation
@@ -5214,7 +5229,7 @@
     chatInactiveNote.hidden=active;
     chatLog.style.display=active?'':'none';
     chatForm.style.display=active?'':'none';
-    // OUR-237: computed fresh on every open, not just once -- #chatWrap
+    // OUR-236: computed fresh on every open, not just once -- #chatWrap
     // (and so #chatBtn) can genuinely move between opens, since the
     // header row it sits in wraps at narrow widths, and the active/
     // inactive toggle just above changes the popover's own height.
@@ -5447,7 +5462,7 @@
   // flips, only re-signed/re-mirrored at render time in
   // showReviewPosition()/formatEvalText().
   let reviewToken=0, reviewResult=null, reviewPositionIdx=0, reviewPerspective='w';
-  // OUR-238: true whenever the position on screen has a move that hasn't
+  // OUR-237: true whenever the position on screen has a move that hasn't
   // been spoken yet -- set wherever a position is shown WITHOUT also
   // narrating it (the fresh-open and Reload landing on move 1, see
   // renderReviewResult()/reviewReloadBtn below), cleared by
@@ -5457,6 +5472,85 @@
   // narrates the move ALREADY on screen first, instead of skipping past
   // it to narrate the next one.
   let reviewNeedsNarration=false;
+  // OUR-239: Highlights mode -- off by default on every fresh review (see
+  // openReviewOverlay()), same reset-per-open convention Commentary
+  // (reviewDepth) already uses. reviewHighlightIdxList is the qualifying
+  // position-index list for the CURRENT reviewResult, computed once (see
+  // reviewComputeHighlights(), called from renderReviewResult()) rather
+  // than recomputed on every step -- cheap either way at real-game move
+  // counts, but no reason to redo the same work on every Prev/Next.
+  let reviewHighlightsOn=false, reviewHighlightIdxList=[];
+  // Approved heuristic (see the OUR-239 planning discussion) for which
+  // Best/Excellent moves count as a "critical turning point" worth
+  // stopping on, not just the routine ones:
+  //   1. Pivot swing -- the move swung the MOVER's own win% by at least
+  //      as much as classifyMove()'s own Blunder cutoff (15 win% points)
+  //      swings it the other way, while the position wasn't already
+  //      decided beforehand (20-80% win probability band excludes
+  //      padding an already-crushing or already-lost position).
+  //   2. Sharp moment -- the position was locally volatile around this
+  //      ply, reusing analyzeGame()'s own centered-window win%
+  //      standard-deviation calculation (the exact one gameAccuracy()
+  //      already weights by) rather than a new metric. 8 is the upper
+  //      two-thirds of that calculation's own established [0.5,12]
+  //      clamp range -- a position this volatile is a genuinely sharp
+  //      stretch of the game, not a quiet one.
+  // Either test alone qualifies; recomputed here from reviewResult's own
+  // evals/fens rather than exposed from analyzeGame(), since nothing
+  // about this needs a second Stockfish pass -- the data already exists.
+  const REVIEW_PIVOT_SWING_WP=15, REVIEW_UNDECIDED_LO=20, REVIEW_UNDECIDED_HI=80, REVIEW_SHARP_VOLATILITY=8;
+  function reviewLocalVolatility(idx){
+    const evals=reviewResult.evals, fens=reviewResult.fens;
+    const wpWhiteSeries=evals.map((e,i)=>e?winPercentFromCpWhite(signedCpFromWhite(e,fenTurn(fens[i]))):null);
+    const windowSize=Math.max(2,Math.min(8,Math.round(reviewResult.perMove.length/10)||2));
+    const half=Math.floor(windowSize/2);
+    const lo=Math.max(0,idx-half), hi=Math.min(wpWhiteSeries.length-1,idx+half);
+    const vals=wpWhiteSeries.slice(lo,hi+1).filter(v=>v!=null);
+    if(vals.length<2) return 0.5;
+    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const variance=vals.reduce((a,b)=>a+(b-mean)*(b-mean),0)/vals.length;
+    return Math.max(0.5,Math.min(12,Math.sqrt(variance)));
+  }
+  function reviewIsCriticalGoodMove(move,idx){
+    if(move.classification!=='best'&&move.classification!=='excellent') return false;
+    if(!move.evalBefore) return false;
+    const wpBeforeWhite=winPercentFromCpWhite(signedCpFromWhite(move.evalBefore,move.color));
+    const wpBeforeMover=move.color==='w'?wpBeforeWhite:100-wpBeforeWhite;
+    const swing=-move.drop;
+    if(swing>=REVIEW_PIVOT_SWING_WP&&wpBeforeMover>=REVIEW_UNDECIDED_LO&&wpBeforeMover<=REVIEW_UNDECIDED_HI) return true;
+    return reviewLocalVolatility(idx)>=REVIEW_SHARP_VOLATILITY;
+  }
+  // Notable moves (Inaccuracy/Mistake/Blunder, already computed by
+  // analyzeGame()) plus critical Best/Excellent turning points, in
+  // position-index order (1..perMove.length, matching showReviewPosition()'s
+  // own idx convention -- the move that reaches position idx is
+  // perMove[idx-1]).
+  function reviewComputeHighlights(){
+    const list=[];
+    reviewResult.perMove.forEach((move,i)=>{
+      const idx=i+1, c=move.classification;
+      if(c==='inaccuracy'||c==='mistake'||c==='blunder') list.push(idx);
+      else if(reviewIsCriticalGoodMove(move,idx)) list.push(idx);
+    });
+    return list;
+  }
+  // Highlights-mode neighbor of fromIdx, `count` qualifying entries away
+  // (count>0 forward, count<0 backward -- so this covers both single-step
+  // Prev/Next and the +-5 buttons' "skip 5 highlights" meaning with the
+  // same function). Falls back to the game's true start/end when there
+  // are fewer than `count` qualifying entries left in that direction,
+  // rather than refusing to move at all -- Prev/Next/+-5 staying
+  // reachable all the way to the real edges is worth more than strict
+  // adherence to "only ever land on a highlight".
+  function reviewHighlightStep(fromIdx,count){
+    if(!reviewHighlightIdxList.length) return count>0?reviewResult.perMove.length:0;
+    if(count>0){
+      const candidates=reviewHighlightIdxList.filter(x=>x>fromIdx);
+      return candidates.length?candidates[Math.min(count-1,candidates.length-1)]:reviewResult.perMove.length;
+    }
+    const candidates=reviewHighlightIdxList.filter(x=>x<fromIdx).slice().reverse();
+    return candidates.length?candidates[Math.min(-count-1,candidates.length-1)]:0;
+  }
   // OUR-215 Phase B: auto-play. reviewAutoToken is bumped on every stop (by
   // Pause, a manual Prev/Next, the game ending, or closing the overlay) so
   // a whenSpeechIdle() waiter already in flight from a step before the stop
@@ -5575,7 +5669,7 @@
     items.forEach(el=>el.classList.toggle('current', +el.dataset.idx===idx));
     reviewPrevBtn.disabled=(idx<=0);
     reviewNextBtn.disabled=(idx>=reviewResult.perMove.length);
-    // OUR-238: disabled at move 1 (the new default open/Reload position),
+    // OUR-237: disabled at move 1 (the new default open/Reload position),
     // not move 0 -- Reload's own job is "back to the ready position",
     // which now IS move 1, so it stays clickable at move 0 (reached only
     // via Prev/-5 past it) to bring the player back to move 1 again.
@@ -5844,6 +5938,19 @@
     updateReviewPerspectiveUI();
     showReviewPosition(reviewPositionIdx);
   });
+  // OUR-239: same button-label toggle shape as updateReviewPerspectiveUI()
+  // just above. Flipping it doesn't move the position on its own --
+  // reviewHighlightIdxList only changes what Prev/Next/+-5/Play compute
+  // as their NEXT target, so nothing needs to happen here beyond the
+  // label until the player actually steps.
+  function updateReviewHighlightsUI(){
+    reviewHighlightsBtn.textContent='Highlights: '+(reviewHighlightsOn?'On':'Off');
+    reviewHighlightsBtn.setAttribute('aria-pressed',String(reviewHighlightsOn));
+  }
+  reviewHighlightsBtn.addEventListener('click',()=>{
+    reviewHighlightsOn=!reviewHighlightsOn;
+    updateReviewHighlightsUI();
+  });
   // OUR-215 Phase B: stops auto-advance (button back to "Play", pending
   // whenSpeechIdle() waiter orphaned via the token bump) and cuts off
   // whatever is currently narrating -- a manual step or an explicit Pause
@@ -5858,24 +5965,32 @@
   reviewPrevBtn.addEventListener('click',()=>{
     if(!reviewResult||reviewPositionIdx<=0) return;
     if(reviewAutoPlaying) stopReviewAutoPlay();
-    const idx=reviewPositionIdx-1;
-    // Prev undoes the move that reached the CURRENT (about to be left)
-    // position -- that's perMove[reviewPositionIdx-1], read before idx
-    // below reassigns.
-    pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[reviewPositionIdx-1],true);
+    // OUR-239: Highlights skips straight to the previous qualifying
+    // position instead of one ply back -- no single origin/destination
+    // pair to FLIP between when that skip spans more than one move (same
+    // reasoning +-5 below already applies), so no slide is queued for it.
+    const idx=reviewHighlightsOn?reviewHighlightStep(reviewPositionIdx,-1):reviewPositionIdx-1;
+    if(!reviewHighlightsOn){
+      // Prev undoes the move that reached the CURRENT (about to be left)
+      // position -- that's perMove[reviewPositionIdx-1], read before idx
+      // below reassigns.
+      pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[reviewPositionIdx-1],true);
+    }
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
   reviewNextBtn.addEventListener('click',()=>{
     if(!reviewResult||reviewPositionIdx>=reviewResult.perMove.length) return;
     if(reviewAutoPlaying) stopReviewAutoPlay();
-    const idx=reviewPositionIdx+1;
-    pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
+    const idx=reviewHighlightsOn?reviewHighlightStep(reviewPositionIdx,1):reviewPositionIdx+1;
+    if(!reviewHighlightsOn){
+      pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
+    }
     showReviewPosition(idx);
     narrateReviewStep(idx);
   });
   // OUR-222: back to the ready-to-go position.
-  // OUR-238: that's now move 1, not move 0 -- matching wherever a fresh
+  // OUR-237: that's now move 1, not move 0 -- matching wherever a fresh
   // review now opens (renderReviewResult()), so Reload and a freshly
   // opened review always land the same place and behave the same way
   // afterward (see reviewNeedsNarration: Play right after Reload
@@ -5900,7 +6015,12 @@
   // instant reposition, narrated same as any other step.
   function reviewJumpBy(delta){
     if(!reviewResult) return;
-    const idx=Math.max(0,Math.min(reviewResult.perMove.length,reviewPositionIdx+delta));
+    // OUR-239: in Highlights mode, +-5 skips 5 QUALIFYING moves rather
+    // than 5 positions -- reviewHighlightStep(from,count) already covers
+    // both this and single-step Prev/Next with the same function.
+    const idx=reviewHighlightsOn
+      ? reviewHighlightStep(reviewPositionIdx,delta)
+      : Math.max(0,Math.min(reviewResult.perMove.length,reviewPositionIdx+delta));
     if(idx===reviewPositionIdx) return;
     if(reviewAutoPlaying) stopReviewAutoPlay();
     showReviewPosition(idx);
@@ -5917,7 +6037,7 @@
   // to finish as a short "Best move" one.
   function reviewAutoAdvance(myToken){
     if(myToken!==reviewAutoToken||!reviewResult) return;
-    // OUR-238: the position on screen (move 1, opened or Reloaded) hasn't
+    // OUR-237: the position on screen (move 1, opened or Reloaded) hasn't
     // been spoken yet -- narrate exactly what's already shown instead of
     // stepping past it, so Play's first press is never silent about the
     // move the player is already looking at.
@@ -5927,8 +6047,14 @@
       return;
     }
     if(reviewPositionIdx>=reviewResult.perMove.length){ stopReviewAutoPlay(); return; }
-    const idx=reviewPositionIdx+1;
-    pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
+    // OUR-239: auto-play steps between qualifying moves only when
+    // Highlights is on, same reviewHighlightStep() single-step-forward
+    // call Next itself uses -- Play and manual Next land on identical
+    // positions for the same starting point.
+    const idx=reviewHighlightsOn?reviewHighlightStep(reviewPositionIdx,1):reviewPositionIdx+1;
+    if(!reviewHighlightsOn){
+      pendingReviewSlide=reviewSlideMovesFor(reviewResult.perMove[idx-1],false);
+    }
     showReviewPosition(idx);
     narrateReviewStep(idx);
     whenSpeechIdle(()=>{ reviewAutoAdvance(myToken); },REPLY_WAIT_MAX_MS);
@@ -5936,7 +6062,7 @@
   reviewPlayBtn.addEventListener('click',()=>{
     if(!reviewResult) return;
     if(reviewAutoPlaying){ stopReviewAutoPlay(); return; }
-    // OUR-238: a not-yet-narrated position at the very end (a one-move
+    // OUR-237: a not-yet-narrated position at the very end (a one-move
     // game opens AND ends on move 1) still has that one narration left
     // to give, so reviewNeedsNarration keeps this from bailing out the
     // same way "already at the end" normally would.
@@ -5950,6 +6076,7 @@
   }
   function renderReviewResult(result){
     reviewResult=result;
+    reviewHighlightIdxList=reviewComputeHighlights();
     reviewProgress.hidden=true;
     reviewContent.hidden=false;
     const accW=result.accuracy.w, accB=result.accuracy.b;
@@ -5990,7 +6117,7 @@
         if(idx===reviewResult.perMove.length) narrateReviewStep(idx);
       });
     });
-    // OUR-238: opens on move 1 (the position right after the game's own
+    // OUR-237: opens on move 1 (the position right after the game's own
     // first move), not the last move -- landing on the final position by
     // default made the player click Prev/-5/a move-list entry repeatedly
     // just to see the game from the start, and gave no obvious "press
@@ -6043,6 +6170,10 @@
     // the last one was left on.
     reviewDepth='simple';
     reviewDepthSelect.value='simple';
+    // OUR-239: a fresh review always starts with Highlights off too, same
+    // reset-per-open convention as Commentary just above.
+    reviewHighlightsOn=false;
+    updateReviewHighlightsUI();
     // OUR-215: a fresh review starts paused, regardless of whether the last
     // one was left auto-playing -- reviewAutoToken orphans any leftover
     // whenSpeechIdle() waiter from that previous session.
@@ -7050,7 +7181,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r188 (OUR-238: Review game survives a page reload; lastCompletedGame/gameOver restored)';
+  const BUILD='v2-r189 (OUR-239: Game Review Highlights mode - skip to notable/critical moves)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
