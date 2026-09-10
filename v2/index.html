@@ -315,6 +315,22 @@
      220px. Two different reasons landing on the same width class rather
      than a second one-off. */
   .popover-panel.size-wide{width:280px}
+  /* OUR-237: Chatbox's own popover -- anchored to the RIGHT of #chatBtn
+     (top:0;left:100%) instead of the centered-below placement every
+     other popover above uses, so the log+input sits beside the button
+     rather than dropping down over the board the way a taller
+     below-centered popover would. Reuses the exact #chatLog/#chatForm/
+     #chatInactiveNote markup and CSS the old #chatModal held --
+     container and position change only. */
+  /* OUR-237: position:fixed, not the inherited position:absolute --
+     #chatPopover lives outside #chatWrap in the DOM (a <form> can't
+     nest inside the toolbar's own <form>, see the HTML comment above
+     #chatPopover), so there's no positioned ancestor left for an
+     absolute placement to anchor against. top/left are set in JS from
+     #chatWrap's own getBoundingClientRect() at open time instead
+     (openChatPopover()), which also makes this immune to the toolbar
+     itself scrolling underneath a fixed popover. */
+  .popover-panel.chat-popover{position:fixed;transform:none;margin:0;width:300px}
   .popover-fields{display:flex;flex-direction:column;gap:12px}
   /* OUR-160: Appearance's five sliders need the same full-width stretch
      .field-grid input[type=range] already gave them in the old panel --
@@ -492,7 +508,7 @@
   .chat-log{margin-top:10px;height:140px;overflow-y:auto;font-family:'Inter',sans-serif;font-size:13px;display:flex;flex-direction:column;gap:6px}
   .chat-empty{color:var(--text-dim);margin:0}
   /* OUR-206: shown instead of #chatLog/#chatForm (both display:none,
-     toggled in openChatModal()) for every mode besides online/lichess. */
+     toggled in openChatPopover()) for every mode besides online/lichess. */
   .chat-inactive-note{color:var(--text-dim);font-size:13px;margin:0}
   .chat-line{margin:0;line-height:1.4;padding:6px 10px;border-radius:10px;background:var(--panel-2);max-width:85%;word-break:break-word}
   .chat-line .who{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);display:block;margin-bottom:2px}
@@ -733,6 +749,17 @@
   .report-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .report-head p{flex:1;min-width:200px}
   .report-panel textarea{width:100%;max-width:100%;box-sizing:border-box;height:260px;resize:vertical;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px;font:12px/1.55 'IBM Plex Mono',ui-monospace,Menlo,monospace}
+  /* OUR-237: #reportOut lost its sizing when OUR-168 restyled the report
+     panel from .report-panel into a modal -- .report-panel textarea
+     above no longer matches (the modal markup dropped that class), so
+     this was quietly rendering at the browser's bare ~2-row default the
+     whole time. Sized generously here instead -- taller and wider than
+     the old .report-panel textarea ever was, since the report modal has
+     a full overlay's worth of room to give it, and #reportPanel's own
+     .modal-card gets a wider cap than the shared 640px so long
+     diagnostic lines wrap less. */
+  #reportOut{width:100%;box-sizing:border-box;height:420px;resize:vertical;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.55 'IBM Plex Mono',ui-monospace,Menlo,monospace}
+  #reportPanel .modal-card{max-width:760px}
   .report-foot{font-size:12px;color:var(--text-dim);line-height:1.6;margin:0}
   .report-foot a{color:var(--accent-2)}
 
@@ -1938,42 +1965,52 @@
          panel (OUR-98/OUR-197) into a round icon next to Coach & Tips, as
          asked. Unlike Level/Clock/the Lichess connection section
          (OUR-199 onward), this button itself is NEVER hidden by mode --
-         it always sits here, in every mode, and #chatModal decides at
+         it always sits here, in every mode, and #chatPopover decides at
          open time whether there's an actual chat to show (see
-         openChatModal()) rather than the button deciding whether to
+         openChatPopover()) rather than the button deciding whether to
          exist at all. A different glyph shape from Voice commands'
          head-and-speech-waves icon (OUR-168/OUR-179), same reasoning
          Transcript's own icon already used (OUR-176) -- a plain speech
          bubble reads unambiguously as "chat" without borrowing that
-         icon's silhouette. Same ids on every control inside the modal
-         (chatLog/chatForm/chatInput), same send/receive handlers
-         (unchanged) -- position, wrapper element and always-visible
-         button are the only things that changed. -->
-    <button class="icon-btn mic-size" id="chatBtn" type="button" aria-label="Chatbox" title="Chatbox">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H10l-4.5 4v-4h-1A2.5 2.5 0 0 1 2 13.5v-8A2.5 2.5 0 0 1 4 5.5Z"/>
-      </svg>
-    </button>
+         icon's silhouette.
+         OUR-237: was its own full-screen #chatModal (a .modal-overlay,
+         same pattern as Report a problem/Transcript) -- switched to a
+         small popover anchored right off this button instead, same
+         .settings-wrap/.popover-panel pattern as Coach & Tips just
+         above, so an open chat no longer covers the board the way a
+         centered full-screen overlay did. Same ids on every control
+         inside (chatLog/chatForm/chatInput), same send/receive handlers
+         (unchanged) -- container, wrapper element and position are the
+         only things that changed. -->
+    <div class="settings-wrap" id="chatWrap">
+      <button class="icon-btn mic-size" id="chatBtn" type="button" aria-label="Chatbox" title="Chatbox" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H10l-4.5 4v-4h-1A2.5 2.5 0 0 1 2 13.5v-8A2.5 2.5 0 0 1 4 5.5Z"/>
+        </svg>
+      </button>
+    </div>
   </form>
 
-  <div class="modal-overlay" id="chatModal" hidden>
-    <div class="modal-card">
-      <div class="review-head">
-        <h3>Chatbox</h3>
-        <button type="button" class="btn" id="chatModalCloseBtn">Close</button>
-      </div>
-      <!-- OUR-206: shown/hidden at open time (openChatModal()) based on
-           whether `mode` is currently online/lichess -- chat only ever
-           has a real connection to send through in those two modes
-           (OUR-97), so every other mode gets this instead of an empty
-           log and a Send button that would silently do nothing. -->
-      <p class="chat-inactive-note" id="chatInactiveNote" hidden>Chat is available during online or Lichess games.</p>
-      <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
-      <form class="chat-form" id="chatForm">
-        <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
-        <button class="btn primary" type="submit">Send</button>
-      </form>
-    </div>
+  <!-- OUR-237: #chatPopover lives OUTSIDE the toolbar <form> above (like
+       #chatBtn's own old #chatModal did) rather than nested inside
+       #chatWrap in place -- #chatForm inside it is itself a <form>, and
+       HTML forbids a <form> nested inside another <form> (the toolbar's).
+       JS positions this against #chatWrap's own getBoundingClientRect()
+       instead of relying on CSS position:absolute inside that wrapper
+       (see openChatPopover()). -->
+  <div class="popover-panel chat-popover" id="chatPopover" hidden>
+    <!-- OUR-206: shown/hidden at open time (openChatPopover()) based
+         on whether `mode` is currently online/lichess -- chat only
+         ever has a real connection to send through in those two
+         modes (OUR-97), so every other mode gets this instead of an
+         empty log and a Send button that would silently do
+         nothing. -->
+    <p class="chat-inactive-note" id="chatInactiveNote" hidden>Chat is available during online or Lichess games.</p>
+    <div class="chat-log" id="chatLog" aria-live="polite"><p class="chat-empty">No messages yet.</p></div>
+    <form class="chat-form" id="chatForm">
+      <input type="text" id="chatInput" placeholder="Message your opponent" autocomplete="off" maxlength="500" />
+      <button class="btn primary" type="submit">Send</button>
+    </form>
   </div>
 
   <div class="modal-overlay" id="statsDetails" hidden>
@@ -2441,7 +2478,7 @@
         lichessAbortBtn=$('lichessAbortBtn'), lichessResignBtn=$('lichessResignBtn'),
         computerResignBtn=$('computerResignBtn'),
         lichessAiLevelSelect=$('lichessAiLevelSelect'), lichessAiTimeSelect=$('lichessAiTimeSelect'), lichessAiBtn=$('lichessAiBtn'),
-        chatBtn=$('chatBtn'), chatModal=$('chatModal'), chatModalCloseBtn=$('chatModalCloseBtn'), chatInactiveNote=$('chatInactiveNote'),
+        chatBtn=$('chatBtn'), chatWrap=$('chatWrap'), chatPopover=$('chatPopover'), chatInactiveNote=$('chatInactiveNote'),
         chatLog=$('chatLog'), chatForm=$('chatForm'), chatInput=$('chatInput'),
         puzzleInfo=$('puzzleInfo');
 
@@ -5160,27 +5197,53 @@
     openReviewOverlay({pgn, humanColor:'w', mode:null, level:null, client_key:null});
   });
 
-  // OUR-206: Chatbox modal -- #chatBtn itself is never hidden, but chat
+  // OUR-206: Chatbox popover -- #chatBtn itself is never hidden, but chat
   // (OUR-97) only ever has a real connection to send through in online/
   // lichess modes, so this decides at OPEN time whether to show the
   // actual log+form or #chatInactiveNote instead -- computed fresh every
-  // open rather than kept live while the modal sits there, the same
-  // "nothing to do beyond the toggle itself" simplicity Transcript's own
-  // modal above already uses (mode can't realistically change out from
-  // under an open modal dialog either).
-  function openChatModal(){
+  // open rather than kept live while the popover sits there (mode can't
+  // realistically change out from under an open popover either).
+  // OUR-237: same open/close/toggle shape as #gameSettingsBtn/
+  // #voiceSettingsBtn's own popovers below -- click the button to
+  // toggle, click anywhere else in the document or press Escape to
+  // close, click inside the popover itself does nothing (stopPropagation
+  // keeps that same document click-listener from closing it on its own
+  // open).
+  function openChatPopover(){
     const active=(mode==='online'||mode==='lichess');
     chatInactiveNote.hidden=active;
     chatLog.style.display=active?'':'none';
     chatForm.style.display=active?'':'none';
-    chatModal.hidden=false;
+    // OUR-237: computed fresh on every open, not just once -- #chatWrap
+    // (and so #chatBtn) can genuinely move between opens, since the
+    // header row it sits in wraps at narrow widths, and the active/
+    // inactive toggle just above changes the popover's own height.
+    // Viewport-clamped both axes: #chatBtn sits low in the layout (the
+    // below-board icon row), so an unclamped top would routinely push
+    // a popover tall enough to hold a real chat log off the bottom of
+    // the screen the same way an unclamped left would run it off the
+    // right edge on a narrow one. hidden is cleared BEFORE measuring
+    // offsetHeight -- a hidden element has no rendered box to measure.
+    const width=300;
+    chatPopover.hidden=false;
+    const r=chatWrap.getBoundingClientRect();
+    const h=chatPopover.offsetHeight;
+    chatPopover.style.left=Math.min(r.right+8,window.innerWidth-width-8)+'px';
+    chatPopover.style.top=Math.max(8,Math.min(r.top,window.innerHeight-h-8))+'px';
+    chatBtn.setAttribute('aria-expanded','true');
   }
-  function closeChatModal(){ chatModal.hidden=true; }
-  chatBtn.addEventListener('click',openChatModal);
-  chatModalCloseBtn.addEventListener('click',closeChatModal);
-  chatModal.addEventListener('click',e=>{ if(e.target===chatModal) closeChatModal(); });
+  function closeChatPopover(){
+    chatPopover.hidden=true;
+    chatBtn.setAttribute('aria-expanded','false');
+  }
+  chatBtn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    if(chatPopover.hidden) openChatPopover(); else closeChatPopover();
+  });
+  chatPopover.addEventListener('click',(e)=>e.stopPropagation());
+  document.addEventListener('click',()=>{ if(!chatPopover.hidden) closeChatPopover(); });
   document.addEventListener('keydown',(e)=>{
-    if(e.key==='Escape'&&!chatModal.hidden) closeChatModal();
+    if(e.key==='Escape'&&!chatPopover.hidden) closeChatPopover();
   });
 
   // ===============================================================
@@ -6942,7 +7005,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r185 (OUR-234: Review game listener was passing the click Event as its descriptor)';
+  const BUILD='v2-r186 (OUR-236: Report a problem textarea enlarged; Chatbox modal to popover)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -8792,8 +8855,8 @@
 
   // OUR-97: one form, dispatched by mode. OUR-206: the form itself is
   // display:none whenever mode isn't 'online' or 'lichess' (see
-  // openChatModal()), so in practice this still only has those two real
-  // branches to worry about, even though #chatBtn/#chatModal no longer
+  // openChatPopover()), so in practice this still only has those two real
+  // branches to worry about, even though #chatBtn/#chatPopover no longer
   // hide for any other mode the way chatDetails used to.
   chatForm.addEventListener('submit',e=>{
     e.preventDefault();
