@@ -5735,6 +5735,23 @@
     excellent:['That’s an excellent move.','A really strong choice.','You played that very well.','That’s a sharp find.','Nicely done there.'],
     good:['That’s a good, solid move.','A reasonable choice there.','That keeps things steady.','Nothing wrong with that.','A safe, sensible move.']
   };
+  // OUR-242: "calm opening" -- as long as EVERY move so far (strictly
+  // before `ply`) has been Best/Excellent/Good, the game hasn't had a
+  // real moment yet, so the escalating tiers below have nothing to
+  // escalate FROM. Pure lookback over reviewResult.perMove, computed
+  // fresh each call rather than cached -- cheap at real game lengths,
+  // and correct-by-construction for every entry point (a fresh review
+  // open, Highlights mode jumping around, Reload, Commentary switching
+  // tiers) without a separate flag to keep in sync with any of them.
+  function reviewCalmOpeningActiveBefore(ply){
+    for(let i=0;i<ply;i++){
+      const c=reviewResult.perMove[i].classification;
+      if(c!=='best'&&c!=='excellent'&&c!=='good') return false;
+    }
+    return true;
+  }
+  const REVIEW_CALM_OPENING_PHRASES=['Nice and steady so far.','Standard opening theory.','A solid, familiar continuation.','Just good, sensible development.','Nothing dramatic yet — all according to plan.','Textbook stuff — nothing to see here yet.','Following the script so far.','Both sides just getting warmed up.','So far, so normal.','No fireworks yet, just chess.'];
+  const REVIEW_TRANSITION_PHRASES=['Oh, here we go.','Well, that changes things.','And there it is — the game just woke up.','Okay, now we’re paying attention.','Alright, shifting gears here.','Now that’s interesting.','Hold on — something just happened.','Holy moly.','Well, we’re shifting gears now.'];
   function reviewMoveSentence(move){
     const m=describeUci(move.fenBefore,move.uci);
     let base;
@@ -5744,8 +5761,22 @@
       base=cap(PIECE_NAME[m.piece])+' '+(m.captured?'takes':'to')+' '+spokenSquare(m.to);
       if(m.promotion) base+=', promotes to '+PIECE_NAME[m.promotion];
     }else base=move.san;
-    const options=move.classification?REVIEW_CLASS_PHRASE[move.classification]:null;
-    return options?base+'. '+reviewPick('class:'+move.classification,options):base+'.';
+    if(!move.classification) return base+'.';
+    const goodTier=(move.classification==='best'||move.classification==='excellent'||move.classification==='good');
+    const stillCalm=reviewCalmOpeningActiveBefore(move.ply);
+    // Still calm AND this move keeps it that way -- one shared low-key
+    // pool instead of the tier-specific ones, since Best/Excellent/Good
+    // aren't worth telling apart yet in routine opening theory.
+    if(stillCalm&&goodTier) return base+'. '+reviewPick('calmOpening',REVIEW_CALM_OPENING_PHRASES);
+    const tierPhrase=reviewPick('class:'+move.classification,REVIEW_CLASS_PHRASE[move.classification]);
+    // Still calm but THIS move breaks it -- the exact ply calm-opening
+    // ends on gets a one-time transition phrase blended in ahead of its
+    // own normal tiered phrase, then every move after this one (this
+    // one included) goes through the plain tierPhrase branch above/below
+    // forever, since reviewCalmOpeningActiveBefore() will see this
+    // classification in the lookback from here on.
+    if(stillCalm) return base+'. '+reviewPick('transitionMoment',REVIEW_TRANSITION_PHRASES)+' '+tierPhrase;
+    return base+'. '+tierPhrase;
   }
 
   // ---------------------------------------------------------------
@@ -7240,7 +7271,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r191 (OUR-241: Deep commentary phrasing overhaul + repetition-avoidance)';
+  const BUILD='v2-r192 (OUR-242: Game Review calm-opening phase for Deep commentary)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
