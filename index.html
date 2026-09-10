@@ -6386,6 +6386,18 @@
     reviewAutoToken++;
     reviewAutoPlaying=false;
     reviewPlayBtn.textContent='Play';
+    // OUR-246: speechEndTrusted (whenSpeechIdle()'s own flag, see its
+    // comment) never resets itself -- once ANY single narration anywhere
+    // in the app exceeds its wait ceiling once, every later whenSpeechIdle()
+    // call for the rest of the browser tab's life stops waiting for real
+    // speech completion, silently degrading auto-play into a race that
+    // never lets the previous line finish before starting the next
+    // (rediscovered via OUR-245's own verification: a review that tripped
+    // this once stayed broken through Reload and every subsequent Play,
+    // even in a session that had nothing to do with OUR-245's own phrasing
+    // changes). A fresh review is exactly the moment a player expects a
+    // clean slate, so it gets one here.
+    speechEndTrusted=true;
     reviewToken++;
     const myToken=reviewToken;
     reviewOverlay.hidden=false;
@@ -7387,7 +7399,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r195 (OUR-245: Deep commentary finalized phrasing + global repetition tracking)';
+  const BUILD='v2-r196 (OUR-246: reset speechEndTrusted on fresh review/game)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -12536,6 +12548,11 @@
     dropReserve();
     resetTips();
     game.reset(); lastMove=null; pendingAction=null; gameOver=false;
+    // OUR-246: same reset as openReviewOverlay() -- see its own comment.
+    // Live play shares whenSpeechIdle()/speechEndTrusted with Review, so a
+    // slow narration during a previous game shouldn't leave every future
+    // game's narration racing ahead of itself too.
+    speechEndTrusted=true;
     // Which seat you are in survives from wherever you were last, and a puzzle
     // sets it to whichever side is to play — so a Black-to-play puzzle left
     // humanColor='b', and the next game against the computer opened with you
