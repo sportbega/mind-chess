@@ -5616,8 +5616,25 @@
     });
     showReviewPosition(result.perMove.length);
   }
-  function openReviewOverlay(){
+  // OUR-226: #reviewOverlay is a direct child of .app (same level as
+  // #checkAlert, #originBanner), and .app.fullscreen-active>*{display:none}
+  // hides every direct child except the ones with their own named
+  // exception (.boardpanel, #checkAlert) -- #reviewOverlay never got one,
+  // so opening it while still in fullscreen just... didn't show anything,
+  // no error, no visible failure. Not a z-index/stacking-context problem
+  // (that theory doesn't survive contact with the actual CSS): the modal
+  // never even reaches display:flex in the first place. Exiting fullscreen
+  // first, awaited so the fullscreenchange listener (syncFullscreenUI())
+  // has already removed .fullscreen-active by the time the rest of this
+  // function runs, sidesteps that blanket rule entirely rather than
+  // carving out a new exception for a modal that would still have a real
+  // top-layer/stacking fight on its hands sitting alongside a genuinely
+  // fullscreened element. Reuses toggleFullscreen() itself (checks
+  // isFullscreen() and takes its own exit branch) rather than duplicating
+  // the exit call here -- one function still owns entering/exiting.
+  async function openReviewOverlay(){
     if(!lastCompletedGame) return;
+    if(isFullscreen()) await toggleFullscreen();
     const descriptor=lastCompletedGame;
     // OUR-202: defaults the eval bar/text to whichever color the human
     // played in THIS specific game, not always White -- humanColor is
@@ -6466,7 +6483,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r175 (OUR-225: clock line player identity labels + relocated under identity line)';
+  const BUILD='v2-r176 (OUR-226: fix Game Review opening invisibly when triggered from fullscreen)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
