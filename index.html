@@ -6573,11 +6573,28 @@
     if(spec&&spec.movetime) go+=' movetime '+spec.movetime;
     return go==='go'?'go movetime 1000':go;
   }
+  // OUR-235: 'go' has no timeout of its own -- if the worker ever fails to
+  // post a 'bestmove' line (the intermittent hang OUR-228 already flagged),
+  // the Promise below never settled, and since every Stockfish caller
+  // shares one sfChain, that one stuck call jammed every later one forever
+  // too, not just this move. That surfaced as Game Review frozen at
+  // "Analyzing move 0 of 0" when the hang landed on (or before) the review's
+  // own first position -- confirmed against a real captured PGN, which
+  // parses and replays cleanly on its own, so the PGN was never the issue.
+  // SF_HANG_TIMEOUT_MS is margin ON TOP of however long the search itself
+  // was asked to run, generous next to the levels' largest movetime (3.5s)
+  // and the coach/review's own (600ms/250ms) -- long enough to never fire
+  // during a real search, short enough that a genuine hang unblocks the
+  // shared queue instead of freezing every future move, hint and review.
+  const SF_HANG_TIMEOUT_MS=12000;
   function stockfishBestMove(fen, spec){
     return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
+      const budgetMs=(spec&&spec.movetime||3000)+SF_HANG_TIMEOUT_MS;
+      const timer=setTimeout(()=>{ worker.onmessage=null; resolve(null); },budgetMs);
       worker.onmessage = function(e){
         const line = e.data;
         if(typeof line==='string' && line.indexOf('bestmove')===0){
+          clearTimeout(timer);
           worker.onmessage = null;
           resolve(line.split(' ')[1]);
         }
@@ -6595,6 +6612,7 @@
   function stockfishAnalyse(fen, movetimeMs){
     return sfQueue(()=>stockfishInit().then(worker=>new Promise(resolve=>{
       let best=null;
+      const timer=setTimeout(()=>{ worker.onmessage=null; resolve(best); },movetimeMs+SF_HANG_TIMEOUT_MS);
       // Full strength, always. The coach is the one caller whose answer must
       // not depend on the Level select — being told "you're fine" by an
       // engine deliberately set to blunder is worse than no coach at all, and
@@ -6610,6 +6628,7 @@
           best={ kind:sc[1], value:+sc[2], depth:d?+d[1]:0,
                  pv:line.slice(line.indexOf(' pv ')+4).trim().split(/\s+/) };
         }else if(line.indexOf('bestmove')===0){
+          clearTimeout(timer);
           worker.onmessage = null;
           const uci=line.split(' ')[1];
           if(best) best.bestmove=uci;
@@ -6901,7 +6920,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r182 (OUR-234: Board & Pieces icon queen glyph, centered by construction)';
+  const BUILD='v2-r183 (OUR-228: Stockfish hang timeout - fixes Review stuck at 0 of 0)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
