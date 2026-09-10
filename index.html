@@ -5735,19 +5735,66 @@
   // share a phrase still track independently.
   const REVIEW_PHRASE_REPEAT_CAP=3;
   let reviewPhraseUsage={};
-  function reviewResetPhraseUsage(){ reviewPhraseUsage={}; }
+  // OUR-245: general-purpose word/phrase repetition tracking, layered on
+  // top of the per-pool cap above -- that cap only stops one pool from
+  // leaning on a favorite phrase; this additionally biases every pick,
+  // across ALL pools combined, away from vocabulary that showed up in the
+  // last few narrated moves. Keyed by move index (reviewMoveCounter, bumped
+  // once per reviewSentenceFor() call -- see reviewBeginMoveTracking()),
+  // not raw pick count, so "recent" means "within the last N narrated
+  // moves" regardless of how many clauses stack into one move's sentence.
+  // Word-level and phrase-level windows are separate constants since a
+  // whole phrase repeating reads as far more noticeable than a single word
+  // recurring, so phrases need a longer memory than individual words.
+  const REVIEW_WORD_WINDOW_MOVES=5;
+  const REVIEW_PHRASE_GLOBAL_WINDOW_MOVES=6;
+  const REVIEW_STOPWORDS=new Set(['a','an','the','that','this','was','is','it','to','of','in','on','at','and','but','or','so','right','there','here','you','your','okay','with','for','still']);
+  let reviewMoveCounter=0;
+  let reviewRecentWordUses=[];   // [{word,move}]
+  let reviewRecentPhraseUses=[]; // [{phrase,move}]
+  function reviewResetPhraseUsage(){
+    reviewPhraseUsage={};
+    reviewMoveCounter=0;
+    reviewRecentWordUses=[];
+    reviewRecentPhraseUses=[];
+  }
+  // Called once per narrated move (top of reviewSentenceFor()) -- advances
+  // the window and prunes entries that have aged out of it.
+  function reviewBeginMoveTracking(){
+    reviewMoveCounter++;
+    reviewRecentWordUses=reviewRecentWordUses.filter(w=>reviewMoveCounter-w.move<REVIEW_WORD_WINDOW_MOVES);
+    reviewRecentPhraseUses=reviewRecentPhraseUses.filter(p=>reviewMoveCounter-p.move<REVIEW_PHRASE_GLOBAL_WINDOW_MOVES);
+  }
+  function reviewWordsOf(phrase){
+    return (phrase.toLowerCase().match(/[a-z']+/g)||[]).filter(w=>w.length>2&&!REVIEW_STOPWORDS.has(w));
+  }
+  function reviewRecordUsage(phrase){
+    reviewRecentPhraseUses.push({phrase,move:reviewMoveCounter});
+    reviewWordsOf(phrase).forEach(w=>reviewRecentWordUses.push({word:w,move:reviewMoveCounter}));
+  }
   function reviewPick(poolKey,list){
-    if(list.length===1) return list[0];
+    if(list.length===1){ reviewRecordUsage(list[0]); return list[0]; }
     const counts=reviewPhraseUsage[poolKey]||(reviewPhraseUsage[poolKey]={});
     let eligible=list.filter(p=>(counts[p]||0)<=REVIEW_PHRASE_REPEAT_CAP);
     if(!eligible.length) eligible=list;
+    // Score each eligible candidate by how much recently-used vocabulary it
+    // repeats -- an exact phrase reused within the global window (any pool)
+    // scores highest, each individual recently-used word adds one more --
+    // then narrow to the lowest-scoring subset before the random pick
+    // below, so fresher phrasing wins whenever any exists in the pool.
+    const recentPhrases=new Set(reviewRecentPhraseUses.map(p=>p.phrase));
+    const recentWords=new Set(reviewRecentWordUses.map(w=>w.word));
+    const scored=eligible.map(p=>({p,score:(recentPhrases.has(p)?10:0)+reviewWordsOf(p).filter(w=>recentWords.has(w)).length}));
+    const minScore=Math.min.apply(null,scored.map(s=>s.score));
+    const fresh=scored.filter(s=>s.score===minScore).map(s=>s.p);
     const lastKey='last:'+poolKey;
-    let choice=eligible[Math.floor(Math.random()*eligible.length)];
-    if(eligible.length>1&&choice===reviewPhraseUsage[lastKey]){
-      choice=eligible[(eligible.indexOf(choice)+1)%eligible.length];
+    let choice=fresh[Math.floor(Math.random()*fresh.length)];
+    if(fresh.length>1&&choice===reviewPhraseUsage[lastKey]){
+      choice=fresh[(fresh.indexOf(choice)+1)%fresh.length];
     }
     reviewPhraseUsage[lastKey]=choice;
     counts[choice]=(counts[choice]||0)+1;
+    reviewRecordUsage(choice);
     return choice;
   }
   // OUR-214 Phase A: Simple-tier narration for one stepped-to move --
@@ -5768,13 +5815,17 @@
   // set reads as genuinely more serious than Inaccuracy's, Best more
   // enthusiastic than Good, matching how a human reviewer's tone
   // actually shifts with how big a deal the move was.
+  // OUR-245: finalized full pools (originals + new short additions,
+  // reviewed and approved together) -- mistake's 'Hmm, tricky.' and
+  // inaccuracy's bare 'Hmm.' are each the ONLY instance of that exact
+  // phrase anywhere in the vocabulary, deliberately not reused elsewhere.
   const REVIEW_CLASS_PHRASE={
-    blunder:['That’s a costly one.','This really hurts your position.','That hands the advantage away.','A tough moment right there.','That one stings a little.'],
-    mistake:['That’s a real mistake.','This gives some ground back.','Not quite the move you wanted.','That eases the pressure on your opponent.','A noticeable step back there.'],
-    inaccuracy:['Just a touch off there.','Slightly loose, nothing serious.','Not the cleanest choice, but close.','A minor slip, easy to miss.','That’s a small one.'],
-    best:['That’s the best move on the board.','Perfect choice right there.','You found the top move.','That’s exactly right.','Couldn’t have played that better.'],
-    excellent:['That’s an excellent move.','A really strong choice.','You played that very well.','That’s a sharp find.','Nicely done there.'],
-    good:['That’s a good, solid move.','A reasonable choice there.','That keeps things steady.','Nothing wrong with that.','A safe, sensible move.']
+    blunder:['That’s a costly one.','This really hurts your position.','That hands the advantage away.','A tough moment right there.','That one stings a little.','Ouch.','That’s rough.','Big slip.','Yikes.','That hurt.','Oh no.'],
+    mistake:['That’s a real mistake.','This gives some ground back.','Not quite the move you wanted.','That eases the pressure on your opponent.','A noticeable step back there.','Not ideal.','A slip there.','That’s off.','A step back.','Okay, that costs a bit.','Hmm, tricky.'],
+    inaccuracy:['Just a touch off there.','Slightly loose, nothing serious.','Not the cleanest choice, but close.','A minor slip, easy to miss.','That’s a small one.','A touch off.','Close, but no.','Minor slip.','Nearly there.','Slightly loose.','Hmm.','Okay, small thing.'],
+    best:['That’s the best move on the board.','Perfect choice right there.','You found the top move.','That’s exactly right.','Couldn’t have played that better.','Perfect.','Spot on.','Nailed it.','Exactly right.','Top choice.','Interesting — and correct.','Okay, perfect.'],
+    excellent:['That’s an excellent move.','A really strong choice.','You played that very well.','That’s a sharp find.','Nicely done there.','Sharp.','Well played.','Strong move.','Nice find.','Clean play.','Interesting choice.','Okay, nice.'],
+    good:['That’s a good, solid move.','A reasonable choice there.','That keeps things steady.','Nothing wrong with that.','A safe, sensible move.','Solid.','Fine choice.','Steady.','That works.','Reasonable.','Okay.','Fine.']
   };
   // OUR-242: "calm opening" -- as long as EVERY move so far (strictly
   // before `ply`) has been Best/Excellent/Good, the game hasn't had a
@@ -5791,8 +5842,8 @@
     }
     return true;
   }
-  const REVIEW_CALM_OPENING_PHRASES=['Nice and steady so far.','Standard opening theory.','A solid, familiar continuation.','Just good, sensible development.','Nothing dramatic yet — all according to plan.','Textbook stuff — nothing to see here yet.','Following the script so far.','Both sides just getting warmed up.','So far, so normal.','No fireworks yet, just chess.'];
-  const REVIEW_TRANSITION_PHRASES=['Oh, here we go.','Well, that changes things.','And there it is — the game just woke up.','Okay, now we’re paying attention.','Alright, shifting gears here.','Now that’s interesting.','Hold on — something just happened.','Holy moly.','Well, we’re shifting gears now.'];
+  const REVIEW_CALM_OPENING_PHRASES=['Nice and steady so far.','Standard opening theory.','A solid, familiar continuation.','Just good, sensible development.','Nothing dramatic yet — all according to plan.','Textbook stuff — nothing to see here yet.','Following the script so far.','Both sides just getting warmed up.','So far, so normal.','No fireworks yet, just chess.','All normal.','Book move.','As expected.','Standard stuff.','Quiet so far.','Okay.'];
+  const REVIEW_TRANSITION_PHRASES=['Oh, here we go.','Well, that changes things.','And there it is — the game just woke up.','Okay, now we’re paying attention.','Alright, shifting gears here.','Now that’s interesting.','Hold on — something just happened.','Holy moly.','Well, we’re shifting gears now.','Oh!','Whoa.','There it is.','Ah, here we go.','Well, well.','Interesting.','Okay, here we go.'];
   function reviewMoveSentence(move){
     const m=describeUci(move.fenBefore,move.uci);
     let base;
@@ -5945,7 +5996,13 @@
       cap(phrase)+' would have kept more chances alive.',
       'Most players would reach for '+phrase+' here.',
       'You had '+phrase+' available too.',
-      'A cleaner path was '+phrase+'.'
+      'A cleaner path was '+phrase+'.',
+      cap(phrase)+' instead.',
+      'Try '+phrase+'.',
+      cap(phrase)+' was better.',
+      'Consider '+phrase+'.',
+      cap(phrase)+', perhaps.',
+      'Interesting — '+phrase+' was there.'
     ]);
   }
   // "The best line continues [move], [move]" -- walks evalBefore.pv past its
@@ -6005,6 +6062,7 @@
   }
   let reviewDepth='simple';   // 'simple' | 'deep' -- OUR-216 Phase C
   function reviewSentenceFor(move){
+    reviewBeginMoveTracking();
     return reviewDepth==='deep'?reviewDeepSentence(move):reviewMoveSentence(move);
   }
   // OUR-221: the actual game-ending condition at Game Review's own final
@@ -7329,7 +7387,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r194 (OUR-244: fix Game Review auto-play synchronous-avalanche hang)';
+  const BUILD='v2-r195 (OUR-245: Deep commentary finalized phrasing + global repetition tracking)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
