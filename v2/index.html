@@ -5952,7 +5952,14 @@
       if(reviewToken!==myToken) return;
       reviewProgress.innerHTML='Analyzing move '+i+' of '+n+'…<div class="bar"><div class="bar-fill" style="width:'+Math.round(100*i/n)+'%"></div></div>';
     },()=>reviewToken,myToken).then(result=>{
-      if(reviewToken!==myToken||!result) return;
+      if(reviewToken!==myToken) return;
+      // analyzeGame() only returns null for a PGN its own load_pgn()
+      // rejected -- a superseded token (handled above) is the only other
+      // way this promise settles without a result, so getting here with
+      // neither means the descriptor's pgn was never valid to begin with.
+      // Worth a real message: silently leaving "Analyzing move 0 of 0..."
+      // on screen forever (this used to) reads as a hang, not a failure.
+      if(!result){ reviewProgress.innerHTML='Review failed: no move data for this game.'; return; }
       renderReviewResult(result);
       updateGameAccuracy(descriptor,result.accuracy.w,result.accuracy.b);
     }).catch(err=>{
@@ -5966,7 +5973,22 @@
     reviewOverlay.hidden=true;
     reviewResult=null;
   }
-  reviewGameBtn.addEventListener('click',openReviewOverlay);
+  // OUR-236: NOT openReviewOverlay directly -- a click listener is always
+  // called with the click Event as its first argument, which clobbers
+  // descriptor's own `=lastCompletedGame` default (a default only applies
+  // to an omitted/undefined argument, and a real DOM event is neither).
+  // That silently ran analyzeGame(event.pgn, ...) i.e. analyzeGame(undefined),
+  // whose load_pgn(undefined) throws inside chess.js, caught by analyzeGame's
+  // own try/catch into a bare `return null`, which openReviewOverlay's own
+  // `if(...||!result) return;` then swallowed with no message at all --
+  // "Analyzing move 0 of 0..." frozen forever, before any Stockfish call
+  // ever ran. Root-caused live in-browser (not a mock) against two real
+  // reports (checkmate and resignation alike, since both went through this
+  // one button) after the OUR-228 queue-hang theory's own fix (the
+  // SF_HANG_TIMEOUT_MS timeout) provably never engaged -- confirmed via a
+  // patched Chess constructor logging zero load_pgn calls with a real PGN,
+  // and exactly one with pgn===undefined, from this exact call site.
+  reviewGameBtn.addEventListener('click',()=>openReviewOverlay());
   reviewCloseBtn.addEventListener('click',closeReviewOverlay);
   reviewOverlay.addEventListener('click',e=>{ if(e.target===reviewOverlay) closeReviewOverlay(); });
 
@@ -6920,7 +6942,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r183 (OUR-228: Stockfish hang timeout - fixes Review stuck at 0 of 0)';
+  const BUILD='v2-r184 (OUR-236: Review game listener was passing the click Event as its descriptor)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
