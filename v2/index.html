@@ -3564,7 +3564,41 @@
   // when a report lands, and ask about anything ambiguous rather than letting
   // a heuristic decide. Never hand-pick this.
   const ECHO_SINGLE_TAIL_MS=2000;
+  // OUR-256: a short, closed list of words someone would plausibly say
+  // specifically TO INTERRUPT -- not a second command grammar, just an
+  // allowlist. During a reader session (readerSavedVoiceState set -- see
+  // readerEnterBargeInMode()) these always count as a real interrupt,
+  // bypassing BOTH the single-word drop guard and the bag-of-words echo
+  // match below. Everywhere else (normal chess play) this function is
+  // completely untouched -- readerSavedVoiceState is never set outside a
+  // reading session, so this new branch is simply never reached there.
+  //
+  // Why: echoOverlapRaw()'s match is a bag-of-words phonetic-code lookup
+  // against recently narrated TEXT (echoRecent + speakingText) -- sound,
+  // for chess narration, whose vocabulary (piece names, squares, "takes",
+  // "castles"...) essentially never overlaps with anything a player would
+  // say to interrupt. A news article is ordinary English prose sharing
+  // far more everyday vocabulary with real interrupt words than chess
+  // narration ever could. Confirmed live (report id 6, v2-r204): saying
+  // "Stop stop" while reading scored "100% ours" and was discarded as
+  // self-echo TWICE, purely because the word "stop" happened to appear
+  // somewhere in the last ~560 characters of article prose (speakingText
+  // plus the 3-chunk echoRecent window) -- not because it was an echo of
+  // it. A single, plainly-repeated or plainly-said interrupt word is
+  // exactly the shape real interrupt speech takes and TTS narration
+  // never does; this list doesn't require repetition, one word is
+  // already an unambiguous signal on its own.
+  const READER_INTERRUPT_WORD=/^(stop|wait|pause|cancel|quiet|enough|no|nope)$/;
+  function isReaderInterruptPhrase(transcript){
+    const words=heardTokens(transcript);
+    if(!words.length||words.length>4) return false;
+    return words.every(w=>READER_INTERRUPT_WORD.test(w));
+  }
   function considerBargeIn(transcript){
+    if(readerSavedVoiceState&&isReaderInterruptPhrase(transcript)){
+      cancelSpeech('voice: "'+transcript.trim().slice(0,40)+'"');
+      return;
+    }
     const overlap=echoOverlap(transcript);
     if(overlap===0&&heardTokens(transcript).length<2){
       // Correct — one syllable must not cut the sentence off. But a bare pawn
@@ -7687,7 +7721,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r204 (OUR-255: Reader barge-in fix -- auto-reopening listening during reading)';
+  const BUILD='v2-r205 (OUR-256: Reader interrupt words no longer false-positive as self-echo)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
