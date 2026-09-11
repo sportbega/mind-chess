@@ -152,7 +152,10 @@
   .review-progress .bar-fill{height:100%;background:var(--accent-2);transition:width .15s ease}
   .review-content{display:flex;flex-wrap:wrap;gap:18px}
   .review-accuracy{flex:1 1 100%;display:flex;gap:24px;font-size:14px}
-  .review-export-row{flex:1 1 100%;display:flex;gap:8px}
+  .review-export-row{flex:1 1 100%;display:flex;gap:8px;flex-wrap:wrap}
+  .review-record-status{flex:1 1 100%;font-size:13px}
+  .review-record-status.recording{color:var(--danger)}
+  .review-record-status.notice{color:var(--text-dim)}
   .review-accuracy b{font-size:20px;display:block}
   /* OUR-249: ties each accuracy label's text color to the eval chart's
      own line for the same player -- kept in sync by hand with
@@ -163,7 +166,7 @@
   .review-accuracy-black{color:#c9a25d}
   .review-eval-chart{flex:1 1 100%}
   .review-eval-chart canvas{width:100%;height:auto;display:block;border-radius:6px}
-  .review-board-row{display:flex;gap:8px;align-items:stretch;flex:0 0 auto}
+  .review-board-row{display:flex;gap:8px;align-items:stretch;flex:1 1 100%}
   .review-evalbar{width:14px;flex:0 0 14px;border-radius:4px;overflow:hidden;background:var(--danger);display:flex;flex-direction:column-reverse}
   .review-evalbar-fill{width:100%;background:#f2f2f0;transition:height .2s ease}
   /* OUR-204: longstanding bug, found incidentally while testing OUR-203 --
@@ -184,12 +187,15 @@
      player -- ends the circularity outright rather than chasing it
      through more flex-basis tuning. */
   .review-board{width:420px;flex:0 0 420px}
-  .review-depth-field{flex:0 0 auto;align-self:flex-start;display:flex;align-items:center;gap:6px;font-size:13px}
+  /* Right column beside the board: Commentary toggle on top, a narrower
+     move list filling the rest of the board's height below it. */
+  .review-side-col{display:flex;flex-direction:column;gap:8px;flex:1 1 200px;min-width:180px}
+  .review-depth-field{flex:0 0 auto;display:flex;align-items:center;gap:6px;font-size:13px}
   .review-eval-text{flex:1 1 100%;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
   .review-step-row{flex:1 1 100%;display:flex;gap:8px}
   .review-step-row .btn{flex:1 1 auto}
   .review-step-row .btn:disabled{opacity:.4;cursor:default}
-  .review-movelist{flex:1 1 260px;min-width:220px;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+  .review-movelist{flex:1 1 auto;min-width:0;max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:2px}
   .review-move{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px;background:none;border:0;color:var(--text);text-align:left;width:100%}
   .review-move:hover{background:var(--panel-2)}
   .review-move.current{background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--accent-2)}
@@ -847,22 +853,37 @@
           <button type="button" class="btn" id="reviewExportTxtBtn">Export as TXT</button>
           <button type="button" class="btn" id="reviewExportPdfBtn">Export as PDF</button>
           <button type="button" class="btn" id="reviewExportPgnBtn">Export as PGN</button>
+          <!-- OUR-250: HD video capture of Review with synchronized Kokoro
+               narration -- Phase 1, plain "This Tab" getDisplayMedia(), no
+               auto-cropping to the modal's bounds yet (see reviewRecordBtn
+               handler below). Record/Stop are two separate buttons rather
+               than one toggling button so reviewRecordBtn's own disabled
+               state (while a recording is active) can't be mistaken for a
+               Stop control that stopped responding. -->
+          <button type="button" class="btn" id="reviewRecordBtn">Record video</button>
+          <button type="button" class="btn" id="reviewStopRecordBtn" hidden>&#9632; Stop</button>
         </div>
+        <div class="review-record-status" id="reviewRecordStatus" hidden></div>
         <div class="review-board-row">
           <div class="review-evalbar" id="reviewEvalBar" title="Evaluation, White's perspective"><div class="review-evalbar-fill" id="reviewEvalFill"></div></div>
           <div class="board-grid review-board" id="reviewBoardGrid" style="--board-max:420px"></div>
-        </div>
-        <!-- OUR-216 Phase C: Simple/Deep commentary depth, switchable at
-             any time -- mirrors the existing #coachSelect off/hints/full
-             field pattern. Changing it re-narrates whatever move is
-             currently shown (see the change handler) rather than
-             requiring a replay. -->
-        <div class="review-depth-field">
-          <label for="reviewDepthSelect">Commentary</label>
-          <select id="reviewDepthSelect">
-            <option value="simple" selected>Simple</option>
-            <option value="deep">Deep</option>
-          </select>
+          <!-- Right column: Simple/Deep commentary toggle on top, narrower
+               move list below it, both to the right of the board. -->
+          <div class="review-side-col">
+            <!-- OUR-216 Phase C: Simple/Deep commentary depth, switchable at
+                 any time -- mirrors the existing #coachSelect off/hints/full
+                 field pattern. Changing it re-narrates whatever move is
+                 currently shown (see the change handler) rather than
+                 requiring a replay. -->
+            <div class="review-depth-field">
+              <label for="reviewDepthSelect">Commentary</label>
+              <select id="reviewDepthSelect">
+                <option value="simple" selected>Simple</option>
+                <option value="deep">Deep</option>
+              </select>
+            </div>
+            <div class="review-movelist" id="reviewMoveList"></div>
+          </div>
         </div>
         <div class="review-eval-text" id="reviewEvalText"></div>
         <!-- OUR-239: Highlights toggle -- same plain text-changing toggle
@@ -895,7 +916,6 @@
           <button type="button" class="btn" id="reviewNextBtn">Next &rarr;</button>
           <button type="button" class="btn" id="reviewForward5Btn" title="Forward 5 moves">+5</button>
         </div>
-        <div class="review-movelist" id="reviewMoveList"></div>
       </div>
     </div>
   </div>
@@ -2472,6 +2492,8 @@
         reviewEvalText=$('reviewEvalText'), reviewMoveList=$('reviewMoveList'), reviewEvalChart=$('reviewEvalChart'),
         reviewExportTxtBtn=$('reviewExportTxtBtn'), reviewExportPdfBtn=$('reviewExportPdfBtn'),
         reviewExportPgnBtn=$('reviewExportPgnBtn'),
+        reviewRecordBtn=$('reviewRecordBtn'), reviewStopRecordBtn=$('reviewStopRecordBtn'),
+        reviewRecordStatus=$('reviewRecordStatus'),
         reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
         reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
@@ -6404,6 +6426,12 @@
     if(!descriptor) return;
     if(isFullscreen()) await toggleFullscreen();
     currentReviewDescriptor=descriptor;
+    // A leftover "System voice won't be captured" notice or "Recording
+    // saved" confirmation from a previous session shouldn't greet a
+    // fresh review -- but an ACTIVE recording (reviewRecorder set) keeps
+    // rolling and its own status stays up, since Record is independent
+    // of any of this.
+    if(!reviewRecorder) reviewSetRecordStatus('');
     // OUR-216: a fresh review always starts at Simple, regardless of what
     // the last one was left on.
     reviewDepth='simple';
@@ -6947,6 +6975,92 @@
   reviewExportPdfBtn.addEventListener('click',exportReviewAsPdf);
 
   // ===============================================================
+  // OUR-250: HD video recording of Game Review, narration included.
+  // Phase 1 -- getDisplayMedia() on whatever surface the player picks in
+  // the browser's own native "Share this tab?" prompt (no auto-crop to
+  // the review modal's bounds, that's an explicitly deferred Phase 2).
+  // Record starts/stops independently of Play -- it just captures
+  // whatever is already on screen, so Prev/Next/+-5/Play/Reload during a
+  // recording need zero special-casing here: the stream keeps rolling
+  // regardless of what showReviewPosition()/narrateReviewStep() do.
+  // ===============================================================
+  let reviewRecordStream=null, reviewRecorder=null, reviewRecordChunks=[];
+
+  // Only Kokoro's narration reaches the tab's actual audio output in a
+  // form getDisplayMedia's audio track can pick up (it plays through a
+  // real <audio> element -- see speakChunkKokoro()); the system voice
+  // (speechSynthesis) does not reliably route into a captured tab audio
+  // track across browsers. Recording anyway would silently produce a
+  // soundless video, so this gates Record itself rather than leaving it
+  // to be discovered after the fact.
+  function reviewRecordVoiceReady(){ return ttsEngine==='kokoro'&&!!kokoro; }
+
+  function reviewSetRecordStatus(text,cls){
+    reviewRecordStatus.textContent=text;
+    reviewRecordStatus.className='review-record-status'+(cls?' '+cls:'');
+    reviewRecordStatus.hidden=!text;
+  }
+
+  function reviewPickRecorderMimeType(){
+    const candidates=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+    return candidates.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t))||'';
+  }
+
+  async function startReviewRecording(){
+    if(!reviewRecordVoiceReady()){
+      reviewSetRecordStatus('System voice won’t be captured — switch to Natural voice for narrated video.','notice');
+      return;
+    }
+    let stream;
+    try{
+      stream=await navigator.mediaDevices.getDisplayMedia({
+        video:{frameRate:30,width:1920,height:1080},
+        audio:true
+      });
+    }catch(err){
+      // User dismissed the native picker, or the browser refused —
+      // either way there's nothing to record, not a bug to report.
+      return;
+    }
+    // The audio track is missing when the player picks a source (or an
+    // OS) that can't share tab audio -- narration would be silent even
+    // though a video will still be produced, so flag it rather than
+    // letting a soundless recording pass as success.
+    const noAudio=stream.getAudioTracks().length===0;
+    const mimeType=reviewPickRecorderMimeType();
+    reviewRecordChunks=[];
+    reviewRecorder=mimeType?new MediaRecorder(stream,{mimeType,videoBitsPerSecond:8000000})
+                           :new MediaRecorder(stream,{videoBitsPerSecond:8000000});
+    reviewRecordStream=stream;
+    reviewRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) reviewRecordChunks.push(e.data); };
+    reviewRecorder.onstop=()=>{
+      const blob=new Blob(reviewRecordChunks,{type:reviewRecorder.mimeType||'video/webm'});
+      reviewRecordChunks=[];
+      triggerDownload(blob,reviewExportFilename('webm'));
+      reviewRecordStream.getTracks().forEach(t=>t.stop());
+      reviewRecordStream=null; reviewRecorder=null;
+      reviewRecordBtn.hidden=false; reviewStopRecordBtn.hidden=true;
+      reviewSetRecordStatus('Recording saved to Downloads.','');
+    };
+    // The browser's own "Stop sharing" control (outside this page) ends
+    // the stream directly -- treat that exactly like clicking Stop here,
+    // rather than leaving the UI stuck showing "Recording…" forever.
+    stream.getVideoTracks()[0].addEventListener('ended',()=>{
+      if(reviewRecorder&&reviewRecorder.state!=='inactive') reviewRecorder.stop();
+    });
+    reviewRecorder.start();
+    reviewRecordBtn.hidden=true; reviewStopRecordBtn.hidden=false;
+    reviewSetRecordStatus(noAudio?'● Recording… (no tab audio shared — video will be silent)':'● Recording…','recording');
+  }
+
+  function stopReviewRecording(){
+    if(reviewRecorder&&reviewRecorder.state!=='inactive') reviewRecorder.stop();
+  }
+
+  reviewRecordBtn.addEventListener('click',startReviewRecording);
+  reviewStopRecordBtn.addEventListener('click',stopReviewRecording);
+
+  // ===============================================================
   // Applying moves
   // ===============================================================
   function applyMove(spec){
@@ -7474,7 +7588,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r199 (OUR-249: dual-line eval chart, perspective toggle removed)';
+  const BUILD='v2-r200 (OUR-250: Review layout compacted, Record video (Kokoro-gated getDisplayMedia+MediaRecorder))';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
