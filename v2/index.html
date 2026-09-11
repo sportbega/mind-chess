@@ -21,6 +21,12 @@
      file is ever missing, only "Export as PDF" degrades (checked before
      use, see exportReviewAsPdf()) -- nothing else in the app needs it. -->
 <script src="jspdf.umd.min.js"></script>
+<!-- OUR-253 Phase 1: Mozilla's own Reader Mode library, vendored the same
+     way as everything else above -- Apache 2.0, no runtime dependencies
+     when run against a real browser DOM (the only place this app ever
+     runs it; see readerExtractArticle()). Non-critical like jsPDF: if
+     this file is ever missing, only the web-reader feature degrades. -->
+<script src="readability.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <style>
@@ -7668,7 +7674,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r202 (OUR-252: "Share tab audio" reminder before recording)';
+  const BUILD='v2-r203 (OUR-253: Voice-driven web reader Phase 1 -- say/type a URL, read aloud)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -7746,6 +7752,12 @@
     const t=normalize(text);
     const cmd=matchCommand(t);
     if(cmd) return {score:6,type:'command',run:cmd};
+
+    // OUR-253 Phase 1: raw text, not normalized -- see
+    // matchReaderVoiceUrl()'s own comment, same reasoning matchQuestion()
+    // just below already documents for the same choice.
+    const reader=matchReaderVoiceUrl(text);
+    if(reader) return {score:6,type:'command',run:reader};
 
     // Questions run ahead of every move parser on purpose: "what's on e4?"
     // contains a perfectly legal move, and playing it instead of answering it
@@ -9219,6 +9231,22 @@
           return true;
         }
       }
+      // OUR-253 Phase 1: same yes/no pattern as the 'confirm' branch just
+      // above, but declining a guessed URL means "try typing it" rather
+      // than "say it again" -- voice dictation of a URL is explicitly
+      // best-effort here, typing is the reliable path.
+      if(pa.type==='confirmReaderUrl'){
+        if(/\b(yes|yeah|yep|yup|correct|right|okay|ok|sure|do it)\b/.test(t)){
+          pendingAction=null; updateStatus();
+          startReading(pa.url);
+          return true;
+        }
+        if(/\b(no|nope|nah|cancel|wrong|never mind)\b/.test(t)){
+          pendingAction=null; updateStatus();
+          warn('Okay — try typing the address instead.');
+          return true;
+        }
+      }
     }
     return false;
   }
@@ -9513,7 +9541,14 @@
   textForm.addEventListener('submit',e=>{
     e.preventDefault();
     const v=textInput.value; textInput.value='';
-    if(v.trim()) route([v]);
+    if(!v.trim()) return;
+    // OUR-253 Phase 1: checked BEFORE any move parsing, not after -- a
+    // URL never looks like a legal move attempt worth scoring, so this
+    // skips route()'s whole chess pipeline rather than letting it fail
+    // there first. looksLikeUrl() is text-input only, by design; the
+    // spoken path is matchReaderVoiceUrl()'s separate "go to ..." command.
+    if(looksLikeUrl(v.trim())){ startReading(v.trim()); return; }
+    route([v]);
   });
 
   // OUR-97: one form, dispatched by mode. OUR-206: the form itself is
@@ -10700,6 +10735,130 @@
   // ===============================================================
   const db=(window.MIND_CHESS_SUPABASE_URL&&window.MIND_CHESS_SUPABASE_ANON_KEY&&window.supabase?.createClient)
     ?window.supabase.createClient(window.MIND_CHESS_SUPABASE_URL,window.MIND_CHESS_SUPABASE_ANON_KEY):null;
+
+  // ===============================================================
+  // OUR-253 Phase 1: voice-driven web reader. Say/type a URL, the app
+  // fetches it server-side (client-side fetch() of an arbitrary
+  // third-party URL fails CORS for most real sites), extracts the
+  // readable article text, and reads it aloud through the same
+  // speak()/say() pipeline every other narration already uses.
+  // ===============================================================
+
+  // A literal "." is the signal: no move phrasing this app accepts
+  // (SAN, castling, promotion) ever contains one, so this can't collide
+  // with a real move by accident -- see textForm's submit handler below,
+  // which checks this BEFORE any move parsing runs at all.
+  const READER_TLDS=/\.(com|org|net|io|co|gov|edu|mil|info|biz|uk|us|ca|de|fr|es|it|nl|tv|me|app|dev|news|blog)\b/i;
+  function looksLikeUrl(text){
+    const t=(text||'').trim();
+    if(!t) return false;
+    if(/^https?:\/\//i.test(t)) return true;
+    if(/^www\./i.test(t)) return true;
+    return /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(t)&&READER_TLDS.test(t);
+  }
+  function normalizeReaderUrl(u){
+    let s=(u||'').trim();
+    if(!/^https?:\/\//i.test(s)) s='https://'+s;
+    return s;
+  }
+
+  // Sidesteps the CORS wall the same way lichess-userinfo (OUR-131) does
+  // for Lichess's own API: a Supabase Edge Function fetches server-side
+  // and hands the raw HTML back. See fetch-page/index.ts for the function
+  // itself (JWT-gated, rate-limited, SSRF-guarded) -- kept deliberately
+  // dumb, no extraction there; see readerExtractArticle() for why.
+  async function fetchPageServerSide(url){
+    if(!db) throw new Error('offline');
+    const {data,error}=await db.functions.invoke('fetch-page',{body:{url}});
+    if(error) throw error;
+    if(data&&data.error) throw new Error(data.error);
+    return data; // {html, finalUrl}
+  }
+
+  // Runs against the BROWSER's own native DOM, not a server-side jsdom --
+  // Deno has no DOM at all, and vendoring jsdom into the Edge Function
+  // would mean carrying its own script-execution/sanitization concerns
+  // (per Readability's own docs) for no benefit, when every caller here
+  // already has a real, safe DOM sitting right there. Same
+  // vendor-a-static-file pattern as chess.js/jsPDF (readability.js).
+  function readerExtractArticle(html){
+    if(!window.Readability) return null;
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    try{ return new Readability(doc).parse(); }
+    catch(e){ return null; }
+  }
+
+  async function startReading(rawUrl){
+    const url=normalizeReaderUrl(rawUrl);
+    say('One moment — fetching that.');
+    let page;
+    try{ page=await fetchPageServerSide(url); }
+    catch(err){ warn('Couldn’t reach that page — check the address and try again.'); return; }
+    const article=readerExtractArticle(page.html);
+    if(!article||!article.textContent||!article.textContent.trim()){
+      warn('Couldn’t find readable text on that page.');
+      return;
+    }
+    const text=(article.title?article.title+'. ':'')+article.textContent.trim();
+    // speak() sets lastNarration -- the existing generic "repeat"/"say
+    // that again" command (matchCommand, /^repeat$|say (that )?again/)
+    // already replays whatever it last set, so re-reading the article on
+    // request needs no new command of its own.
+    log('Reader',(article.title?article.title+'. ':'')+article.textContent.trim().slice(0,140)+'…');
+    speak(text);
+  }
+
+  // Best-effort spoken-URL interpretation ("go to the guardian dot com").
+  // Full URL dictation is a known-hard problem -- domain names and
+  // punctuation words don't transcribe reliably -- so this never plays a
+  // guess with unearned confidence: it proceeds outright only when the
+  // whole phrase converts cleanly, asks (askConfirmReaderUrl, same
+  // pendingAction/yes-no architecture askConfirm() uses for moves --
+  // not a literal call to it, since that one is hardcoded to a chess
+  // move's SAN/piece/square phrasing) when it's produced something
+  // domain-shaped but not spotlessly, and flatly declines to guess at
+  // all when it can't find anything domain-shaped -- typing the address
+  // into the existing move box (see textForm's submit handler) stays the
+  // fully reliable path throughout, per the phase's own scoping.
+  function interpretSpokenUrl(phrase){
+    let s=' '+(phrase||'').toLowerCase().trim()+' ';
+    s=s.replace(/\s+dot\s+/g,'.')
+       .replace(/\s+slash\s+/g,'/')
+       .replace(/\s+(dash|hyphen)\s+/g,'-')
+       .replace(/\s+underscore\s+/g,'_');
+    const hadLeftoverWords=/[a-z]\s+[a-z]/i.test(s.trim());
+    const candidate=s.trim().replace(/\s+/g,''); // a real domain never has spaces
+    return {candidate,hadLeftoverWords};
+  }
+  function readerUrlConfidence(candidate,hadLeftoverWords){
+    const shapeOk=/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[a-z0-9\-._~%]*)*$/i.test(candidate);
+    if(!shapeOk) return 'low';
+    if(hadLeftoverWords) return 'medium';
+    return READER_TLDS.test(candidate)?'high':'medium';
+  }
+  function askConfirmReaderUrl(url){
+    pendingAction={type:'confirmReaderUrl',url};
+    log('System','Did you mean '+url+'? Say yes or no.');
+    say('Did you mean '+url+'?');
+    updateStatus();
+    return true;
+  }
+  function handleSpokenReaderUrl(phrase){
+    const {candidate,hadLeftoverWords}=interpretSpokenUrl(phrase);
+    const level=readerUrlConfidence(candidate,hadLeftoverWords);
+    if(level==='low'){ warn('Didn’t catch that clearly — try typing the address instead.'); return; }
+    if(level==='medium'){ askConfirmReaderUrl(candidate); return; }
+    startReading(candidate);
+  }
+  // Raw text, not normalize()'d -- same reasoning matchQuestion() already
+  // documents: normalize() strips periods and rewrites words ("move",
+  // "takes") this needs intact ("dot", "slash") to interpret correctly.
+  function matchReaderVoiceUrl(text){
+    const m=(text||'').trim().match(/^go to (.+)$/i);
+    if(!m) return null;
+    const phrase=m[1];
+    return ()=>handleSpokenReaderUrl(phrase);
+  }
 
   let onlineClockTimer=null;
   const onlineActive=()=>onlineState!==null;
