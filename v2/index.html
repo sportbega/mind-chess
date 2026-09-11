@@ -2621,6 +2621,14 @@
   // brings it back. Every path out of speech must reach endSpeaking(), or
   // the mic stays muted forever — hence the watchdog below.
   let speaking=false;            // TTS is producing audio right now
+  // OUR-254: single-shot hook, fired by endSpeaking() the moment the
+  // CURRENT narration truly ends -- naturally or via any interrupt
+  // (cancelSpeech() also funnels through endSpeaking()). Reader sessions
+  // use this to know exactly when to hand the mic back to whatever the
+  // player's own bargeIn/handsFree settings were -- see
+  // readerEnterBargeInMode()/readerExitBargeInMode(). null the rest of
+  // the time; nothing else in the app sets it.
+  let onNextEndSpeaking=null;
   let speechWatchdog=null;       // Chrome intermittently never fires utterance.onend
   let speechQueue=[];            // chunks of the current narration still to speak
   let speakingText='';           // the chunk being spoken right now, for echo detection
@@ -3230,6 +3238,11 @@
   function endSpeaking(fast){
     if(!speaking){ releaseSpeechIdle(); return; }
     speaking=false;
+    // OUR-254: fired BEFORE the wantLoop&&handsFree check just below, on
+    // purpose -- a reader session's hook reverts those (among others) to
+    // the player's own settings, and this way that decision already sees
+    // the reverted values rather than the reading session's forced ones.
+    if(onNextEndSpeaking){ const fn=onNextEndSpeaking; onNextEndSpeaking=null; fn(); }
     lastSpokeAt=Date.now();            // opens the trailing-echo window
     speakingText='';
     speechQueue.length=0;
@@ -7674,7 +7687,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r203 (OUR-253: Voice-driven web reader Phase 1 -- say/type a URL, read aloud)';
+  const BUILD='v2-r204 (OUR-255: Reader barge-in fix -- auto-reopening listening during reading)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10788,15 +10801,50 @@
     catch(e){ return null; }
   }
 
+  // OUR-254: a reading session forces a barge-in-friendly, auto-reopening
+  // listening state (bargeIn+handsFree+wantLoop all on, mic opened if it
+  // wasn't already) for as long as narration this call starts is running
+  // -- otherwise the mic stays closed for the entire article (bargeIn
+  // defaults off) and there is nothing live to interrupt by voice at
+  // all, the root cause found investigating OUR-253's own "small issue".
+  // Does NOT touch the separate, deliberate invariant that a voice
+  // utterance heard while speaking can only cancel, never also act as
+  // the next command in the same breath (see beginSpeaking()'s own
+  // comment) -- that stays exactly as it was; this only makes sure the
+  // mic is open and reopens promptly, not what happens once it hears
+  // something.
+  let readerSavedVoiceState=null;
+  function readerEnterBargeInMode(){
+    if(readerSavedVoiceState) return; // already inside one -- don't clobber the true original
+    readerSavedVoiceState={bargeIn,handsFree,wantLoop};
+    bargeIn=true; handsFree=true; wantLoop=true;
+    if(recognition&&!listening&&!speakingBlocksMic()) startListening();
+  }
+  // Reverting BEFORE endSpeaking()'s own wantLoop&&handsFree check (see
+  // the hook there) means a player who doesn't normally use hands-free
+  // gets the mic closed again right along with everything else settling
+  // back to their real settings -- correct per spec: interrupting counts
+  // as the reading session ending, same as finishing or stopping it, and
+  // "give a new instruction" after that is deliberately its own separate
+  // turn, on whatever terms the player's own settings already give it.
+  function readerExitBargeInMode(){
+    if(!readerSavedVoiceState) return;
+    const s=readerSavedVoiceState; readerSavedVoiceState=null;
+    bargeIn=s.bargeIn; handsFree=s.handsFree; wantLoop=s.wantLoop;
+    if(!(wantLoop&&handsFree)&&listening){ try{recognition.stop();}catch(e){} }
+  }
+
   async function startReading(rawUrl){
     const url=normalizeReaderUrl(rawUrl);
+    readerEnterBargeInMode();
     say('One moment — fetching that.');
     let page;
     try{ page=await fetchPageServerSide(url); }
-    catch(err){ warn('Couldn’t reach that page — check the address and try again.'); return; }
+    catch(err){ warn('Couldn’t reach that page — check the address and try again.'); readerExitBargeInMode(); return; }
     const article=readerExtractArticle(page.html);
     if(!article||!article.textContent||!article.textContent.trim()){
       warn('Couldn’t find readable text on that page.');
+      readerExitBargeInMode();
       return;
     }
     const text=(article.title?article.title+'. ':'')+article.textContent.trim();
@@ -10805,6 +10853,10 @@
     // already replays whatever it last set, so re-reading the article on
     // request needs no new command of its own.
     log('Reader',(article.title?article.title+'. ':'')+article.textContent.trim().slice(0,140)+'…');
+    // Fires once, whenever THIS narration truly ends -- naturally or via
+    // any interrupt -- and hands the mic back to the player's own
+    // settings at exactly that point (see endSpeaking()).
+    onNextEndSpeaking=readerExitBargeInMode;
     speak(text);
   }
 
