@@ -142,6 +142,15 @@
      for form/text content instead. */
   .review-overlay,.modal-overlay{position:fixed;inset:0;z-index:90;background:#000c;display:flex;align-items:center;justify-content:center;padding:16px}
   .review-overlay[hidden],.modal-overlay[hidden]{display:none}
+  /* OUR-252: a brief, non-blocking toast rather than a modal -- deliberately
+     NOT .modal-overlay/.review-overlay's own full-screen dimmed backdrop,
+     since this needs to appear on top of either of those (Record can be
+     clicked from inside the Review modal) or neither (Live's toolbar
+     button has no modal at all) without fighting either one's own
+     z-index:90 for the same layer. */
+  .record-audio-reminder{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;background:var(--panel);border:1px solid var(--accent);border-radius:var(--radius);padding:10px 14px;display:flex;align-items:center;gap:12px;max-width:92vw;box-shadow:0 4px 16px #0008}
+  .record-audio-reminder[hidden]{display:none}
+  .record-audio-reminder p{margin:0;font-size:13px}
   .review-card,.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;width:100%;max-height:92vh;overflow:auto}
   .review-card{max-width:920px}
   .modal-card{max-width:640px}
@@ -805,6 +814,24 @@
 <div class="app">
 
   <button class="btn exit-fullscreen-btn" id="exitFullscreenBtn" type="button">Exit fullscreen ✕</button>
+
+  <!-- OUR-252: shown for an instant right before EITHER recording feature's
+       getDisplayMedia() call (Game Review's startReviewRecording() and Live
+       Gameplay's startLiveRecording() -- see showShareAudioReminder(),
+       called from both) -- a real report from Adni found that missing
+       "Share tab audio" in the browser's own picker silently produces a
+       recording with no narration at all, discovered only after the fact.
+       Shown every time, not just once per session: the failure it guards
+       against is a silent, only-discovered-after-playback one, and this
+       stays a single line the player can click through or that
+       auto-advances on its own -- worse to miss than to see once more.
+       Sits above both .review-overlay and .modal-overlay's own z-index:90
+       (see CSS) so it shows correctly whichever surface Record was
+       clicked from, review modal open or not. -->
+  <div class="record-audio-reminder" id="recordAudioReminder" hidden>
+    <p>Don't forget to check <b>“Share tab audio”</b> in the next dialog — otherwise your narration won't be recorded.</p>
+    <button type="button" class="btn" id="recordAudioReminderBtn">Continue</button>
+  </div>
 
   <div class="banner" id="originBanner">
     <b>Microphone tip:</b><br />
@@ -2519,6 +2546,7 @@
         reviewExportPgnBtn=$('reviewExportPgnBtn'),
         reviewRecordBtn=$('reviewRecordBtn'), reviewStopRecordBtn=$('reviewStopRecordBtn'),
         reviewRecordStatus=$('reviewRecordStatus'),
+        recordAudioReminder=$('recordAudioReminder'), recordAudioReminderBtn=$('recordAudioReminderBtn'),
         reviewDepthSelect=$('reviewDepthSelect'),
         reviewPrevBtn=$('reviewPrevBtn'), reviewNextBtn=$('reviewNextBtn'), reviewPlayBtn=$('reviewPlayBtn'),
         reviewReloadBtn=$('reviewReloadBtn'), reviewRewind5Btn=$('reviewRewind5Btn'), reviewForward5Btn=$('reviewForward5Btn'),
@@ -7033,11 +7061,36 @@
     return candidates.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t))||'';
   }
 
+  // OUR-252: shown right before EVERY getDisplayMedia() call either
+  // recording feature makes -- a real report found that missing "Share
+  // tab audio" in the browser's own picker silently produces a video with
+  // no narration, discovered only after the fact, which is worse than a
+  // one-line reminder seen again. Resolves on the Continue click (a fresh
+  // gesture of its own, so the getDisplayMedia() call right after keeps
+  // real user-activation regardless of timing) or on its own after a
+  // couple of seconds -- never a hard block on the recording flow.
+  function showShareAudioReminder(){
+    return new Promise(resolve=>{
+      let done=false;
+      const finish=()=>{
+        if(done) return;
+        done=true;
+        recordAudioReminder.hidden=true;
+        recordAudioReminderBtn.removeEventListener('click',finish);
+        resolve();
+      };
+      recordAudioReminder.hidden=false;
+      recordAudioReminderBtn.addEventListener('click',finish);
+      setTimeout(finish,2200);
+    });
+  }
+
   async function startReviewRecording(){
     if(!reviewRecordVoiceReady()){
       reviewSetRecordStatus('System voice won’t be captured — switch to Natural voice for narrated video.','notice');
       return;
     }
+    await showShareAudioReminder();
     let stream;
     try{
       stream=await navigator.mediaDevices.getDisplayMedia({
@@ -7615,7 +7668,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r201 (OUR-251: Live gameplay recording, mic+narration mixed, On-device Hearing gated)';
+  const BUILD='v2-r202 (OUR-252: "Share tab audio" reminder before recording)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9941,6 +9994,7 @@
   async function startLiveRecording(){
     const problems=liveRecordGateProblems();
     if(problems.length){ note(problems.join('  ')); return; }
+    await showShareAudioReminder();
     let stream;
     try{
       stream=await navigator.mediaDevices.getDisplayMedia({
