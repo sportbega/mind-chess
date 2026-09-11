@@ -156,6 +156,12 @@
   .review-record-status{flex:1 1 100%;font-size:13px}
   .review-record-status.recording{color:var(--danger)}
   .review-record-status.notice{color:var(--text-dim)}
+  /* OUR-251: live-recording toolbar button -- red + pulsing while active,
+     same ripple keyframes #micBtn's own listening rings already use, so
+     the two "something is capturing you" indicators in this toolbar read
+     as one visual language rather than two invented ones. */
+  #liveRecordBtn.recording{color:var(--danger);border-color:var(--danger);animation:recordPulse 1.6s ease-out infinite}
+  @keyframes recordPulse{0%{box-shadow:0 0 0 0 rgba(192,107,82,.5)}100%{box-shadow:0 0 0 9px rgba(192,107,82,0)}}
   .review-accuracy b{font-size:20px;display:block}
   /* OUR-249: ties each accuracy label's text color to the eval chart's
      own line for the same player -- kept in sync by hand with
@@ -1119,6 +1125,25 @@
           </div>
         </div>
       </div>
+      <!-- OUR-251: live gameplay recording -- board video + player's own
+           voice (mic, via LocalRecognition's stream, per-session re-cloned
+           -- see liveRecordAttachMicSource()) + narration (tab audio),
+           mixed with the Web Audio API into one MediaRecorder. Gated on
+           BOTH On-device Hearing (sttEngine==='local' -- the only STT
+           engine whose mic stream is JS-visible to clone; a second
+           getUserMedia() alongside native SpeechRecognition is the exact
+           thing primeMic() has warned against since Day 1) and Kokoro
+           narration (same reasoning as OUR-250's reviewRecordVoiceReady())
+           -- see startLiveRecording(). Single toggling icon button, same
+           convention as #micBtn/#speakerToggleBtn in this row, rather than
+           OUR-250's two-button Record/Stop pair -- Review's pair lives in
+           a spacious modal export row; this is a dense toolbar. -->
+      <button class="icon-btn mic-size" id="liveRecordBtn" type="button" aria-label="Record video" title="Record this game as a video — your voice and the narration are mixed into the audio.">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <g class="record-dot"><circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/></g>
+          <g class="record-stop" style="display:none"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/></g>
+        </svg>
+      </button>
       <!-- OUR-150: relocated here from .board-head (OUR-96/r95's original
            move, restyled as a round icon in OUR-148) -- header order is now
            mic (verbosity popover) -> speaker (volume popover) -> Fullscreen
@@ -2447,7 +2472,7 @@
         boardOpacityRange=$('boardOpacityRange'),
         promotionPicker=$('promotionPicker'), promoChoices=[...document.querySelectorAll('.promo-choice')],
         boardToggleBtn=$('boardToggleBtn'), flipBoardBtn=$('flipBoardBtn'), modeSelect=$('modeSelect'), levelSelect=$('levelSelect'),
-        fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'),
+        fullscreenBtn=$('fullscreenBtn'), exitFullscreenBtn=$('exitFullscreenBtn'), liveRecordBtn=$('liveRecordBtn'),
         boardSizeRange=$('boardSizeRange'), boardSizeResetBtn=$('boardSizeResetBtn'), newPuzzleBtn=$('newPuzzleBtn'),
         boardSizeBtn=$('boardSizeBtn'), boardSizePopover=$('boardSizePopover'),
         apContrastRange=$('apContrastRange'), apSaturateRange=$('apSaturateRange'),
@@ -7001,7 +7026,9 @@
     reviewRecordStatus.hidden=!text;
   }
 
-  function reviewPickRecorderMimeType(){
+  // Shared with OUR-251's live-recording -- same mimeType-negotiation
+  // logic serves both a completed-game review and a live game.
+  function pickRecorderMimeType(){
     const candidates=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
     return candidates.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t))||'';
   }
@@ -7027,7 +7054,7 @@
     // though a video will still be produced, so flag it rather than
     // letting a soundless recording pass as success.
     const noAudio=stream.getAudioTracks().length===0;
-    const mimeType=reviewPickRecorderMimeType();
+    const mimeType=pickRecorderMimeType();
     reviewRecordChunks=[];
     reviewRecorder=mimeType?new MediaRecorder(stream,{mimeType,videoBitsPerSecond:8000000})
                            :new MediaRecorder(stream,{videoBitsPerSecond:8000000});
@@ -7588,7 +7615,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r200 (OUR-250: Review layout compacted, Record video (Kokoro-gated getDisplayMedia+MediaRecorder))';
+  const BUILD='v2-r201 (OUR-251: Live gameplay recording, mic+narration mixed, On-device Hearing gated)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -9821,6 +9848,179 @@
       || (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   }
 
+  // ===============================================================
+  // OUR-251: live gameplay recording -- board video plus the player's
+  // OWN voice (mic) and the app's narration, mixed into one audio track.
+  // Builds on OUR-250's tab-video-capture pattern (getDisplayMedia,
+  // MediaRecorder, triggerDownload) but a live game needs a second,
+  // genuinely new piece OUR-250 never touched: a real microphone input,
+  // alongside a recognizer that is ALSO reading that same microphone
+  // for voice commands.
+  //
+  // Validated on real hardware before this was built (OUR-251 feasibility
+  // session, 2026-09-11): a SECOND navigator.mediaDevices.getUserMedia()
+  // call while SpeechRecognition holds the mic is exactly what primeMic()
+  // has warned destabilises Chrome's recognizer since Day 1 -- so this
+  // never calls getUserMedia() itself. It only works when On-device
+  // Hearing (LocalRecognition) is the active STT engine, because that is
+  // the one recognizer whose own MediaStream is a real, JS-visible object
+  // (recognition._stream) rather than opaque browser-internal state --
+  // meaning its audio TRACK can be track.clone()'d (a second reference to
+  // the same underlying capture, not a second capture session) and fed
+  // into a completely separate consumer with zero new mic access. Native
+  // SpeechRecognition (sttEngine==='system') offers no such object, so
+  // recording is gated on 'local' outright rather than attempted and
+  // left to fail unpredictably.
+  //
+  // The real finding from that validation: LocalRecognition tears down
+  // and re-acquires a BRAND NEW getUserMedia stream every time a session
+  // reopens (beginSpeaking() aborts the session so the app doesn't hear
+  // its own narration as a command -- see the comment there -- and a
+  // fresh session starts again once narration ends). A clone taken once,
+  // at Record time, goes stale the moment the first response finishes
+  // and the old track is torn down. liveRecordAttachMicSource() is
+  // called from recognition.onstart below specifically to re-clone on
+  // EVERY session open, for as long as the recording runs.
+  let liveRecordStream=null, liveRecordRecorder=null, liveRecordChunks=[];
+  let liveRecordMixCtx=null, liveRecordDest=null;
+  let liveRecordMicSource=null, liveRecordMicTrack=null, liveRecordTabSource=null;
+  let liveRecordDurationTimer=null;
+
+  // Two independent gates, same shape as OUR-250's reviewRecordVoiceReady()
+  // but there are now two things that can each silently ruin the
+  // recording -- the player's own voice (needs On-device Hearing, see the
+  // block comment above) and the narration (needs Kokoro, same reasoning
+  // as Review: system speechSynthesis does not reliably route into a
+  // captured tab audio track). Both are checked and reported together
+  // rather than one at a time, so switching just one setting can still
+  // leave the player looking at a notice for the other.
+  function liveRecordGateProblems(){
+    const problems=[];
+    if(sttEngine!=='local') problems.push('Live recording needs On-device Hearing (in Voice Settings) to record your own voice too.');
+    if(!(ttsEngine==='kokoro'&&kokoro)) problems.push('System voice won’t be captured — switch to Natural voice to record the narration too.');
+    return problems;
+  }
+
+  function liveRecordFilename(){
+    return 'mind-chess-live-'+new Date().toISOString().slice(0,10)+'.webm';
+  }
+
+  // Re-clones whatever LocalRecognition's CURRENT live mic track is and
+  // swaps it into the mixing graph in place of the previous session's
+  // clone. A no-op whenever a recording isn't running, whenever the
+  // active engine isn't LocalRecognition (e.g. the player switched
+  // Hearing mid-recording -- the recording keeps running on tab audio
+  // alone rather than being force-stopped for a mid-game setting change),
+  // or whenever no session happens to be open yet (nothing to clone from
+  // until the player's next mic session actually starts).
+  function liveRecordAttachMicSource(){
+    if(!liveRecordMixCtx||!(recognition instanceof LocalRecognition)||!recognition._stream) return;
+    const track=recognition._stream.getAudioTracks()[0];
+    if(!track) return;
+    if(liveRecordMicSource) try{ liveRecordMicSource.disconnect(); }catch(e){}
+    if(liveRecordMicTrack) try{ liveRecordMicTrack.stop(); }catch(e){}
+    liveRecordMicTrack=track.clone();
+    liveRecordMicSource=liveRecordMixCtx.createMediaStreamSource(new MediaStream([liveRecordMicTrack]));
+    liveRecordMicSource.connect(liveRecordDest);
+  }
+
+  function liveRecordDetachMicSource(){
+    if(liveRecordMicSource) try{ liveRecordMicSource.disconnect(); }catch(e){}
+    if(liveRecordMicTrack) try{ liveRecordMicTrack.stop(); }catch(e){}
+    liveRecordMicSource=null; liveRecordMicTrack=null;
+  }
+
+  function setLiveRecordUI(active){
+    liveRecordBtn.classList.toggle('recording',active);
+    liveRecordBtn.setAttribute('aria-label',active?'Stop recording':'Record video');
+    liveRecordBtn.title=active?'Stop recording':'Record this game as a video — your voice and the narration are mixed into the audio.';
+    liveRecordBtn.querySelector('.record-dot').style.display=active?'none':'';
+    liveRecordBtn.querySelector('.record-stop').style.display=active?'':'none';
+  }
+
+  async function startLiveRecording(){
+    const problems=liveRecordGateProblems();
+    if(problems.length){ note(problems.join('  ')); return; }
+    let stream;
+    try{
+      stream=await navigator.mediaDevices.getDisplayMedia({
+        video:{frameRate:30,width:1920,height:1080},
+        audio:true
+      });
+    }catch(err){
+      // Dismissed the native picker, or the browser refused -- nothing to
+      // record, not a bug to report. Same as OUR-250's own catch.
+      return;
+    }
+
+    liveRecordMixCtx=new (window.AudioContext||window.webkitAudioContext)();
+    liveRecordDest=liveRecordMixCtx.createMediaStreamDestination();
+    // Bundling the mic and tab-audio tracks into one MediaStream would
+    // NOT mix them -- multi-track audio in MediaRecorder is inconsistent
+    // across browsers. Routing both through this AudioContext graph into
+    // one destination is what actually blends them into a single track.
+    if(stream.getAudioTracks().length){
+      liveRecordTabSource=liveRecordMixCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+      liveRecordTabSource.connect(liveRecordDest);
+    }
+    liveRecordAttachMicSource(); // seeds from whatever session is already open, if any
+
+    const mixedStream=new MediaStream([...stream.getVideoTracks(), ...liveRecordDest.stream.getAudioTracks()]);
+    const mimeType=pickRecorderMimeType();
+    // A live game's length is unbounded (untimed play is allowed --
+    // clockPreset can be 0) where Review's replay never was, so this runs
+    // well under Review's 8 Mbps -- a mostly-static board doesn't need it
+    // -- and starts the recorder with a 1s timeslice so MediaRecorder
+    // flushes periodically instead of holding one unbounded internal
+    // buffer for however long the player leaves this running.
+    liveRecordChunks=[];
+    liveRecordRecorder=mimeType?new MediaRecorder(mixedStream,{mimeType,videoBitsPerSecond:2000000})
+                               :new MediaRecorder(mixedStream,{videoBitsPerSecond:2000000});
+    liveRecordStream=stream;
+    liveRecordRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) liveRecordChunks.push(e.data); };
+    liveRecordRecorder.onstop=()=>{
+      const blob=new Blob(liveRecordChunks,{type:liveRecordRecorder.mimeType||'video/webm'});
+      liveRecordChunks=[];
+      triggerDownload(blob,liveRecordFilename());
+      liveRecordStream.getTracks().forEach(t=>t.stop());
+      liveRecordDetachMicSource();
+      if(liveRecordTabSource) try{ liveRecordTabSource.disconnect(); }catch(e){}
+      liveRecordTabSource=null;
+      try{ liveRecordMixCtx.close(); }catch(e){}
+      liveRecordMixCtx=null; liveRecordDest=null;
+      liveRecordStream=null; liveRecordRecorder=null;
+      clearTimeout(liveRecordDurationTimer); liveRecordDurationTimer=null;
+      setLiveRecordUI(false);
+      note('Recording saved to Downloads.');
+    };
+    // The browser's own "Stop sharing" control ends the stream directly --
+    // treat that exactly like clicking Stop here, same as OUR-250.
+    stream.getVideoTracks()[0].addEventListener('ended',()=>{
+      if(liveRecordRecorder&&liveRecordRecorder.state!=='inactive') liveRecordRecorder.stop();
+    });
+    liveRecordRecorder.start(1000);
+    // No hard cap -- the player stops it themselves -- just a periodic
+    // nudge past 30 minutes that the file is getting large, since an
+    // untimed game genuinely can run that long.
+    const LIVE_RECORD_WARN_MS=30*60*1000;
+    const warnLong=()=>{
+      if(!liveRecordRecorder||liveRecordRecorder.state==='inactive') return;
+      note('Recording is running long — the file will be large.');
+      liveRecordDurationTimer=setTimeout(warnLong,LIVE_RECORD_WARN_MS);
+    };
+    liveRecordDurationTimer=setTimeout(warnLong,LIVE_RECORD_WARN_MS);
+    setLiveRecordUI(true);
+  }
+
+  function stopLiveRecording(){
+    if(liveRecordRecorder&&liveRecordRecorder.state!=='inactive') liveRecordRecorder.stop();
+  }
+
+  liveRecordBtn.addEventListener('click',()=>{
+    if(liveRecordRecorder&&liveRecordRecorder.state!=='inactive') stopLiveRecording();
+    else startLiveRecording();
+  });
+
   function setupRecognition(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 
@@ -9865,7 +10065,11 @@
     // as "to f3", losing exactly the word that identifies the piece.
     recognition.continuous=true;
 
-    recognition.onstart=()=>note('Listening\u2026');
+    // OUR-251: fires on every session open, including the ones after
+    // beginSpeaking()'s abort()+auto-restart cycle -- see
+    // liveRecordAttachMicSource()'s own comment for why a live recording
+    // needs re-cloning here rather than once.
+    recognition.onstart=()=>{ note('Listening\u2026'); liveRecordAttachMicSource(); };
     recognition.onspeechstart=()=>{
       lastMicActivity=Date.now();
       // Fires once per SESSION under continuous=true, not once per utterance,
