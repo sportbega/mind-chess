@@ -2735,9 +2735,15 @@
   // clean cancellation point every couple of seconds instead of one at the end.
   const SPEECH_CHUNK_MAX=140;
   const FIRST_CHUNK_MAX=60;      // Kokoro only — see splitForSpeech
+  // OUR-257: real sentence boundaries, shared with the reader's own
+  // sentence/paragraph navigation (readerBuildSentences()) rather than a
+  // second copy of the same rule -- a sentence for TTS-chunking purposes
+  // and a sentence for "next sentence" to step through need to agree, or
+  // the two would silently drift out of sync.
+  const SENTENCE_SPLIT_RE=/(?<=[.!?])\s+/;
   function splitForSpeech(text){
     const out=[];
-    String(text).split(/(?<=[.!?])\s+/).forEach(sentence=>{
+    String(text).split(SENTENCE_SPLIT_RE).forEach(sentence=>{
       const s=sentence.trim();
       if(!s) return;
       if(s.length<=SPEECH_CHUNK_MAX){ out.push(s); return; }
@@ -7721,7 +7727,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r205 (OUR-256: Reader interrupt words no longer false-positive as self-echo)';
+  const BUILD='v2-r206 (OUR-257: Reader navigation -- resume, speed, position jump, sentence/paragraph nav)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -8936,6 +8942,15 @@
   // Commands — returned as closures so planFor() stays pure
   // ===============================================================
   function matchCommand(t){
+    // OUR-257: checked first, but a no-op whenever readerSessionActive is
+    // false (see matchReaderNavCommand's own guard) -- so this adds zero
+    // evaluation cost or collision risk for a player who never reads a
+    // page. Ahead of everything below on purpose: "go to the beginning"
+    // would otherwise fall through to matchReaderVoiceUrl's own
+    // "go to [spoken site]" pattern (checked later, in planFor()) and get
+    // misread as a URL.
+    const readerNav=matchReaderNavCommand(t);
+    if(readerNav) return readerNav;
     // Moves get phonetic matching but commands were exact-regex only, so
     // "hide board" came back as "hi board" / "High board" / "Highboy" and was
     // rejected outright. These variants are all observed recognizer output.
@@ -10835,6 +10850,29 @@
     catch(e){ return null; }
   }
 
+  // OUR-257: real paragraph/sentence structure, for the navigation
+  // commands below. article.textContent (Readability's own flat string)
+  // is what OUR-253 spoke from, but it loses paragraph breaks -- adjacent
+  // <p> elements' text just concatenates once read through .textContent.
+  // article.content (the extracted article's own HTML, also part of
+  // Readability's return value) still has the real block structure, so
+  // paragraphs are read from there instead. Sentence boundaries reuse
+  // SENTENCE_SPLIT_RE -- the exact rule splitForSpeech's own TTS-chunking
+  // already uses -- rather than a second, potentially-drifting copy.
+  function readerBuildSentences(article){
+    const doc=new DOMParser().parseFromString(article.content||'','text/html');
+    const blocks=[...doc.querySelectorAll('p,li,h1,h2,h3,h4,h5,h6,blockquote')]
+      .map(el=>el.textContent.replace(/\s+/g,' ').trim())
+      .filter(Boolean);
+    const paragraphs=blocks.length?blocks:[(article.textContent||'').trim()].filter(Boolean);
+    const sentences=[];
+    paragraphs.forEach((para,pIdx)=>{
+      para.split(SENTENCE_SPLIT_RE).map(s=>s.trim()).filter(Boolean)
+        .forEach(s=>sentences.push({text:s,para:pIdx}));
+    });
+    return sentences;
+  }
+
   // OUR-254: a reading session forces a barge-in-friendly, auto-reopening
   // listening state (bargeIn+handsFree+wantLoop all on, mic opened if it
   // wasn't already) for as long as narration this call starts is running
@@ -10868,6 +10906,167 @@
     if(!(wantLoop&&handsFree)&&listening){ try{recognition.stop();}catch(e){} }
   }
 
+  // ===============================================================
+  // OUR-257: reader navigation -- resume, speed, position jump,
+  // sentence/paragraph stepping, headline repeat, orientation query.
+  //
+  // Position model: readerSentences is the flat list of every sentence in
+  // the article body (title excluded -- see readerSpeakHeadline()), each
+  // tagged with which paragraph it came from. readerSentenceIdx is the
+  // sentence CURRENTLY playing, or the one last played/stopped at.
+  //
+  // Playback is still one speak() call per jump (readerSpeakFrom()
+  // hands the WHOLE remaining text to speak(), exactly like OUR-253's
+  // original one-shot call), not one call per sentence -- splitting
+  // every sentence into its own speak() call would mean paying that
+  // call's full per-utterance overhead (a mic-closing gate, and for
+  // Kokoro specifically real generation latency -- "3.1s on the live
+  // site" for one opening chunk, per splitForSpeech's own comment) once
+  // per SENTENCE instead of once per navigation command, trading smooth
+  // reading for choppy reading in exchange for position tracking this
+  // doesn't actually need bought that way.
+  //
+  // Position tracking instead rides on top of the existing
+  // onNextEndSpeaking hook (OUR-255): whenever narration for a jump ends
+  // -- naturally or via any interrupt -- readerOnNarrationEnd() looks up
+  // speakingText (the chunk that was actually playing at that moment)
+  // against readerSentences to find where playback actually stopped.
+  // Chunks are sentences 1:1 except for the rare >140-char sentence,
+  // which splitForSpeech itself breaks into comma-bounded fragments --
+  // readerFindSentenceIdxForText() matches a fragment as a prefix of its
+  // real sentence, so those still resolve to "the start of that
+  // sentence", matching the brief's own "start of the current sentence,
+  // not mid-word" spec exactly rather than needing sub-sentence
+  // precision.
+  let readerSessionActive=false;
+  let readerTitle='';
+  let readerSentences=[];
+  let readerSentenceIdx=-1;
+  // Where THIS narration's speak() call started reading from -- a news
+  // homepage in particular is full of short, repeated fragments (nav
+  // labels, "Live", bare section names), so a global search for
+  // speakingText can land on an EARLIER identical/near-identical sentence
+  // instead of the one actually playing. Narration only ever moves
+  // forward from where it started within one speak() call, so searching
+  // forward-only from here removes that ambiguity rather than guessing.
+  let readerPlaybackStartIdx=0;
+
+  function readerFindSentenceIdxForText(fragment,fromIdx){
+    if(!fragment) return -1;
+    const norm=s=>s.replace(/\s+/g,' ').trim();
+    const f=norm(fragment);
+    if(!f) return -1;
+    for(let i=fromIdx||0;i<readerSentences.length;i++){
+      const s=norm(readerSentences[i].text);
+      if(s===f||s.startsWith(f)||f.startsWith(s)) return i;
+    }
+    return -1;
+  }
+  function readerOnNarrationEnd(){
+    const idx=readerFindSentenceIdxForText(speakingText,readerPlaybackStartIdx);
+    if(idx>=0) readerSentenceIdx=idx;
+    readerExitBargeInMode();
+  }
+  function readerSpeakFrom(idx){
+    if(!readerSentences.length) return;
+    idx=Math.max(0,Math.min(idx,readerSentences.length-1));
+    readerSentenceIdx=idx;
+    readerPlaybackStartIdx=idx;
+    let text=readerSentences.slice(idx).map(s=>s.text).join(' ');
+    if(idx===0&&readerTitle) text=readerTitle+'. '+text;
+    readerEnterBargeInMode();
+    onNextEndSpeaking=readerOnNarrationEnd;
+    speak(text);
+  }
+  function readerStepSentence(delta){
+    if(!readerSentences.length) return;
+    const next=readerSentenceIdx+delta;
+    if(next<0){ speak('That’s the start of the article.'); return; }
+    if(next>=readerSentences.length){ speak('That’s the end of the article.'); return; }
+    readerSpeakFrom(next);
+  }
+  function readerJumpParagraph(direction){
+    if(!readerSentences.length) return;
+    const curIdx=Math.max(0,Math.min(readerSentenceIdx,readerSentences.length-1));
+    const targetPara=readerSentences[curIdx].para+direction;
+    const idx=readerSentences.findIndex(s=>s.para===targetPara);
+    if(idx===-1){ speak(direction>0?'That was the last paragraph.':'That was the first paragraph.'); return; }
+    readerSpeakFrom(idx);
+  }
+  function readerResume(){
+    if(!readerSentences.length){ warn('Nothing to resume — say or type an address first.'); return; }
+    readerSpeakFrom(readerSentenceIdx<0?0:readerSentenceIdx);
+  }
+  function readerSpeakHeadline(){
+    if(!readerTitle){ speak('No headline for this page.'); return; }
+    // Deliberately doesn't touch readerSentenceIdx -- readerOnNarrationEnd's
+    // own lookup simply won't find the headline text among readerSentences
+    // (it isn't one), so the body-reading position is left exactly where
+    // it was.
+    readerEnterBargeInMode();
+    onNextEndSpeaking=readerOnNarrationEnd;
+    speak(readerTitle);
+  }
+  // Coarse on purpose -- "about a third of the way through" is the
+  // brief's own example, not a percentage readout.
+  function readerAnnouncePosition(){
+    if(!readerSentences.length){ speak('Nothing is being read right now.'); return; }
+    const idx=Math.max(0,Math.min(readerSentenceIdx,readerSentences.length-1));
+    const frac=readerSentences.length<=1?1:idx/(readerSentences.length-1);
+    const phrase=frac<0.08?'near the beginning'
+      :frac<0.35?'about a third of the way through'
+      :frac<0.6?'about halfway through'
+      :frac<0.85?'about three-quarters of the way through'
+      :'near the end';
+    speak('You’re '+phrase+'.');
+  }
+  // Steps through #rateSelect's own <option> values rather than a
+  // separately-invented numeric range, so "reasonable min/max bounds"
+  // are exactly whatever the Speed dropdown already offers, and a voice
+  // command can never drift out of sync with what the dropdown shows --
+  // reads the live option list rather than a second hardcoded copy of it.
+  function readerAdjustSpeed(direction){
+    const steps=Array.from(rateSelect.options).map(o=>parseFloat(o.value));
+    let idx=0;
+    steps.forEach((v,i)=>{ if(Math.abs(v-speechRate)<Math.abs(steps[idx]-speechRate)) idx=i; });
+    const next=Math.max(0,Math.min(steps.length-1,idx+direction));
+    if(next===idx){ speak(direction>0?'Already as fast as it goes.':'Already as slow as it goes.'); return; }
+    speechRate=steps[next]; rateSelect.value=String(speechRate);
+    dropReserve(); saveState();
+    speak(direction>0?'Faster.':'Slower.');
+  }
+
+  // OUR-257: matched inside matchCommand() (see the call site there),
+  // gated on readerSessionActive so none of this is even evaluated
+  // outside a reading session -- zero interference with normal chess
+  // recognition for a player who never uses the reader. A mid-narration
+  // utterance still can only ever cancel (considerBargeIn/OUR-256's own
+  // interrupt-word allowlist), never execute one of these directly in
+  // the same breath -- these are only ever reached the same way any
+  // other command is, through route()'s normal path, which onresult only
+  // ever calls while NOT speaking.
+  function matchReaderNavCommand(t){
+    if(!readerSessionActive) return null;
+    if(/^(continue|carry on|keep going|keep reading|go on|resume|start reading|please continue|go ahead|read on)$/.test(t))
+      return readerResume;
+    if(/slow down|slower/.test(t)) return ()=>readerAdjustSpeed(-1);
+    if(/speed up|faster/.test(t)) return ()=>readerAdjustSpeed(1);
+    if(/go to the beginning|go to the start|start over/.test(t)) return ()=>readerSpeakFrom(0);
+    if(/go to the middle/.test(t)) return ()=>readerSpeakFrom(Math.floor(readerSentences.length/2));
+    if(/go to the end/.test(t)) return ()=>readerSpeakFrom(readerSentences.length-1);
+    if(/next sentence/.test(t)) return ()=>readerStepSentence(1);
+    if(/previous sentence|last sentence/.test(t)) return ()=>readerStepSentence(-1);
+    if(/skip ahead/.test(t)) return ()=>readerStepSentence(3);
+    if(/skip back/.test(t)) return ()=>readerStepSentence(-3);
+    if(/next paragraph/.test(t)) return ()=>readerJumpParagraph(1);
+    if(/previous paragraph|last paragraph|go back a paragraph/.test(t)) return ()=>readerJumpParagraph(-1);
+    if(/read (the )?headline again|repeat (the )?headline|what.{0,3}s the headline/.test(t))
+      return readerSpeakHeadline;
+    if(/how far along am i|how much is left|how far (in|into)|how much more/.test(t))
+      return readerAnnouncePosition;
+    return null;
+  }
+
   async function startReading(rawUrl){
     const url=normalizeReaderUrl(rawUrl);
     readerEnterBargeInMode();
@@ -10881,17 +11080,21 @@
       readerExitBargeInMode();
       return;
     }
-    const text=(article.title?article.title+'. ':'')+article.textContent.trim();
+    readerTitle=article.title||'';
+    readerSentences=readerBuildSentences(article);
+    if(!readerSentences.length){
+      warn('Couldn’t find readable text on that page.');
+      readerExitBargeInMode();
+      return;
+    }
+    readerSessionActive=true;
+    log('Reader',(readerTitle?readerTitle+'. ':'')+article.textContent.trim().slice(0,140)+'…');
     // speak() sets lastNarration -- the existing generic "repeat"/"say
     // that again" command (matchCommand, /^repeat$|say (that )?again/)
-    // already replays whatever it last set, so re-reading the article on
-    // request needs no new command of its own.
-    log('Reader',(article.title?article.title+'. ':'')+article.textContent.trim().slice(0,140)+'…');
-    // Fires once, whenever THIS narration truly ends -- naturally or via
-    // any interrupt -- and hands the mic back to the player's own
-    // settings at exactly that point (see endSpeaking()).
-    onNextEndSpeaking=readerExitBargeInMode;
-    speak(text);
+    // already replays whatever it last set, so re-reading the CURRENT
+    // chunk on request needs no new command of its own; "repeat headline"
+    // above is the separate, headline-specific case.
+    readerSpeakFrom(0);
   }
 
   // Best-effort spoken-URL interpretation ("go to the guardian dot com").
