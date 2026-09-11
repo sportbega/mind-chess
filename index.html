@@ -2624,10 +2624,9 @@
   // OUR-254: single-shot hook, fired by endSpeaking() the moment the
   // CURRENT narration truly ends -- naturally or via any interrupt
   // (cancelSpeech() also funnels through endSpeaking()). Reader sessions
-  // use this to know exactly when to hand the mic back to whatever the
-  // player's own bargeIn/handsFree settings were -- see
-  // readerEnterBargeInMode()/readerExitBargeInMode(). null the rest of
-  // the time; nothing else in the app sets it.
+  // use this to know exactly when a narration segment has paused -- see
+  // readerEnterBargeInMode()/readerPauseVoiceMode() (OUR-258). null the
+  // rest of the time; nothing else in the app sets it.
   let onNextEndSpeaking=null;
   let speechWatchdog=null;       // Chrome intermittently never fires utterance.onend
   let speechQueue=[];            // chunks of the current narration still to speak
@@ -7727,7 +7726,7 @@
   // Bump on every voice-layer change: a diagnostics log is worthless if we
   // can't tell which build produced it, and a cached index.html looks
   // identical to a fix that didn't work.
-  const BUILD='v2-r206 (OUR-257: Reader navigation -- resume, speed, position jump, sentence/paragraph nav)';
+  const BUILD='v2-r207 (OUR-258: Reader "stop" now pauses not exits, new explicit exit command)';
   // ?debug=1 controls whether the panel is *shown*, not whether anything is
   // recorded. It used to gate the recording too, which meant the diagnostics
   // only existed if you had already decided, before the session started, that
@@ -10873,37 +10872,72 @@
     return sentences;
   }
 
-  // OUR-254: a reading session forces a barge-in-friendly, auto-reopening
-  // listening state (bargeIn+handsFree+wantLoop all on, mic opened if it
-  // wasn't already) for as long as narration this call starts is running
-  // -- otherwise the mic stays closed for the entire article (bargeIn
-  // defaults off) and there is nothing live to interrupt by voice at
-  // all, the root cause found investigating OUR-253's own "small issue".
-  // Does NOT touch the separate, deliberate invariant that a voice
-  // utterance heard while speaking can only cancel, never also act as
-  // the next command in the same breath (see beginSpeaking()'s own
-  // comment) -- that stays exactly as it was; this only makes sure the
-  // mic is open and reopens promptly, not what happens once it hears
-  // something.
+  // OUR-258: revised lifecycle, replacing OUR-254/255's single
+  // enter/exit pair. Reported live and confirmed with real evidence
+  // (driving the actual recognition.onresult handler, not a shortcut):
+  // saying "stop" WAS reverting bargeIn/handsFree/wantLoop all the way
+  // back to the player's true original settings -- readerSessionActive
+  // and every piece of reading-session state (position, sentences) were
+  // NEVER actually cleared, confirmed directly, but a player whose real
+  // settings don't include hands-free listening got the mic closed right
+  // along with everything else, with nothing left to reopen it -- so a
+  // Resume-family phrase said right after "stop" simply went unheard.
+  // That reads exactly like "the session is gone" even though the DATA
+  // never was.
+  //
+  // Fix: three lifecycle points instead of two. readerSavedVoiceState is
+  // now captured ONCE per reading session (first call) and restored ONLY
+  // by an actual exit (readerExitSession(), OUR-258's new explicit exit
+  // command) -- not by every pause. A pause (readerPauseVoiceMode(),
+  // called from readerOnNarrationEnd() below) reverts ONLY bargeIn --
+  // there's nothing left to talk over once narration has stopped --
+  // while handsFree/wantLoop, and so the mic itself, stay forced on for
+  // the rest of the reading session, exactly like pausing a video rather
+  // than closing it. Does NOT touch the separate, deliberate invariant
+  // that a voice utterance heard while speaking can only cancel, never
+  // also act as the next command in the same breath (see beginSpeaking()'s
+  // own comment) -- untouched; this is only ever about whether the mic is
+  // listening, not what happens once it hears something.
   let readerSavedVoiceState=null;
   function readerEnterBargeInMode(){
-    if(readerSavedVoiceState) return; // already inside one -- don't clobber the true original
-    readerSavedVoiceState={bargeIn,handsFree,wantLoop};
+    if(!readerSavedVoiceState) readerSavedVoiceState={bargeIn,handsFree,wantLoop};
     bargeIn=true; handsFree=true; wantLoop=true;
     if(recognition&&!listening&&!speakingBlocksMic()) startListening();
   }
-  // Reverting BEFORE endSpeaking()'s own wantLoop&&handsFree check (see
-  // the hook there) means a player who doesn't normally use hands-free
-  // gets the mic closed again right along with everything else settling
-  // back to their real settings -- correct per spec: interrupting counts
-  // as the reading session ending, same as finishing or stopping it, and
-  // "give a new instruction" after that is deliberately its own separate
-  // turn, on whatever terms the player's own settings already give it.
-  function readerExitBargeInMode(){
+  // A pause, not an exit -- see the block comment above. Only bargeIn
+  // reverts; the mic stays open and listening for the rest of the
+  // reading session so a Resume-family phrase is actually heard.
+  function readerPauseVoiceMode(){
     if(!readerSavedVoiceState) return;
-    const s=readerSavedVoiceState; readerSavedVoiceState=null;
-    bargeIn=s.bargeIn; handsFree=s.handsFree; wantLoop=s.wantLoop;
-    if(!(wantLoop&&handsFree)&&listening){ try{recognition.stop();}catch(e){} }
+    bargeIn=readerSavedVoiceState.bargeIn;
+  }
+  // OUR-258: the ONLY thing that fully restores the player's true
+  // original settings (closing the mic again if those settings wouldn't
+  // keep it open) and clears reading-session state -- addresses the
+  // design gap OUR-257 flagged explicitly ("reader vocabulary stays
+  // reserved... no way to exit"). Reverting before the confirmation line
+  // below is spoken so that line plays under the player's own real
+  // settings, not the reader's forced ones.
+  function readerTeardownState(){
+    if(readerSavedVoiceState){
+      const s=readerSavedVoiceState;
+      bargeIn=s.bargeIn; handsFree=s.handsFree; wantLoop=s.wantLoop;
+      if(!(wantLoop&&handsFree)&&listening){ try{recognition.stop();}catch(e){} }
+    }
+    readerSavedVoiceState=null;
+    readerSessionActive=false;
+    readerSentences=[]; readerSentenceIdx=-1; readerTitle=''; readerPlaybackStartIdx=0;
+  }
+  // The voice-triggered exit specifically -- teardown plus a spoken
+  // confirmation. A failed fetch also tears the session down (see
+  // startReading()'s own catch/empty-content branches below) but uses
+  // readerTeardownState() directly, without this confirmation -- warn()
+  // has already narrated what happened there, and "Leaving the reader"
+  // right after would be a redundant, confusing second line for a
+  // failure the player didn't ask to exit from.
+  function readerExitSession(){
+    readerTeardownState();
+    speak('Leaving the reader.');
   }
 
   // ===============================================================
@@ -10965,7 +10999,7 @@
   function readerOnNarrationEnd(){
     const idx=readerFindSentenceIdxForText(speakingText,readerPlaybackStartIdx);
     if(idx>=0) readerSentenceIdx=idx;
-    readerExitBargeInMode();
+    readerPauseVoiceMode();
   }
   function readerSpeakFrom(idx){
     if(!readerSentences.length) return;
@@ -11047,6 +11081,17 @@
   // ever calls while NOT speaking.
   function matchReaderNavCommand(t){
     if(!readerSessionActive) return null;
+    // OUR-258: checked first, ahead of Resume -- the only thing that
+    // fully tears reading-session state down (readerExitSession(), which
+    // un-reserves this whole command set) rather than pausing it.
+    // Deliberately avoids the word "stop" here (that's the barge-in
+    // pause word, OUR-256, a completely different code path -- the two
+    // can never actually collide since one only fires while speaking and
+    // this one only while not, but keeping the phrasing visibly distinct
+    // avoids the player having to reason about that to predict what
+    // either one does).
+    if(/exit reader|close reader|back to chess|leave (the )?article|quit reader|exit article|close article/.test(t))
+      return readerExitSession;
     if(/^(continue|carry on|keep going|keep reading|go on|resume|start reading|please continue|go ahead|read on)$/.test(t))
       return readerResume;
     if(/slow down|slower/.test(t)) return ()=>readerAdjustSpeed(-1);
@@ -11073,18 +11118,18 @@
     say('One moment — fetching that.');
     let page;
     try{ page=await fetchPageServerSide(url); }
-    catch(err){ warn('Couldn’t reach that page — check the address and try again.'); readerExitBargeInMode(); return; }
+    catch(err){ warn('Couldn’t reach that page — check the address and try again.'); readerTeardownState(); return; }
     const article=readerExtractArticle(page.html);
     if(!article||!article.textContent||!article.textContent.trim()){
       warn('Couldn’t find readable text on that page.');
-      readerExitBargeInMode();
+      readerTeardownState();
       return;
     }
     readerTitle=article.title||'';
     readerSentences=readerBuildSentences(article);
     if(!readerSentences.length){
       warn('Couldn’t find readable text on that page.');
-      readerExitBargeInMode();
+      readerTeardownState();
       return;
     }
     readerSessionActive=true;
